@@ -43,7 +43,11 @@ class AllyShip(BaseModel):
     pos: Point
     heading: float = Field(..., description="선수각[deg]")
     nets_remaining: int = Field(..., ge=0)
+    alive: bool = Field(True, description="생존 여부. false면 격침(충돌/그물접촉) — 배정 불가.")
     assigned_cluster: Optional[int] = Field(None, description="직전 배정(연속성 힌트)")
+    route: List[Point] = Field(default_factory=list,
+                               description="현재 자동조종 경로 WP (경로 중복·충돌 판단용)")
+    deploying: bool = Field(False, description="현재 그물 전개 중 여부")
 
 
 class Constraints(BaseModel):
@@ -114,11 +118,15 @@ class BattlefieldState(BaseModel):
             lane_angle = round((360.0 * i) / n, 2)
             allies.append({
                 "id": a.id,
+                "alive": a.alive,
                 "pos": [round(a.pos.x, 2), round(a.pos.y, 2)],
                 "heading": a.heading,
                 "nets_remaining": a.nets_remaining,
                 "assigned_cluster": a.assigned_cluster,
                 "lane_angle": lane_angle,
+                "deploying": a.deploying,
+                # 현재 자동조종 경로(WP) — LLM이 경로 중복/충돌 판단에 사용
+                "route": [[round(p.x, 2), round(p.y, 2)] for p in a.route],
             })
 
         payload = {
@@ -147,4 +155,9 @@ class ClusterDeployment(BaseModel):
 class CommanderPlan(BaseModel):
     deployments: List[ClusterDeployment] = Field(
         ..., description="클러스터별 투입 선박 수. 합계는 아군 총수 이하 — 남는 선박은 예비(정지).")
-    rationale: str = Field(..., description="투입 척수·예비 판단 근거(생각 과정)")
+    hold_ships: List[int] = Field(
+        default_factory=list,
+        description="이번 주기에 '제자리 정지(HOLD)'시킬 아군 id 목록. 배정돼 있어도 이 목록에 "
+                    "있으면 전진하지 않고 현재 위치에서 대기(전개중 그물은 마저 설치). 다른 배가 "
+                    "이미 차단했거나, 두 배가 충돌 직전이거나, 시간차 출격이 필요할 때 사용.")
+    rationale: str = Field(..., description="투입 척수·예비·정지(HOLD) 판단 근거(생각 과정)")

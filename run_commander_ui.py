@@ -7,12 +7,16 @@
 시뮬 주입(그물 전개) + 오른쪽 패널에 명령/배정/이유(rationale) 전체 표시.
 (Ollama 없으면 위협비례 휴리스틱 폴백.)
 
+배정은 **매 스텝** 현재 전장으로 재매핑(sticky) → 배가 격침되면 남은 배로 자동 재배분.
+LLM 전체 재계획은 주기(기본 100 step)마다. 아군끼리 충돌하면 양쪽 다 격침(비활성화).
+
 실행:
     python run_commander_ui.py
     python run_commander_ui.py qwen2.5:7b
     python run_commander_ui.py --enemy wave
-조작키: [space] 재생/일시정지  [r] 랜덤 리셋  [q] 종료
+조작키: [space] 재생/일시정지  [r] 랜덤 리셋  [q] 종료  [a] 자동 재계획 토글
        [1] 집중  [2] 파상  [3] 양동  (상단 버튼과 동일 — 그 대형으로 리셋·재시작)
+옵션: --replan N  (N step 마다 LLM 자동 재계획, 전장 변화 적응. 0=끄기, 기본 100)
 """
 import sys
 import random
@@ -29,7 +33,10 @@ def _arg(flag, default=None):
 def main() -> None:
     enemy = _arg("--enemy", "random")
     backend = "openai" if "--openai" in sys.argv else "ollama"
-    model = next((a for a in sys.argv[1:] if not a.startswith("-") and a != enemy), None)
+    replan = int(_arg("--replan", "100"))   # LLM 자동 재계획 주기(step). 0=끄기
+    _flagvals = {sys.argv[i + 1] for i, a in enumerate(sys.argv)
+                 if a.startswith("--") and i + 1 < len(sys.argv)}
+    model = next((a for a in sys.argv[1:] if not a.startswith("-") and a not in _flagvals), None)
 
     import warnings
     import matplotlib
@@ -96,6 +103,10 @@ def main() -> None:
                      "예) 정면 밀집 무리를 우선 차단\n"
                      "예) 큰 무리에 2척, 1척은 예비",
         "status": "대기 중 (아군 정지)",
+        "last_cmd": DEFAULT_CMD,
+        "auto": replan > 0,                       # LLM 자동 재계획 ON/OFF
+        "replan_period": replan if replan > 0 else 100,
+        "last_replan_t": 0,
     }
 
     def draw_info():
@@ -127,6 +138,8 @@ def main() -> None:
             print("[on_submit] 이전 명령 처리 중 — 무시")
             return
         info["busy"] = True
+        info["last_cmd"] = cmd                    # 자동 재계획이 이 명령을 반복 사용
+        info["last_replan_t"] = sim.t             # 재계획 타이머 리셋
         print(f"\n[on_submit] 콜백 발화, 입력='{cmd}'")
         try:
             info["cmd"], info["status"] = cmd, "지휘관 호출 중…"
@@ -134,19 +147,26 @@ def main() -> None:
 
             bf = build_battlefield(sim, command=cmd)
             plan = commander.plan(bf)                      # LLM 동기 호출 (클러스터별 투입 척수)
-            assign = plan_to_assign(plan, bf)              # 척수 → 아군별 담당 클러스터
-            sim.set_command(assign)                        # 시뮬 주입(경로는 시뮬이 기하로 생성)
+            assign = plan_to_assign(plan, bf)              # 표시용 초기 매핑
+            sim.set_plan(plan, cmd)                        # 매 스텝 재매핑(죽은 배·위치 적응)
 
+            held = set(getattr(plan, "hold_ships", None) or [])
             committed = int((assign >= 0).sum())
-            reserve = sim.cfg.n_allies - committed
+            reserve = sim.cfg.n_allies - committed - len(held & {i for i in range(sim.cfg.n_allies) if assign[i] < 0})
             alloc = "  ".join(f"C{d.cluster_id}:{d.n_ships}척" for d in plan.deployments) or "(없음)"
-            info["assign"] = (f"투입 {committed}척 / 예비 {reserve}척\n{alloc}\n"
-                              + "  ".join(f"#{i}→C{a}" if a >= 0 else f"#{i}→예비"
-                                         for i, a in enumerate(assign.tolist())))
+
+            def _tag(i, a):
+                if i in held:
+                    return f"#{i}→정지(HOLD)"
+                return f"#{i}→C{a}" if a >= 0 else f"#{i}→예비"
+            info["assign"] = (f"투입 {committed}척 / 예비 {reserve}척"
+                              + (f" / 정지 {len(held)}척" if held else "") + f"\n{alloc}\n"
+                              + "  ".join(_tag(i, a) for i, a in enumerate(assign.tolist())))
             info["rationale"] = plan.rationale
             info["status"] = "배정 적용됨"
             print(f"[명령] {cmd}")
-            print(f"  deployments={[(d.cluster_id, d.n_ships) for d in plan.deployments]}  assign={assign.tolist()}")
+            print(f"  deployments={[(d.cluster_id, d.n_ships) for d in plan.deployments]}  "
+                  f"hold={sorted(held)}  assign={assign.tolist()}")
             print(f"  rationale: {plan.rationale}")
             draw_info()
         except Exception as e:
@@ -178,6 +198,11 @@ def main() -> None:
             apply_formation("wave", "파상")
         elif k == "3":
             apply_formation("diversionary", "양동")
+        elif k == "a":
+            info["auto"] = not info.get("auto")
+            info["status"] = (f"자동 재계획 {'ON' if info['auto'] else 'OFF'} "
+                              f"(주기 {info['replan_period']} step)")
+            draw_info()
         elif k == "r":
             sim.reset(seed=random.randint(0, 2_000_000_000)); sim.set_command(None); sim.running = True
             info["busy"] = True                 # set_val 이 트리거하는 submit 차단(표시만 갱신)
@@ -199,6 +224,11 @@ def main() -> None:
     def update(_):
         if sim.running and not sim.done:
             sim.step()
+            # 유동적 재계획: 주기마다 현재 전장으로 LLM 재호출 (전장 변화 적응)
+            if (info.get("auto") and not info.get("busy")
+                    and sim.t - info.get("last_replan_t", 0) >= info["replan_period"]):
+                print(f"[auto-replan] t={sim.t}")
+                on_submit(info.get("last_cmd", DEFAULT_CMD))
         renderer.draw_scene(ax, sim.get_frame(), bg_img=bg_img, bg_extent=bg_extent)
         return []
 

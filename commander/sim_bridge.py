@@ -62,78 +62,103 @@ class CommandedSimulator(Simulator):
                  geo_lat: float = GEO_LAT_DEFAULT, geo_lon: float = GEO_LON_DEFAULT):
         # super().__init__ 가 reset→_compute_assignment 를 호출하므로 속성을 미리 만든다.
         self._commanded_assign = None
+        self._plan = None                 # LLM 계획(매 스텝 현재 상태로 재매핑)
+        self._plan_command = None
         if cfg is None:
             cfg = scaled_config(world_size, enemy_speed_mult, geo_lat, geo_lon)
         super().__init__(cfg=cfg, enemy_mode=enemy_mode)
         # manual=False(AUTO) 유지 → step() 이 heuristic_plan() 으로 assign 기반 경로 생성
 
+    def set_plan(self, plan, command: str | None = None) -> None:
+        """LLM 계획 저장 → **매 스텝** 현재 전장으로 재매핑(죽은 배·위치변화 즉시 적응).
+
+        척수(deployments)·정지(hold_ships)는 다음 LLM 재계획까지 유지되며, '어느 배가 어느
+        클러스터'는 매 스텝 sticky 규칙으로 다시 계산된다 → 배가 격침되면 남은 배로 자동 재배분.
+        """
+        self._plan = plan
+        self._plan_command = command
+        self._commanded_assign = None
+
     def set_command(self, assign_array) -> None:
-        """지휘관 배정 주입(아군별 담당 클러스터 idx, -1=예비). None 이면 전원 예비(정지)."""
+        """(하위호환) 고정 배정 직접 주입 — 매 스텝 재매핑 안 함. None 이면 전원 예비(정지)."""
+        self._plan = None
         self._commanded_assign = (None if assign_array is None
                                   else np.asarray(assign_array, np.int64))
 
     def _keepout(self) -> float:
         return self.cfg.mothership_radius * 1.3
 
-    def _compute_assignment(self):
-        # 1) 원본: 클러스터링(_cl_cent) + 기본 그리디 배정
-        super()._compute_assignment()
-        # 2) 명령 없으면 전원 예비(정지). 있으면 그것으로 덮어씀.
-        if self._commanded_assign is None:
-            self.assign[:] = -1
-            return
+    def _inject_assign(self, arr) -> None:
+        """배정 배열[P] → self.assign/assignI. 격침된 배는 항상 -1(예비)."""
         c = np.array(self.cfg.center, np.float64)
         t = DEFAULT_REWARD.assign_intercept_t
         ncl = len(self._cl_cent)
-        for i in range(min(self.cfg.n_allies, len(self._commanded_assign))):
-            k = int(self._commanded_assign[i])
+        for i in range(min(self.cfg.n_allies, len(arr))):
+            k = int(arr[i])
             self.assign[i] = k
             if 0 <= k < ncl:
                 cent = self._cl_cent[k]
                 self.assignI[i] = cent + t * (c - cent)
+        self.assign[~self.a_alive] = -1
+
+    def _compute_assignment(self):
+        # 1) 원본: 클러스터링(_cl_cent) + 기본 그리디 배정
+        prev = self.assign.copy() if getattr(self, "assign", None) is not None else None
+        super()._compute_assignment()
+        # 2) LLM 계획이 있으면 매 스텝 현재 상태로 재매핑(연속성 유지 → 스래싱 방지).
+        if self._plan is not None:
+            if prev is not None:
+                self.assign[:] = prev            # 연속성 힌트로 직전 배정 사용
+            state = build_battlefield(self, self._plan_command)
+            self._inject_assign(plan_to_assign(self._plan, state))
+            return
+        # 3) 고정 배정(하위호환). 없으면 전원 예비(정지).
+        if self._commanded_assign is None:
+            self.assign[:] = -1
+            return
+        self._inject_assign(self._commanded_assign)
+
+    def _resolve_ally_collisions(self):
+        """아군끼리 충돌(충돌반경 이내)하면 양쪽 모두 격침(비활성화). 그물 전개도 중단."""
+        P = self.cfg.n_allies
+        r = self.cfg.ally_collision_radius
+        for a in range(P):
+            if not self.a_alive[a]:
+                continue
+            for b in range(a + 1, P):
+                if not self.a_alive[b]:
+                    continue
+                dd = float(np.hypot(*(self.a_pos[a] - self.a_pos[b])))
+                if dd < r:
+                    self.a_alive[a] = self.a_alive[b] = False
+                    self.a_painting[a] = self.a_painting[b] = False
+                    self.stats["ally_collisions"] += 1
 
     def step(self):
         super().step()
-        self._separate()          # 아군 상호 분리 + 모선 keep-out (위치 보정)
+        self._separate()          # 모선 keep-out (아군 상호 밀어내기는 제거 — 충돌=격침)
         return self.get_frame()
 
     def _separate(self) -> None:
+        """모선 keep-out(모선 위로 못 올라감) + 월드 경계 클립만. 아군-아군 충돌은
+        밀어내지 않고 _resolve_ally_collisions 에서 격침 처리(부딪히면 비활성화)."""
         cfg = self.cfg
         P = cfg.n_allies
         c = np.array(cfg.center, np.float64)
         keep = self._keepout()
-        minsep = cfg.ally_collision_radius
         W = cfg.world_size
-        for _ in range(12):
-            for a in range(P):
-                if not self.a_alive[a]:
-                    continue
-                for b in range(a + 1, P):
-                    if not self.a_alive[b]:
-                        continue
-                    diff = self.a_pos[a] - self.a_pos[b]
-                    d = float(np.hypot(diff[0], diff[1]))
-                    if d >= minsep:
-                        continue
-                    if d < 1e-6:
-                        ang = 2.0 * np.pi * (a * P + b) / float(P * P)
-                        u = np.array([np.cos(ang), np.sin(ang)]); push = minsep / 2.0
-                    else:
-                        u = diff / d; push = (minsep - d) / 2.0
-                    self.a_pos[a] += u * push
-                    self.a_pos[b] -= u * push
-            for i in range(P):
-                if not self.a_alive[i]:
-                    continue
-                v = self.a_pos[i] - c
-                d = float(np.hypot(v[0], v[1]))
-                if d < keep:
-                    if d < 1e-6:
-                        ang = 2.0 * np.pi * i / float(P)
-                        self.a_pos[i] = c + np.array([np.cos(ang), np.sin(ang)]) * keep
-                    else:
-                        self.a_pos[i] = c + v / d * keep
-            np.clip(self.a_pos, 0.0, W, out=self.a_pos)
+        for i in range(P):
+            if not self.a_alive[i]:
+                continue
+            v = self.a_pos[i] - c
+            d = float(np.hypot(v[0], v[1]))
+            if d < keep:
+                if d < 1e-6:
+                    ang = 2.0 * np.pi * i / float(P)
+                    self.a_pos[i] = c + np.array([np.cos(ang), np.sin(ang)]) * keep
+                else:
+                    self.a_pos[i] = c + v / d * keep
+        np.clip(self.a_pos, 0.0, W, out=self.a_pos)
 
 
 def build_battlefield(sim: Simulator, command: str | None = None) -> BattlefieldState:
@@ -167,7 +192,12 @@ def build_battlefield(sim: Simulator, command: str | None = None) -> Battlefield
                  pos=Point(x=float(sim.a_pos[i, 0]), y=float(sim.a_pos[i, 1])),
                  heading=float(sim.a_hdg[i]),
                  nets_remaining=int(sim.a_nets[i]),
-                 assigned_cluster=int(sim.assign[i]) if int(sim.assign[i]) >= 0 else None)
+                 alive=bool(sim.a_alive[i]),
+                 assigned_cluster=int(sim.assign[i]) if int(sim.assign[i]) >= 0 else None,
+                 # 현재 자동조종 경로(WP) 와 전개 상태 → LLM 경로 중복/충돌 판단용 (죽은 배는 빈 경로)
+                 route=([Point(x=float(w["x"]), y=float(w["y"])) for w in sim.a_paths[i]]
+                        if bool(sim.a_alive[i]) else []),
+                 deploying=bool(sim.a_painting[i]))
         for i in range(cfg.n_allies)
     ]
 
@@ -195,30 +225,56 @@ def build_battlefield(sim: Simulator, command: str | None = None) -> Battlefield
 def plan_to_assign(plan, state: BattlefieldState) -> np.ndarray:
     """CommanderPlan(클러스터별 투입 척수) → sim.assign 배열[P] (아군별 담당 클러스터 idx, -1=예비).
 
-    LLM 은 '몇 척'만 정하고, '어느 배'는 여기서 기계적으로: 투입 많은(위협 큰) 클러스터부터
-    가장 가까운 미배정 아군을 n_ships 만큼 확보. 남는 배는 예비(-1). 합계 초과 시 자동 클램프.
+    LLM 은 '몇 척'만 정하고, '어느 배'는 여기서 기계적으로 결정한다. 재계획 스래싱(배가
+    매번 담당 클러스터를 갈아타 경로 재생성 → WP1 도 못 감)을 막기 위해 **연속성(sticky)**
+    우선: 이미 그 클러스터를 담당 중이고 여전히 필요한 배는 그대로 유지하고, 남는 슬롯만
+    가장 가까운 미배정 배로 채운다. 아군 부족 시 위협(척수) 큰 클러스터부터 커버.
+
+    HOLD: plan.hold_ships 의 아군은 배정과 무관하게 assign=-1(제자리 정지)로 덮어쓴다.
     """
     P = len(state.allies)
     assign = np.full(P, -1, np.int64)
     centers = {c.id: (c.center.x, c.center.y) for c in state.enemy_clusters}
+    threat = {c.id: c.count for c in state.enemy_clusters}
     ally_pos = {a.id: (a.pos.x, a.pos.y) for a in state.allies}
-    available = [a.id for a in state.allies]
+    current = {a.id: a.assigned_cluster for a in state.allies}   # 직전 배정(연속성 힌트)
 
-    for dep in sorted(plan.deployments, key=lambda d: -d.n_ships):
-        if dep.cluster_id not in centers or dep.n_ships < 1 or not available:
-            continue
-        cx, cy = centers[dep.cluster_id]
-        nearest = sorted(available, key=lambda i: (ally_pos[i][0] - cx) ** 2 + (ally_pos[i][1] - cy) ** 2)
-        for i in nearest[:dep.n_ships]:
-            if 0 <= i < P:
-                assign[i] = dep.cluster_id
-            available.remove(i)
+    # 클러스터별 필요 척수 집계(유효 클러스터만)
+    need: dict[int, int] = {}
+    for dep in plan.deployments:
+        if dep.cluster_id in centers and dep.n_ships >= 1:
+            need[dep.cluster_id] = need.get(dep.cluster_id, 0) + dep.n_ships
+
+    available = {a.id for a in state.allies if a.alive}          # 격침된 배는 배정 제외
+
+    # 1) 연속성: 직전과 동일 클러스터를 계속 담당(경로 유지 → 스래싱 방지)
+    for i in list(available):
+        k = current.get(i)
+        if k is not None and need.get(k, 0) > 0:
+            assign[i] = k
+            need[k] -= 1
+            available.discard(i)
+
+    # 2) 남은 슬롯: 위협 큰 클러스터부터 가장 가까운 미배정 배로 채움
+    for cid in sorted(need, key=lambda k: -threat.get(k, 0)):
+        cx, cy = centers[cid]
+        while need[cid] > 0 and available:
+            nearest = min(available,
+                          key=lambda i: (ally_pos[i][0] - cx) ** 2 + (ally_pos[i][1] - cy) ** 2)
+            assign[nearest] = cid
+            available.discard(nearest)
+            need[cid] -= 1
+
+    # 3) HOLD: 지정 아군은 제자리 정지(assign=-1). 전개중이면 그물은 마저 설치됨.
+    for i in getattr(plan, "hold_ships", None) or []:
+        if 0 <= int(i) < P:
+            assign[int(i)] = -1
     return assign
 
 
 def apply_plan(sim: CommandedSimulator, plan, state: BattlefieldState) -> None:
-    """CommanderPlan → 시뮬에 배정 주입."""
-    sim.set_command(plan_to_assign(plan, state))
+    """CommanderPlan → 시뮬에 계획 주입(매 스텝 재매핑)."""
+    sim.set_plan(plan, state.command)
 
 
 __all__ = ["CommandedSimulator", "build_battlefield", "plan_to_assign", "apply_plan",

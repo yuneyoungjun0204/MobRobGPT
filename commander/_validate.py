@@ -18,3 +18,9 @@ def _validate_deployments(plan: CommanderPlan, state: BattlefieldState) -> None:
         if d.n_ships < 1:
             raise ValueError(f"n_ships<1 (cluster {d.cluster_id})")
     # 빈 deployments(전원 예비)도 유효.
+
+    # HOLD 대상은 실존 아군 id 여야 함(범위 밖은 조용히 무시하지 말고 잡음).
+    ally_ids = {a.id for a in state.allies}
+    for i in getattr(plan, "hold_ships", None) or []:
+        if i not in ally_ids:
+            raise ValueError(f"존재하지 않는 아군 HOLD 지정: {i}")
