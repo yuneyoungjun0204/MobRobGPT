@@ -1,2 +1,42 @@
-/_pycache_/
-robot.cpython-311.pyc
+# ── Python ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+
+# ── 가상환경 (주의: boatattack_sim/env 는 패키지이므로 'env/' 는 무시하지 않음) ──
+.venv/
+venv/
+ENV/
+
+# ── OS / 에디터 ─────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+
+# ── 시뮬/지휘관 생성물 (런타임 생성) ────────────────────
+boatattack_sim/eval/_basemap_cache/    # OSM 타일 캐시
+*.pt                                    # 정책 체크포인트
+
+# ── 렌더/진단 출력물 ────────────────────────────────────
+out.gif
+*_shot.png
+ui_layout.png
+font_test.png
+# 주의: 프로젝트 자산(MobRob_GPT.mp4, Screenshot.png)은 추적 유지 — 위 패턴에 안 걸림
+
+# ── 비밀키 (커밋 방지) ──────────────────────────────────
+.env
+*.key
