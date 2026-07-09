@@ -1,6 +1,6 @@
 """시뮬레이터 ↔ 지휘관 브릿지 (배정 방식).
 
-- LLM 은 '어느 클러스터에 몇 척'만 결정(CommanderPlan.deployments).
+- LLM 은 '어느 클러스터에 어느 USV(ally_ids)'를 결정(CommanderPlan.deployments).
 - CommandedSimulator 는 AUTO 모드 유지 → 시뮬의 heuristic_plan + _build_cluster_path 가
   배정(self.assign)으로부터 실제 그물벽 경로를 기하로 생성(요격 링 위 수직벽). 모델이 약해도 확실히 막힘.
 - LLM 배정은 _compute_assignment 에서 주입. 명령 전엔 전원 예비(정지).
@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 
 import numpy as np
@@ -68,6 +69,9 @@ class CommandedSimulator(Simulator):
             cfg = scaled_config(world_size, enemy_speed_mult, geo_lat, geo_lon)
         super().__init__(cfg=cfg, enemy_mode=enemy_mode)
         # manual=False(AUTO) 유지 → step() 이 heuristic_plan() 으로 assign 기반 경로 생성
+        P = self.cfg.n_allies
+        self._deploy_net = np.ones(P, bool)    # 배별 '지금 그물 투척?' (LLM deploy_net, 100스텝마다)
+        self._last_deploy = np.ones(P, bool)   # 직전 투척여부(변경 시 경로 재생성 트리거)
 
     def set_plan(self, plan, command: str | None = None) -> None:
         """LLM 계획 저장 → **매 스텝** 현재 전장으로 재매핑(죽은 배·위치변화 즉시 적응).
@@ -111,6 +115,11 @@ class CommandedSimulator(Simulator):
                 self.assign[:] = prev            # 연속성 힌트로 직전 배정 사용
             state = build_battlefield(self, self._plan_command)
             self._inject_assign(plan_to_assign(self._plan, state))
+            # 배별 그물 투척 여부 = 담당 클러스터의 deploy_net (LLM이 100스텝마다 결정)
+            deploy_by_cluster = {d.cluster_id: bool(d.deploy_net) for d in self._plan.deployments}
+            for i in range(self.cfg.n_allies):
+                k = int(self.assign[i])
+                self._deploy_net[i] = deploy_by_cluster.get(k, True) if k >= 0 else True
             return
         # 3) 고정 배정(하위호환). 없으면 전원 예비(정지).
         if self._commanded_assign is None:
@@ -159,6 +168,40 @@ class CommandedSimulator(Simulator):
                 else:
                     self.a_pos[i] = c + v / d * keep
         np.clip(self.a_pos, 0.0, W, out=self.a_pos)
+
+    def heuristic_plan(self):
+        """One-Way 식 WP 순차 추종: decision_period 강제 재계획을 없애 배가 배정된 WP를
+        끝까지 따라가게 한다(도착 WP는 _step_allies 가 pop → 계속 다음 WP로 진행).
+        경로 재생성은 ①경로 소진 ②담당 클러스터 변경 ③투척여부(deploy_net) 변경 시에만."""
+        cfg = self.cfg
+        for i in range(cfg.n_allies):
+            if not self.a_alive[i]:
+                self.a_paths[i] = []; self._plan_cluster[i] = -2
+                continue
+            k = int(self.assign[i])
+            if k < 0 or self.a_nets[i] <= 0:          # 예비/그물소진 → 정지
+                if not self.a_painting[i]:
+                    self.a_paths[i] = []
+                self._plan_cluster[i] = k
+                continue
+            if self.a_painting[i]:                    # 전개중 = 현재 그물 유지(떨림 방지)
+                continue
+            dep_changed = bool(self._deploy_net[i]) != bool(self._last_deploy[i])
+            if self._plan_cluster[i] == k and self.a_paths[i] and not dep_changed:
+                continue                              # 담당 동일·경로 잔존·투척여부 유지 → 그대로
+            self.a_paths[i] = self._build_cluster_path(i, k)
+            self._plan_cluster[i] = k
+            self._plan_t[i] = self.t
+            self._last_deploy[i] = bool(self._deploy_net[i])
+
+    def _build_cluster_path(self, i, k):
+        """deploy_net=False(LLM 투척 보류)면 요격 진입점까지만 이동 후 대기(그물 미전개).
+        True 면 원본 방사형 그물 부채꼴 경로. LLM 이 100스텝마다 투척 시점을 결정."""
+        path = super()._build_cluster_path(i, k)
+        if path and not self._deploy_net[i]:
+            wp = dict(path[0]); wp["paint"] = False   # 진입 WP 하나·페인트 끔 → 위치만 잡고 대기
+            return [wp]
+        return path
 
 
 def build_battlefield(sim: Simulator, command: str | None = None) -> BattlefieldState:
@@ -240,48 +283,88 @@ def build_battlefield(sim: Simulator, command: str | None = None) -> Battlefield
     )
 
 
-def plan_to_assign(plan, state: BattlefieldState) -> np.ndarray:
-    """CommanderPlan(클러스터별 투입 척수) → sim.assign 배열[P] (아군별 담당 클러스터 idx, -1=예비).
+def _intercept_point(cx, cy, mx, my, v_a, v_e, r_cap):
+    """모선-클러스터 선상의 요격 지점. 반경 = v_a·d/(v_a+v_e), max_intercept 로 캡."""
+    dx, dy = cx - mx, cy - my
+    d = math.hypot(dx, dy)
+    if d < 1e-6:
+        return (mx, my)
+    r = min(v_a * d / (v_a + v_e), r_cap)
+    return (mx + dx / d * r, my + dy / d * r)
 
-    LLM 은 '몇 척'만 정하고, '어느 배'는 여기서 기계적으로 결정한다. 재계획 스래싱(배가
-    매번 담당 클러스터를 갈아타 경로 재생성 → WP1 도 못 감)을 막기 위해 **연속성(sticky)**
-    우선: 이미 그 클러스터를 담당 중이고 여전히 필요한 배는 그대로 유지하고, 남는 슬롯만
-    가장 가까운 미배정 배로 채운다. 아군 부족 시 위협(척수) 큰 클러스터부터 커버.
+
+def _segments_cross(a, b, c, d):
+    """선분 ab, cd 가 교차하면 True (두 배의 직선 경로 충돌 위험 판정)."""
+    def ccw(p, q, r):
+        return (r[1] - p[1]) * (q[0] - p[0]) - (q[1] - p[1]) * (r[0] - p[0])
+    return (ccw(a, b, c) * ccw(a, b, d) < 0) and (ccw(c, d, a) * ccw(c, d, b) < 0)
+
+
+def _ship_cost(a, ipt, assigned_pairs, W):
+    """아군 a 를 요격점 ipt 로 보낼 때의 '효율+안전' 비용(작을수록 좋음).
+
+    효율: 요격점까지 이동거리(≈도착시간) + 선회량 + 그물 보유.
+    안전: 이미 배정된 배들의 경로와 교차하면(충돌 위험) 큰 페널티.
+    """
+    px, py = a.pos.x, a.pos.y
+    ix, iy = ipt
+    travel = math.hypot(ix - px, iy - py)                       # 효율: 이동거리
+    desired = math.degrees(math.atan2(ix - px, iy - py)) % 360.0
+    turn = abs(((desired - a.heading + 180.0) % 360.0) - 180.0)  # 효율: 선회량[deg]
+    turn_pen = (turn / 180.0) * (W * 0.06)
+    nets_pen = 0.0 if a.nets_remaining > 0 else (W * 2.0)         # 그물 없으면 사실상 배제
+    cross_pen = sum(W * 0.7 for (p, q) in assigned_pairs
+                    if _segments_cross((px, py), (ix, iy), p, q))  # 안전: 경로 교차
+    return travel + turn_pen + nets_pen + cross_pen
+
+
+def plan_to_assign(plan, state: BattlefieldState) -> np.ndarray:
+    """CommanderPlan → sim.assign 배열[P] (아군별 담당 클러스터 idx, -1=예비).
+
+    배정 주체는 LLM: 각 deployment 의 ally_ids(어느 USV) 를 그대로 존중한다. LLM 이 비워
+    두거나 지정한 배가 죽어 담당이 0인 클러스터만, 코드가 '효율(거리·선회·그물)+안전(경로
+    교차 회피)' 복합점수(_ship_cost)로 대신 골라 채운다(폴백).
 
     HOLD: plan.hold_ships 의 아군은 배정과 무관하게 assign=-1(제자리 정지)로 덮어쓴다.
     """
     P = len(state.allies)
     assign = np.full(P, -1, np.int64)
-    centers = {c.id: (c.center.x, c.center.y) for c in state.enemy_clusters}
+    clusters = {c.id: c for c in state.enemy_clusters}
     threat = {c.id: c.count for c in state.enemy_clusters}
-    ally_pos = {a.id: (a.pos.x, a.pos.y) for a in state.allies}
-    current = {a.id: a.assigned_cluster for a in state.allies}   # 직전 배정(연속성 힌트)
-
-    # 클러스터별 필요 척수 집계(유효 클러스터만)
-    need: dict[int, int] = {}
-    for dep in plan.deployments:
-        if dep.cluster_id in centers and dep.n_ships >= 1:
-            need[dep.cluster_id] = need.get(dep.cluster_id, 0) + dep.n_ships
+    allies = {a.id: a for a in state.allies}
+    mx, my = state.mothership.pos.x, state.mothership.pos.y
+    con = state.constraints
+    v_a = max(con.ally_speed, 1e-6)
+    r_cap = con.max_intercept_radius
+    W = con.world_size
+    icept = {c.id: _intercept_point(c.center.x, c.center.y, mx, my, v_a,
+                                    max(c.approach_speed, 1e-6), r_cap)
+             for c in state.enemy_clusters}
 
     available = {a.id for a in state.allies if a.alive}          # 격침된 배는 배정 제외
+    assigned_pairs: list = []                                    # 교차검사용 (배pos, 요격점)
 
-    # 1) 연속성: 직전과 동일 클러스터를 계속 담당(경로 유지 → 스래싱 방지)
-    for i in list(available):
-        k = current.get(i)
-        if k is not None and need.get(k, 0) > 0:
-            assign[i] = k
-            need[k] -= 1
-            available.discard(i)
+    def commit(aid, cid):
+        assign[aid] = cid
+        available.discard(aid)
+        assigned_pairs.append(((allies[aid].pos.x, allies[aid].pos.y), icept[cid]))
 
-    # 2) 남은 슬롯: 위협 큰 클러스터부터 가장 가까운 미배정 배로 채움
-    for cid in sorted(need, key=lambda k: -threat.get(k, 0)):
-        cx, cy = centers[cid]
-        while need[cid] > 0 and available:
-            nearest = min(available,
-                          key=lambda i: (ally_pos[i][0] - cx) ** 2 + (ally_pos[i][1] - cy) ** 2)
-            assign[nearest] = cid
-            available.discard(nearest)
-            need[cid] -= 1
+    # 위협 큰 클러스터 먼저 (아군 부족 시 우선 커버 + 교차검사 순서 안정)
+    deps = sorted((d for d in plan.deployments if d.cluster_id in clusters),
+                  key=lambda d: -threat.get(d.cluster_id, 0))
+
+    # 1) LLM 이 지정한 ally_ids 존중 (배정 주체 = LLM)
+    for d in deps:
+        for aid in d.ally_ids:
+            if aid in available:
+                commit(aid, d.cluster_id)
+
+    # 2) 담당 배가 0인 클러스터만 폴백: 효율+안전 복합점수 최소 배 1척
+    for d in deps:
+        if available and not any(assign[j] == d.cluster_id for j in range(P)):
+            pick = min(available, key=lambda i: _ship_cost(allies[i], icept[d.cluster_id],
+                                                           assigned_pairs, W))
+            commit(pick, d.cluster_id)
 
     # 3) HOLD: 지정 아군은 제자리 정지(assign=-1). 전개중이면 그물은 마저 설치됨.
     for i in getattr(plan, "hold_ships", None) or []:

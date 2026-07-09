@@ -39,13 +39,12 @@ def sample_state() -> BattlefieldState:
 
 def print_plan(plan, state) -> None:
     from .sim_bridge import plan_to_assign
-    print("\n=== CommanderPlan (클러스터별 투입 척수) ===")
-    committed = 0
-    for d in sorted(plan.deployments, key=lambda d: -d.n_ships):
-        committed += d.n_ships
-        print(f"  cluster {d.cluster_id}: {d.n_ships}척 투입  net={'Y' if d.deploy_net else '-'}")
-    P = len(state.allies)
-    print(f"  → 투입 {min(committed, P)}척 / 예비 {max(0, P - committed)}척")
+    print("\n=== CommanderPlan (클러스터별 배정 USV) ===")
+    for d in plan.deployments:
+        who = d.ally_ids if d.ally_ids else "자동선택(효율/안전)"
+        print(f"  cluster {d.cluster_id}: USV {who}  net={'Y' if d.deploy_net else '-'}")
+    if plan.hold_ships:
+        print(f"  HOLD(정지): USV {plan.hold_ships}")
     assign = plan_to_assign(plan, state)
     print(f"  → 아군별 배정 assign = {assign.tolist()}  (경로·그물은 시뮬이 기하로 생성)")
     print(f"  rationale: {plan.rationale}")

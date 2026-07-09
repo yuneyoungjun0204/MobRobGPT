@@ -160,8 +160,14 @@ class BattlefieldState(BaseModel):
 # ── 출력: 교전 배분 (LLM은 '어느 클러스터에 몇 척'만 결정 — 경로는 시뮬이 기하로 생성) ──
 class ClusterDeployment(BaseModel):
     cluster_id: int = Field(..., description="담당 적 클러스터 id")
-    n_ships: int = Field(..., description="이 클러스터에 투입할 선박 수 (1 이상)")
-    deploy_net: bool = Field(True, description="투입 선박이 그물을 전개할지")
+    ally_ids: List[int] = Field(default_factory=list,
+                                description="이 클러스터를 맡을 아군 USV id 목록(네가 직접 선택). "
+                                            "효율(요격 위치에 가깝고·선회 적고·그물 보유)이고 안전"
+                                            "(다른 배 경로와 교차·충돌 안 함)한 배를 고를 것. 보통 1척. "
+                                            "비우면 시스템이 효율/안전 기준으로 대신 고른다.")
+    deploy_net: bool = Field(True, description="지금 그물을 투척할지(투척 시점 결정). true=요격 링에 "
+                                              "그물 전개, false=요격 진입점까지 이동 후 대기(아직 투척 안 함). "
+                                              "매 재계획(100스텝)마다 다시 결정 가능.")
 
 
 class CommanderPlan(BaseModel):

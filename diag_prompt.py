@@ -50,9 +50,9 @@ def main():
     plan = cmd.plan(bf)
     fail = (not plan.deployments) and ("실패" in plan.rationale or "미연결" in plan.rationale)
     tag = "실패" if fail else "LLM "
-    dep = [(d.cluster_id, d.n_ships) for d in plan.deployments]
+    dep = [(d.cluster_id, d.ally_ids) for d in plan.deployments]
     assign = plan_to_assign(plan, bf)
-    print(f"[{tag}] deployments(클러스터,척수)={dep}")
+    print(f"[{tag}] deployments(클러스터,USV)={dep}")
     print(f"       assign(아군→클러스터)={assign.tolist()}  (경로·수직그물은 시뮬이 기하로 생성)")
     print(f"  rationale: {plan.rationale}")
     print("\n※ 배정이 위협 큰 클러스터에 척수를 몰면 정상. 경로/그물은 시뮬이 링에 수직으로 깐다.")

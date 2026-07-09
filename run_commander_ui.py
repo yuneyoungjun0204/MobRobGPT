@@ -17,6 +17,9 @@ LLM 전체 재계획은 주기(기본 100 step)마다. 아군끼리 충돌하면
 조작키: [space] 재생/일시정지  [r] 랜덤 리셋  [q] 종료  [a] 자동 재계획 토글
        [1] 집중  [2] 파상  [3] 양동  (상단 버튼과 동일 — 그 대형으로 리셋·재시작)
 옵션: --replan N  (N step 마다 LLM 자동 재계획, 전장 변화 적응. 0=끄기, 기본 100)
+     --rl          (경로 기동을 강화학습 정책으로 — 배정은 여전히 LLM. DefenseVecEnv 백엔드)
+     --gain K      (--rl 시 RL 잔차 배율, 기본 1. 크게 하면 휴리스틱 이탈 과장)
+     --ckpt PATH   (--rl 정책 체크포인트, 기본 boatattack_sim/models/rl_latest.pt)
 """
 import sys
 import random
@@ -34,6 +37,10 @@ def main() -> None:
     enemy = _arg("--enemy", "random")
     backend = "openai" if "--openai" in sys.argv else "ollama"
     replan = int(_arg("--replan", "100"))   # LLM 자동 재계획 주기(step). 0=끄기
+    rl = "--rl" in sys.argv                  # 경로 기동을 RL 정책으로 (배정은 여전히 LLM)
+    gain = float(_arg("--gain", "1"))        # RL 잔차 배율(시각화용)
+    ckpt = _arg("--ckpt", "boatattack_sim/models/rl_latest.pt")
+    apf = "--apf" in sys.argv                # RL 모드 APF(충돌회피 안전층). 기본 OFF, v 키로 토글
     _flagvals = {sys.argv[i + 1] for i, a in enumerate(sys.argv)
                  if a.startswith("--") and i + 1 < len(sys.argv)}
     model = next((a for a in sys.argv[1:] if not a.startswith("-") and a not in _flagvals), None)
@@ -59,9 +66,25 @@ def main() -> None:
     matplotlib.rcParams["axes.unicode_minus"] = False
     warnings.filterwarnings("ignore", message="Glyph .* missing from font")
 
-    sim = CommandedSimulator(enemy_mode=enemy)
+    if rl:   # RL 경로 기동 (배정=LLM, 경로=강화학습 정책 / DefenseVecEnv 백엔드)
+        from commander.rl_bridge import CommandedDefenseEnv, build_battlefield_defense
+        print(f"RL 정책 로딩 중… ({ckpt}, gain={gain})")
+        sim = CommandedDefenseEnv(ckpt, enemy_mode=enemy, gain=gain, avoid_steer=apf)
+        _build_bf = build_battlefield_defense
+    else:    # 휴리스틱 경로 기동 (기존)
+        sim = CommandedSimulator(enemy_mode=enemy)
+        _build_bf = build_battlefield
     sim.reset(seed=0)
     sim.running = True
+
+    def _scalar_t():   # sim.t: CommandedSimulator=스칼라, RL(DefenseVecEnv)=배열([N]) → 스칼라화
+        t = sim.t
+        return int(t.flat[0]) if hasattr(t, "flat") else int(t)
+
+    def _is_done():
+        d = sim.done
+        return bool(d.flat[0]) if hasattr(d, "flat") else bool(d)
+
     commander = make_commander(backend, model)
     model = commander.model   # 실제 사용 모델명(라벨용)
     print(f"모델 로딩 중… ({model}) — 로드 후 창이 뜹니다.")
@@ -139,13 +162,13 @@ def main() -> None:
             return
         info["busy"] = True
         info["last_cmd"] = cmd                    # 자동 재계획이 이 명령을 반복 사용
-        info["last_replan_t"] = sim.t             # 재계획 타이머 리셋
+        info["last_replan_t"] = _scalar_t()       # 재계획 타이머 리셋 (RL: t가 배열 → 스칼라화)
         print(f"\n[on_submit] 콜백 발화, 입력='{cmd}'")
         try:
             info["cmd"], info["status"] = cmd, "지휘관 호출 중…"
             draw_info(); fig.canvas.draw_idle()   # flush_events() 제거 → 키 콜백 재진입 방지
 
-            bf = build_battlefield(sim, command=cmd)
+            bf = _build_bf(sim, command=cmd)
             plan = commander.plan(bf)                      # LLM 동기 호출 (클러스터별 투입 척수)
             assign = plan_to_assign(plan, bf)              # 표시용 초기 매핑
             sim.set_plan(plan, cmd)                        # 매 스텝 재매핑(죽은 배·위치 적응)
@@ -153,7 +176,7 @@ def main() -> None:
             held = set(getattr(plan, "hold_ships", None) or [])
             committed = int((assign >= 0).sum())
             reserve = sim.cfg.n_allies - committed - len(held & {i for i in range(sim.cfg.n_allies) if assign[i] < 0})
-            alloc = "  ".join(f"C{d.cluster_id}:{d.n_ships}척" for d in plan.deployments) or "(없음)"
+            alloc = "  ".join(f"C{d.cluster_id}:{d.ally_ids or '자동'}" for d in plan.deployments) or "(없음)"
 
             def _tag(i, a):
                 if i in held:
@@ -165,7 +188,7 @@ def main() -> None:
             info["rationale"] = plan.rationale
             info["status"] = "배정 적용됨"
             print(f"[명령] {cmd}")
-            print(f"  deployments={[(d.cluster_id, d.n_ships) for d in plan.deployments]}  "
+            print(f"  deployments={[(d.cluster_id, d.ally_ids) for d in plan.deployments]}  "
                   f"hold={sorted(held)}  assign={assign.tolist()}")
             print(f"  rationale: {plan.rationale}")
             draw_info()
@@ -198,6 +221,10 @@ def main() -> None:
             apply_formation("wave", "파상")
         elif k == "3":
             apply_formation("diversionary", "양동")
+        elif k == "v":                              # APF(충돌회피 안전층) 토글 — RL 모드에서 유효
+            sim.cfg.avoid_steer = not getattr(sim.cfg, "avoid_steer", False)
+            info["status"] = f"APF(충돌회피) {'ON' if sim.cfg.avoid_steer else 'OFF'}"
+            draw_info()
         elif k == "a":
             info["auto"] = not info.get("auto")
             info["status"] = (f"자동 재계획 {'ON' if info['auto'] else 'OFF'} "
@@ -222,12 +249,12 @@ def main() -> None:
     btn_div.on_clicked(lambda e: apply_formation("diversionary", "양동"))
 
     def update(_):
-        if sim.running and not sim.done:
+        if sim.running and not _is_done():
             sim.step()
-            # 유동적 재계획: 주기마다 현재 전장으로 LLM 재호출 (전장 변화 적응)
+            # 유동적 재계획: 주기(기본 100 step)마다 현재 전장으로 LLM 재호출 (RL 모드 포함)
             if (info.get("auto") and not info.get("busy")
-                    and sim.t - info.get("last_replan_t", 0) >= info["replan_period"]):
-                print(f"[auto-replan] t={sim.t}")
+                    and _scalar_t() - info.get("last_replan_t", 0) >= info["replan_period"]):
+                print(f"[auto-replan] t={_scalar_t()}")
                 on_submit(info.get("last_cmd", DEFAULT_CMD))
         renderer.draw_scene(ax, sim.get_frame(), bg_img=bg_img, bg_extent=bg_extent)
         return []
