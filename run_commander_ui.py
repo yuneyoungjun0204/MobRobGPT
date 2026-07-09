@@ -41,7 +41,7 @@ def main() -> None:
     # ⚠ renderer 는 import 시점에 rcParams['font.family'] 를 한글폰트 '단일'로 덮어쓴다.
     #    그래서 폰트 설정은 반드시 renderer import '뒤'에 해야 우리 폴백 리스트가 이긴다.
     from boatattack_sim.eval import renderer
-    from commander.sim_bridge import CommandedSimulator, build_battlefield
+    from commander.sim_bridge import CommandedSimulator, build_battlefield, plan_to_assign
     from commander import make_commander
 
     _names = {f.name for f in _fm.fontManager.ttflist}
@@ -109,7 +109,7 @@ def main() -> None:
             "■ 명령(프롬프트)",
             textwrap.fill(info["cmd"], width=32),
             "",
-            "■ 투입/경로 (배별 WP·그물)",
+            "■ 투입 배분 (아군→클러스터)",
             info["assign"],
             "",
             "■ 판단 근거 (rationale)",
@@ -133,22 +133,20 @@ def main() -> None:
             draw_info(); fig.canvas.draw_idle()   # flush_events() 제거 → 키 콜백 재진입 방지
 
             bf = build_battlefield(sim, command=cmd)
-            plan = commander.plan(bf)                      # LLM 동기 호출
-            sim.set_routes(plan.routes)                    # LLM WP 경로 직접 주입
+            plan = commander.plan(bf)                      # LLM 동기 호출 (클러스터별 투입 척수)
+            assign = plan_to_assign(plan, bf)              # 척수 → 아군별 담당 클러스터
+            sim.set_command(assign)                        # 시뮬 주입(경로는 시뮬이 기하로 생성)
 
-            committed = len(plan.routes)
+            committed = int((assign >= 0).sum())
             reserve = sim.cfg.n_allies - committed
-            lines = [f"투입 {committed}척 / 예비 {reserve}척"]
-            for r in sorted(plan.routes, key=lambda r: r.ally_id):
-                nets = sum(1 for w in r.waypoints if w.deploy_net)
-                lines.append(f"#{r.ally_id}: {len(r.waypoints)}WP, 그물 {nets}구간")
-            info["assign"] = "\n".join(lines)
+            alloc = "  ".join(f"C{d.cluster_id}:{d.n_ships}척" for d in plan.deployments) or "(없음)"
+            info["assign"] = (f"투입 {committed}척 / 예비 {reserve}척\n{alloc}\n"
+                              + "  ".join(f"#{i}→C{a}" if a >= 0 else f"#{i}→예비"
+                                         for i, a in enumerate(assign.tolist())))
             info["rationale"] = plan.rationale
-            info["status"] = "경로 적용됨"
+            info["status"] = "배정 적용됨"
             print(f"[명령] {cmd}")
-            for r in sorted(plan.routes, key=lambda r: r.ally_id):
-                pts = " ".join(f"({w.x:.0f},{w.y:.0f}){'*' if w.deploy_net else ''}" for w in r.waypoints)
-                print(f"  ally {r.ally_id}: {pts}")
+            print(f"  deployments={[(d.cluster_id, d.n_ships) for d in plan.deployments]}  assign={assign.tolist()}")
             print(f"  rationale: {plan.rationale}")
             draw_info()
         except Exception as e:
@@ -165,7 +163,7 @@ def main() -> None:
         print(f"\n[대형] {label}({mode}) 리셋+재시작 (콜백 발화)")
         sim.enemy_mode = mode
         sim.reset(seed=random.randint(0, 2_000_000_000))   # 매번 다른 시드 → 변형
-        sim.clear_routes(); sim.running = True
+        sim.set_command(None); sim.running = True
         info["status"] = f"[{label}] 대형 리셋 — 지휘관 호출 중…"
         draw_info(); fig.canvas.draw_idle()
         on_submit(DEFAULT_CMD)
@@ -181,7 +179,7 @@ def main() -> None:
         elif k == "3":
             apply_formation("diversionary", "양동")
         elif k == "r":
-            sim.reset(seed=random.randint(0, 2_000_000_000)); sim.clear_routes(); sim.running = True
+            sim.reset(seed=random.randint(0, 2_000_000_000)); sim.set_command(None); sim.running = True
             info["busy"] = True                 # set_val 이 트리거하는 submit 차단(표시만 갱신)
             try:
                 text_box.set_val(DEFAULT_CMD)   # 입력창 표시를 기본 명령으로 동기화

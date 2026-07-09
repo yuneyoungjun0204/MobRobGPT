@@ -40,42 +40,22 @@ def main():
     model = next((a for a in sys.argv[1:] if not a.startswith("-")), None)
     cmd = make_commander(backend, model)
 
-    # 실제 40m 시뮬 상태로 진단 (qwen 이 WP 를 링까지 보내는지 확인)
+    # 실제 40m 시뮬 상태로 진단 (LLM 배정 → 아군별 담당 클러스터)
+    from commander.sim_bridge import plan_to_assign
     sim = CommandedSimulator(enemy_mode="random"); sim.reset(seed=0)
     bf = build_battlefield(sim, command="모든 적군 포획")
-    cx, cy = bf.mothership.pos.x, bf.mothership.pos.y
     R = bf.constraints.max_intercept_radius
-    print(f"[진단] world={bf.constraints.world_size:.0f}m center=({cx:.1f},{cy:.1f}) "
-          f"reachable_radius R={R:.2f} (그물 링 권장 0.6~0.85R = {0.6*R:.2f}~{0.85*R:.2f})")
+    print(f"[진단] world={bf.constraints.world_size:.0f}m "
+          f"클러스터(id,척수)={[(c.id, c.count) for c in bf.enemy_clusters]} R={R:.2f}")
     plan = cmd.plan(bf)
-    tag = "실패" if (not plan.routes) and ("실패" in plan.rationale or "미연결" in plan.rationale) else "LLM "
-    print(f"[{tag}] routes={len(plan.routes)}척")
-    for r in plan.routes:
-        radii = [math.hypot(w.x - cx, w.y - cy) for w in r.waypoints]
-        nets = sum(1 for w in r.waypoints if w.deploy_net)
-        print(f"  ally {r.ally_id}: WP 중심거리={[round(v,2) for v in radii]}  최대={max(radii):.2f}(R={R:.2f}) 그물{nets}구간")
-        print(f"     좌표={[(round(w.x,1),round(w.y,1)) for w in r.waypoints]}")
+    fail = (not plan.deployments) and ("실패" in plan.rationale or "미연결" in plan.rationale)
+    tag = "실패" if fail else "LLM "
+    dep = [(d.cluster_id, d.n_ships) for d in plan.deployments]
+    assign = plan_to_assign(plan, bf)
+    print(f"[{tag}] deployments(클러스터,척수)={dep}")
+    print(f"       assign(아군→클러스터)={assign.tolist()}  (경로·수직그물은 시뮬이 기하로 생성)")
     print(f"  rationale: {plan.rationale}")
-    print("\n※ WP 중심거리 최대가 R 의 0.5 이상이면 링 도달(정상), 계속 작으면 '자기 앞에만'(문제).")
-    return
-    print(f"백엔드={type(cmd).__name__}  model={cmd.model}")
-    print("전장: C0(정면, 6척)  C1(우, 2척)  C2(좌, 2척)  아군 3척\n")
-
-    commands = [
-        "정면(C0) 밀집 무리에 3척 모두 집중",
-        "오른쪽(C1)만 1척으로 막고 나머지는 예비로 남겨",
-        "세 무리에 1척씩 고르게 분산",
-    ]
-    for c in commands:
-        bf = make_state(c)
-        plan = cmd.plan(bf)
-        summ = [(r.ally_id, len(r.waypoints), sum(1 for w in r.waypoints if w.deploy_net))
-                for r in plan.routes]
-        fail = (not plan.routes) and ("실패" in plan.rationale or "미연결" in plan.rationale)
-        tag = "실패" if fail else "LLM "
-        print(f"[{tag}] 명령: {c}")
-        print(f"      routes (ally, #WP, #net구간) = {summ}")
-        print(f"      rationale: {plan.rationale}\n")
+    print("\n※ 배정이 위협 큰 클러스터에 척수를 몰면 정상. 경로/그물은 시뮬이 링에 수직으로 깐다.")
 
 
 if __name__ == "__main__":

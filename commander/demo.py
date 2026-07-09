@@ -38,15 +38,16 @@ def sample_state() -> BattlefieldState:
 
 
 def print_plan(plan, state) -> None:
-    print("\n=== CommanderPlan (배별 6-WP 경로) ===")
-    for r in sorted(plan.routes, key=lambda r: r.ally_id):
-        nets = sum(1 for w in r.waypoints if w.deploy_net)
-        pts = "  ".join(f"({w.x:.0f},{w.y:.0f}){'*' if w.deploy_net else ''}" for w in r.waypoints)
-        print(f"  ally {r.ally_id}: {len(r.waypoints)} WP, 그물 {nets}구간(*)")
-        print(f"     {pts}")
-    committed = len(plan.routes)
+    from .sim_bridge import plan_to_assign
+    print("\n=== CommanderPlan (클러스터별 투입 척수) ===")
+    committed = 0
+    for d in sorted(plan.deployments, key=lambda d: -d.n_ships):
+        committed += d.n_ships
+        print(f"  cluster {d.cluster_id}: {d.n_ships}척 투입  net={'Y' if d.deploy_net else '-'}")
     P = len(state.allies)
-    print(f"  → 투입 {committed}척 / 예비 {P - committed}척")
+    print(f"  → 투입 {min(committed, P)}척 / 예비 {max(0, P - committed)}척")
+    assign = plan_to_assign(plan, state)
+    print(f"  → 아군별 배정 assign = {assign.tolist()}  (경로·그물은 시뮬이 기하로 생성)")
     print(f"  rationale: {plan.rationale}")
 
 

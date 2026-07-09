@@ -12,12 +12,12 @@ from __future__ import annotations
 
 from .schema import BattlefieldState, CommanderPlan
 from .prompts import SYSTEM_PROMPT, build_user_content
-from ._validate import _validate_routes
+from ._validate import _validate_deployments
 
 
 def _idle_plan(reason: str) -> CommanderPlan:
     """LLM 미적용 시 빈 계획(전원 예비=정지). 폴백 휴리스틱 없음."""
-    return CommanderPlan(routes=[], rationale=reason)
+    return CommanderPlan(deployments=[], rationale=reason)
 
 
 class OllamaCommander:
@@ -68,7 +68,7 @@ class OllamaCommander:
             )
             plan = CommanderPlan.model_validate_json(resp.message.content)
             self._validate_semantics(plan, state)   # 의미 검증(위반 시 예외)
-            self._log(f"LLM 배정 성공 ({self.model}): 투입 {len(plan.routes)}척(6-WP 경로)")
+            self._log(f"LLM 배정 성공 ({self.model}): {len(plan.deployments)}개 클러스터 배분")
             return plan
         except Exception as e:
             self._log(f"LLM 배정 실패({type(e).__name__}: {e}) → 명령 미적용(정지)")
@@ -90,7 +90,7 @@ class OllamaCommander:
             self._log(f"워밍업 실패({e}) — 첫 명령이 느릴 수 있음")
 
     def _validate_semantics(self, plan: CommanderPlan, state: BattlefieldState) -> None:
-        _validate_routes(plan, state)
+        _validate_deployments(plan, state)
 
 
 __all__ = ["OllamaCommander"]

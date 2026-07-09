@@ -32,8 +32,16 @@ def _num2deg(x: float, y: float, z: int):
 
 
 def fetch_satellite_bg(lat0: float, lon0: float, world_size: float,
-                       zoom: int = 19, timeout: float = 6.0):
-    """→ (numpy 이미지, [xmin,xmax,ymin,ymax] meters) 또는 실패 시 None."""
+                       zoom: int | None = None, timeout: float = 6.0):
+    """→ (numpy 이미지, [xmin,xmax,ymin,ymax] meters) 또는 실패 시 None.
+
+    zoom=None 이면 world_size 에 맞춰 자동 선택(박스가 ~3타일 폭이 되도록) → 40m·12600m 모두 대응.
+    """
+    if zoom is None:
+        # 목표: 박스가 대략 3타일(=768px) 폭. mpp = world/768, z = log2(적도mpp·cos / mpp)
+        mpp = max(world_size / 768.0, 1e-6)
+        z = int(round(math.log2(156543.03392 * math.cos(math.radians(lat0)) / mpp)))
+        zoom = max(3, min(19, z))
     key = (round(lat0, 6), round(lon0, 6), round(world_size, 3), zoom)
     if key in _CACHE:
         return _CACHE[key]

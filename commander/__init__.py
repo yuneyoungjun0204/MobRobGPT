@@ -10,7 +10,7 @@
 """
 from .schema import (
     Point, Mothership, EnemyCluster, AllyShip, Constraints,
-    BattlefieldState, Waypoint, ShipRoute, CommanderPlan,
+    BattlefieldState, ClusterDeployment, CommanderPlan,
 )
 from .fallback import heuristic_plan
 from .ollama_commander import OllamaCommander
@@ -33,6 +33,6 @@ def make_commander(backend: str = "ollama", model: str | None = None, **kwargs):
 
 __all__ = [
     "Point", "Mothership", "EnemyCluster", "AllyShip", "Constraints",
-    "BattlefieldState", "Waypoint", "ShipRoute", "CommanderPlan",
+    "BattlefieldState", "ClusterDeployment", "CommanderPlan",
     "heuristic_plan", "OllamaCommander", "OpenAICommander", "make_commander",
 ]

@@ -137,20 +137,14 @@ class BattlefieldState(BaseModel):
         return json.dumps(payload, ensure_ascii=False)
 
 
-# ── 출력: 배별 경로 계획 (LLM 이 WP 좌표와 그물 구간을 직접 생성) ──
-class Waypoint(BaseModel):
-    x: float = Field(..., description="맵 x 좌표[m] (0~world_size)")
-    y: float = Field(..., description="맵 y 좌표[m] (0~world_size)")
-    deploy_net: bool = Field(..., description="직전 WP→이 WP 구간에서 그물을 펼칠지")
-
-
-class ShipRoute(BaseModel):
-    ally_id: int = Field(..., description="이 경로를 수행할 아군 id")
-    waypoints: List[Waypoint] = Field(
-        ..., description="이 배의 경유 좌표. 정확히 6개(WP0=출발 근처 → WP5=가장 바깥).")
+# ── 출력: 교전 배분 (LLM은 '어느 클러스터에 몇 척'만 결정 — 경로는 시뮬이 기하로 생성) ──
+class ClusterDeployment(BaseModel):
+    cluster_id: int = Field(..., description="담당 적 클러스터 id")
+    n_ships: int = Field(..., description="이 클러스터에 투입할 선박 수 (1 이상)")
+    deploy_net: bool = Field(True, description="투입 선박이 그물을 전개할지")
 
 
 class CommanderPlan(BaseModel):
-    routes: List[ShipRoute] = Field(
-        ..., description="투입(배정)할 배마다 6-WP 경로. 여기 없는 배는 예비(정지).")
-    rationale: str = Field(..., description="투입 척수·경로·그물 구간 결정의 판단 근거(생각 과정)")
+    deployments: List[ClusterDeployment] = Field(
+        ..., description="클러스터별 투입 선박 수. 합계는 아군 총수 이하 — 남는 선박은 예비(정지).")
+    rationale: str = Field(..., description="투입 척수·예비 판단 근거(생각 과정)")
