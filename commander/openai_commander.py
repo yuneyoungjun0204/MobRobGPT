@@ -12,7 +12,7 @@ Context7(/openai/openai-python) 확인 API:
 """
 from __future__ import annotations
 
-from .schema import BattlefieldState, CommanderPlan, decode_plan_to_meters
+from .schema import BattlefieldState, CommanderPlan
 from .prompts import SYSTEM_PROMPT, build_user_content
 from ._validate import _validate_routes
 
@@ -53,6 +53,7 @@ class OpenAICommander:
                     {"role": "user", "content": build_user_content(state)},
                 ],
                 response_format=CommanderPlan,   # ← 스키마 강제 + 자동 파싱
+                temperature=0,                   # 결정적 배정 (같은 전장 → 같은 계획)
             )
             msg = completion.choices[0].message
             if getattr(msg, "refusal", None):
@@ -61,7 +62,6 @@ class OpenAICommander:
             if plan is None:
                 raise ValueError("parsed 결과 없음")
             self._validate_semantics(plan, state)
-            decode_plan_to_meters(plan, state)       # 중심 오프셋 → 절대좌표[m]
             self._log(f"LLM 배정 성공 ({self.model}): 투입 {len(plan.routes)}척(6-WP 경로)")
             return plan
         except Exception as e:

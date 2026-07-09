@@ -10,7 +10,7 @@ Context7(/ollama/ollama-python) 확인 API:
 """
 from __future__ import annotations
 
-from .schema import BattlefieldState, CommanderPlan, decode_plan_to_meters
+from .schema import BattlefieldState, CommanderPlan
 from .prompts import SYSTEM_PROMPT, build_user_content
 from ._validate import _validate_routes
 
@@ -68,7 +68,6 @@ class OllamaCommander:
             )
             plan = CommanderPlan.model_validate_json(resp.message.content)
             self._validate_semantics(plan, state)   # 의미 검증(위반 시 예외)
-            decode_plan_to_meters(plan, state)       # 중심 오프셋 → 절대좌표[m]
             self._log(f"LLM 배정 성공 ({self.model}): 투입 {len(plan.routes)}척(6-WP 경로)")
             return plan
         except Exception as e:

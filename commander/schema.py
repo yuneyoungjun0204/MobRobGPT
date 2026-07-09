@@ -96,8 +96,7 @@ class BattlefieldState(BaseModel):
 
             clusters.append({
                 "id": cl.id,
-                # 좌표는 '모선 중심 원점' 프레임 (오른쪽/위 +, 왼쪽/아래 −)
-                "center": [round(cl.center.x - cx, 2), round(cl.center.y - cy, 2)],
+                "center": [round(cl.center.x, 2), round(cl.center.y, 2)],
                 "bearing": cl.bearing,
                 "spread": cl.spread,
                 "count": cl.count,
@@ -115,7 +114,7 @@ class BattlefieldState(BaseModel):
             lane_angle = round((360.0 * i) / n, 2)
             allies.append({
                 "id": a.id,
-                "pos": [round(a.pos.x - cx, 2), round(a.pos.y - cy, 2)],  # 중심 기준 오프셋
+                "pos": [round(a.pos.x, 2), round(a.pos.y, 2)],
                 "heading": a.heading,
                 "nets_remaining": a.nets_remaining,
                 "assigned_cluster": a.assigned_cluster,
@@ -123,9 +122,7 @@ class BattlefieldState(BaseModel):
             })
 
         payload = {
-            "frame": "mothership-centered; +x=right/east, +y=up/north; left/down negative",
-            "center": [0.0, 0.0],                      # 모선 = 원점
-            "arena_half": round(c.world_size / 2.0, 2),  # 좌표 범위: -arena_half ~ +arena_half
+            "center": [round(cx, 2), round(cy, 2)],
             "world_size": c.world_size,
             "mothership_radius": self.mothership.radius,
             "mothership_threat_level": self.mothership.threat_level,
@@ -157,17 +154,3 @@ class CommanderPlan(BaseModel):
     routes: List[ShipRoute] = Field(
         ..., description="투입(배정)할 배마다 6-WP 경로. 여기 없는 배는 예비(정지).")
     rationale: str = Field(..., description="투입 척수·경로·그물 구간 결정의 판단 근거(생각 과정)")
-
-
-def decode_plan_to_meters(plan: CommanderPlan, state: BattlefieldState) -> CommanderPlan:
-    """LLM 출력(모선 중심 원점 오프셋 좌표) → 시뮬 절대좌표[m] 로 변환 (in-place).
-
-    to_prompt_json 이 중심 기준 오프셋으로 내보냈으므로, LLM WP 도 오프셋으로 온다.
-    시뮬(set_routes)은 절대좌표를 기대하므로 여기서 모선 중심을 더해 복원.
-    """
-    cx, cy = state.mothership.pos.x, state.mothership.pos.y
-    for r in plan.routes:
-        for w in r.waypoints:
-            w.x = cx + w.x
-            w.y = cy + w.y
-    return plan

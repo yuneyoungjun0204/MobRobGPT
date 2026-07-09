@@ -11,9 +11,11 @@
     python run_commander_ui.py
     python run_commander_ui.py qwen2.5:7b
     python run_commander_ui.py --enemy wave
-조작키: [space] 재생/일시정지  [r] 리셋  [q] 종료
+조작키: [space] 재생/일시정지  [r] 랜덤 리셋  [q] 종료
+       [1] 집중  [2] 파상  [3] 양동  (상단 버튼과 동일 — 그 대형으로 리셋·재시작)
 """
 import sys
+import random
 import textwrap
 
 
@@ -33,7 +35,7 @@ def main() -> None:
     import matplotlib
     from matplotlib import font_manager as _fm
     import matplotlib.pyplot as plt
-    from matplotlib.widgets import TextBox
+    from matplotlib.widgets import TextBox, Button
     from matplotlib.animation import FuncAnimation
 
     # ⚠ renderer 는 import 시점에 rcParams['font.family'] 를 한글폰트 '단일'로 덮어쓴다.
@@ -72,12 +74,19 @@ def main() -> None:
     except Exception as e:
         print(f"위성 배경 오류({e}) → 해색 배경 폴백")
 
-    fig = plt.figure(figsize=(13.5, 8.8))
-    ax = fig.add_axes((0.03, 0.13, 0.58, 0.83))          # 씬(왼쪽)
-    ax_info = fig.add_axes((0.635, 0.13, 0.35, 0.83))    # 이유 패널(오른쪽)
-    ax_box = fig.add_axes((0.12, 0.04, 0.76, 0.045))     # 명령 입력창(하단)
+    fig = plt.figure(figsize=(13.5, 9.0))
+    ax = fig.add_axes((0.03, 0.11, 0.58, 0.80))          # 씬(왼쪽)
+    ax_info = fig.add_axes((0.635, 0.11, 0.35, 0.80))    # 이유 패널(오른쪽)
+    ax_box = fig.add_axes((0.12, 0.035, 0.76, 0.04))     # 명령 입력창(하단)
+    # 적 대형 버튼 (상단): 누르면 그 대형으로 리셋·재시작
+    ax_b1 = fig.add_axes((0.03, 0.935, 0.16, 0.045))
+    ax_b2 = fig.add_axes((0.205, 0.935, 0.16, 0.045))
+    ax_b3 = fig.add_axes((0.38, 0.935, 0.16, 0.045))
     DEFAULT_CMD = "모든 적군 포획"
     text_box = TextBox(ax_box, "명령 ", initial=DEFAULT_CMD)
+    btn_conc = Button(ax_b1, "집중")
+    btn_wave = Button(ax_b2, "파상")
+    btn_div = Button(ax_b3, "양동")
 
     info = {
         "cmd": "(없음)",
@@ -152,12 +161,27 @@ def main() -> None:
 
     text_box.on_submit(on_submit)
 
+    def apply_formation(mode, label):
+        print(f"\n[대형] {label}({mode}) 리셋+재시작 (콜백 발화)")
+        sim.enemy_mode = mode
+        sim.reset(seed=random.randint(0, 2_000_000_000))   # 매번 다른 시드 → 변형
+        sim.clear_routes(); sim.running = True
+        info["status"] = f"[{label}] 대형 리셋 — 지휘관 호출 중…"
+        draw_info(); fig.canvas.draw_idle()
+        on_submit(DEFAULT_CMD)
+
     def on_key(ev):
         k = (ev.key or "").lower()
         if k == " ":
             sim.running = not sim.running
+        elif k == "1":
+            apply_formation("concentrated", "집중")
+        elif k == "2":
+            apply_formation("wave", "파상")
+        elif k == "3":
+            apply_formation("diversionary", "양동")
         elif k == "r":
-            sim.reset(seed=0); sim.clear_routes(); sim.running = True
+            sim.reset(seed=random.randint(0, 2_000_000_000)); sim.clear_routes(); sim.running = True
             info["busy"] = True                 # set_val 이 트리거하는 submit 차단(표시만 갱신)
             try:
                 text_box.set_val(DEFAULT_CMD)   # 입력창 표시를 기본 명령으로 동기화
@@ -170,6 +194,10 @@ def main() -> None:
             plt.close(fig)
     fig.canvas.mpl_connect("key_press_event", on_key)
 
+    btn_conc.on_clicked(lambda e: apply_formation("concentrated", "집중"))
+    btn_wave.on_clicked(lambda e: apply_formation("wave", "파상"))
+    btn_div.on_clicked(lambda e: apply_formation("diversionary", "양동"))
+
     def update(_):
         if sim.running and not sim.done:
             sim.step()
@@ -181,7 +209,7 @@ def main() -> None:
     print(f"뷰어 실행: model={model}, enemy={enemy}. 기본 명령 '{DEFAULT_CMD}' 자동 적용.")
     on_submit(DEFAULT_CMD)     # 시작 시 기본 명령 자동 실행 (모델 이미 로드됨)
     plt.show()
-    _ = (anim, text_box)
+    _ = (anim, text_box, btn_conc, btn_wave, btn_div)   # 참조 유지(GC 방지)
 
 
 if __name__ == "__main__":
