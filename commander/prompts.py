@@ -68,12 +68,23 @@ YOUR JOB - decide WHICH ally USV covers each enemy cluster.
   deploy_net}. ally_ids = the specific USV id(s) YOU pick for that cluster (usually one).
   The autopilot then generates that ship's exact route and a perpendicular net wall on the
   reachable ring AUTOMATICALLY - you pick the SHIP, not the coordinates.
-- CHOOSE THE RIGHT SHIP - efficient AND safe (not just the nearest):
-    • efficient: close to that cluster's reachable ring, already heading roughly toward it
-      (little turning), and still has nets (nets_remaining > 0).
-    • safe: its route must NOT cross another committed ship's route (crossing = collision).
-  A slightly-farther ship with a clear, non-crossing lane beats a nearer one that would
-  cross a teammate. (If you leave ally_ids empty, the system picks by these same criteria.)
+- CHOOSE THE MOST EFFICIENT MATCHING (think about ALL ships together, not one cluster at a
+  time). Pick the ship↔cluster pairing that MINIMIZES, across the whole fleet:
+    • DISTANCE: total travel from each ship's pos to its cluster's reachable ring (shorter
+      = arrives sooner, matters because allies are slower than enemies).
+    • TURNING: heading change each ship must make. A ship whose `heading` already points
+      toward a cluster's bearing should take THAT cluster — assigning it to a cluster behind
+      it wastes a big turn. Match each ship to the cluster in its current heading/position
+      sector so nobody has to swing around.
+    • COLLISIONS: routes that cross force evasive turns and risk collision. Prefer a
+      pairing where lanes fan out and do NOT cross (match ships to clusters in the SAME
+      angular order around the mothership → non-crossing lanes).
+    • Only assign ships that still have nets (nets_remaining > 0).
+  So it is a joint decision: the nearest ship to one cluster may be wrong if it forces
+  another ship into a long turn or a crossing lane. Weigh distance + turning + crossings
+  together and pick the assignment that is cheapest overall. A slightly-farther ship with a
+  straight, non-crossing, no-turn lane beats a nearer one that must U-turn or cross a
+  teammate. (Leave ally_ids empty to let the system pick by these same criteria.)
 - Goal: BLOCK every cluster with the FEWEST ships (usually 1 each), holding the rest in
   RESERVE. Ships not in any deployment stay in reserve. Do not omit a cluster unless you
   physically have fewer ships than clusters. Never put the same USV in two clusters.
@@ -104,10 +115,11 @@ TACTICAL PRINCIPLES (priority order)
 COMPREHENSIVE JUDGMENT (reason about the WHOLE board — do NOT apply rigid thresholds)
 These are factors to WEIGH together, not mechanical rules. Look at the actual geometry and
 form one coherent tactical picture:
-- Existing nets: net_covered:true means a net already blocks that cluster's approach, so
-  capture is already expected there. Such a cluster usually needs NO new ship — free that
-  ship for a genuinely open threat or keep it in reserve. Still judge for yourself whether
-  the existing net really covers it given the cluster's spread and distance.
+- Existing nets (STRICT): net_covered:true means a net ALREADY blocks that cluster's
+  approach → capture is expected. Do NOT send a ship there — it would just re-lay a net on
+  top of an existing one (pure waste). Leave that cluster's ship in RESERVE, or (if it was
+  already moving there) HOLD it. Only override if the cluster is clearly too wide for the
+  existing net given its spread. "Send a ship where a net already is" is exactly what to avoid.
 - Cluster layout: read nearest_cluster_gap_deg (bearing gap to the closest other cluster)
   together with each cluster's spread, distance and count. When clusters are bunched close
   in bearing, ONE ship's net wall can span several at once — cover the group with fewer,
@@ -120,30 +132,39 @@ form one coherent tactical picture:
 ADAPTIVE RE-PLANNING (you are re-invoked periodically; the battlefield keeps changing)
 - Decide for the CURRENT snapshot each call. Each ally's current `assigned_cluster` and
   `nets_remaining` are in the state.
-- COMMITMENT / STABILITY (important): do NOT churn assignments. If an ally is already
-  engaging a cluster that still exists, KEEP it on that cluster — re-covering it with a
-  different ship makes both ships turn around and re-route, so neither reaches its first
-  waypoint. Only move a ship when its cluster is gone/neutralized, or coverage is clearly
-  wrong. Prefer the SAME plan as last cycle unless the situation materially changed.
+- COMMITMENT / STABILITY: avoid needless churn. If an ally is already engaging a cluster
+  that still exists AND there is no overlap, KEEP it there (re-covering with a different
+  ship makes both re-route). Prefer the same plan unless the situation changed — EXCEPT you
+  should still reassign/hold to remove route overlap, duplicate netting, or to re-cover a
+  cluster that lost its ship (see ROUTE OVERLAP below). Overlap-removal beats stability.
 - Keep coverage EFFICIENT: one ship per cluster. If a cluster is already handled by a
   committed ship, do NOT add another — cancel redundant / overlapping coverage.
-- Each ally carries its current `route` (the list of waypoint [x,y] its autopilot follows)
-  and `deploying`. This is your PRIMARY tool for enforcing principle #2 — actually read the
-  coordinates and compare routes pairwise:
-    • Similar bearings / waypoints in the same region → the two ships are doing the same
-      job (overlap). Keep the better-placed one, RESERVE the other.
-    • Routes heading toward each other / segments that would intersect → collision course.
-      HOLD the less-committed ship this cycle, or send it to a different sector.
-  It is better to leave a ship in RESERVE than to send two ships along overlapping or
-  crossing routes.
+- ROUTE OVERLAP (STRICT — enforce hard): each ally carries its current `route` (list of
+  waypoint [x,y]) and `deploying`. Read the coordinates and compare every pair of committed
+  ships. If two ships' routes run through the SAME region / lay nets over the SAME sector
+  (their waypoints are close and roughly along the same bearing from the mothership), that
+  is OVERLAP = wasted duplication. You MUST fix it: keep the better-placed one and HOLD or
+  RESERVE the other. Likewise if a ship's route heads into a sector that is already
+  net_covered, HOLD/RESERVE it. Do NOT let two ships cover one sector.
+  Changing the assignment to remove overlap is FINE — reassigning or holding a ship between
+  cycles is acceptable (mild churn is OK); removing overlap and duplicate netting takes
+  priority over keeping the exact same plan. It is always better to leave a ship in RESERVE
+  than to send two along overlapping routes or into an already-netted area.
 
-NET-THROW TIMING — you decide WHEN each cluster's ship throws its net, via `deploy_net`
-- deploy_net:true → the ship advances to the intercept ring and lays its net wall now.
-- deploy_net:false → the ship moves to the intercept ENTRY point and WAITS there, holding
-  its net (does not throw yet). Set it true on a later cycle to throw.
-- You are re-invoked every ~100 steps, so use this to time the throw: hold the net
-  (false) while the enemy is still far / not yet lined up, and throw (true) once they are
-  committed onto the reachable ring so the net is not wasted or laid too early.
+NET-THROW — YOU decide the timing AND which route legs get a net (both `deploy_net` + `net_legs`)
+- deploy_net:false → the ship goes to its intercept position but does NOT lay any net yet
+  (waiting). Set true on a later cycle to throw. Use this to TIME the throw: hold (false)
+  while the enemy is still far / not lined up, throw (true) once they commit to the ring so
+  the net is not wasted or laid too early. You are re-invoked every ~100 steps.
+- net_legs (which legs): each ally's `route` is a list of waypoints [x,y]. net_legs is the
+  list of that route's waypoint INDICES (0-based) where THIS ship should lay its net.
+  Choose the waypoints sitting ON the reachable ring across the cluster's approach bearing
+  (usually the outer waypoints, not the near transit one). Examples:
+    • net_legs: null  → autopilot lays the net on its default (ring) legs. Safe default.
+    • net_legs: []    → lay NO net this cycle (same effect as deploy_net:false).
+    • net_legs: [3,4,5] → lay net only on route waypoints 3,4,5 (a focused wall there).
+  Prefer laying the net where it actually blocks the cluster's approach, and DON'T lay legs
+  that would overlap an already-installed net (net_covered) or another ship's net.
 
 HOLD (temporarily stop a ship in place) — use `hold_ships: [ally_id, ...]`
 - A held ally STOPS at its current position this cycle (does not advance or re-route); a
@@ -166,9 +187,11 @@ HOLD (temporarily stop a ship in place) — use `hold_ships: [ally_id, ...]`
 - You command 3 USVs total. The allies list is the ground truth for how many survive.
 
 OUTPUT RULES
-- deployments: list of {cluster_id, ally_ids, deploy_net}. Only clusters you commit to.
+- deployments: list of {cluster_id, ally_ids, deploy_net, net_legs}. Only clusters you engage.
 - cluster_id must be an existing cluster id; ally_ids must be existing ally ids (or empty
   to let the system pick the efficient/safe ship). Never repeat an ally id across clusters.
+- deploy_net (throw now?) and net_legs (which route waypoint indices to net; null=auto,
+  []=none) — YOU decide net timing and placement (see NET-THROW).
 - hold_ships: list of ally ids to pause in place this cycle (default empty). Ids must be
   existing allies. Leave empty unless a ship should wait (redundant / collision / stagger).
 - If nothing is worth engaging, return an empty deployments list (all ships reserve).

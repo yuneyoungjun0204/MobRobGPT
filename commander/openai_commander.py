@@ -14,12 +14,15 @@ from __future__ import annotations
 
 from .schema import BattlefieldState, CommanderPlan
 from .prompts import SYSTEM_PROMPT, build_user_content
-from ._validate import _validate_deployments
+from ._validate import sanitize_plan
+from .fallback import heuristic_plan
 
 
-def _idle_plan(reason: str) -> CommanderPlan:
-    """LLM 미적용 시 빈 계획(전원 예비=정지). 폴백 휴리스틱 없음."""
-    return CommanderPlan(deployments=[], rationale=reason)
+def _fallback(state: BattlefieldState, reason: str) -> CommanderPlan:
+    """LLM 실패 시 전원 정지 대신 위협비례 휴리스틱으로 방어(전 클러스터 커버). 이유 병기."""
+    plan = heuristic_plan(state)
+    plan.rationale = f"{reason} → 휴리스틱 방어. {plan.rationale}"
+    return plan
 
 
 class OpenAICommander:
@@ -44,7 +47,7 @@ class OpenAICommander:
 
     def plan(self, state: BattlefieldState) -> CommanderPlan:
         if self.client is None:
-            return _idle_plan("OpenAI 미연결 — 명령 미적용(정지 유지)")
+            return _fallback(state, "OpenAI 미연결")
         try:
             completion = self.client.chat.completions.parse(
                 model=self.model,
@@ -61,20 +64,17 @@ class OpenAICommander:
             plan = msg.parsed
             if plan is None:
                 raise ValueError("parsed 결과 없음")
-            self._validate_semantics(plan, state)
+            plan = sanitize_plan(plan, state)       # 거부 대신 정제(중복 ally/무효 id 수리)
             self._log(f"LLM 배정 성공 ({self.model}): {len(plan.deployments)}개 클러스터 배분")
             return plan
         except Exception as e:
-            self._log(f"LLM 배정 실패({type(e).__name__}: {e}) → 명령 미적용(정지)")
-            return _idle_plan(f"LLM 실패({type(e).__name__}) — 명령 미적용(정지)")
+            self._log(f"LLM 배정 실패({type(e).__name__}: {e}) → 휴리스틱 방어")
+            return _fallback(state, f"LLM 실패({type(e).__name__})")
 
     def warmup(self) -> None:
         """클라우드 API 는 사전 로드 개념이 없음 — 연결 여부만 로그."""
         if self.client is not None:
             self._log(f"OpenAI 준비됨: {self.model}")
-
-    def _validate_semantics(self, plan: CommanderPlan, state: BattlefieldState) -> None:
-        _validate_deployments(plan, state)
 
 
 __all__ = ["OpenAICommander"]

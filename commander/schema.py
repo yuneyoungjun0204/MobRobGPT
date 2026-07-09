@@ -165,9 +165,13 @@ class ClusterDeployment(BaseModel):
                                             "효율(요격 위치에 가깝고·선회 적고·그물 보유)이고 안전"
                                             "(다른 배 경로와 교차·충돌 안 함)한 배를 고를 것. 보통 1척. "
                                             "비우면 시스템이 효율/안전 기준으로 대신 고른다.")
-    deploy_net: bool = Field(True, description="지금 그물을 투척할지(투척 시점 결정). true=요격 링에 "
-                                              "그물 전개, false=요격 진입점까지 이동 후 대기(아직 투척 안 함). "
+    deploy_net: bool = Field(True, description="지금 그물을 투척할지(투척 시점 결정). true=그물 전개, "
+                                              "false=요격 위치로 이동만 하고 아직 안 깖(대기). "
                                               "매 재계획(100스텝)마다 다시 결정 가능.")
+    net_legs: Optional[List[int]] = Field(
+        None, description="그물을 깔 경로 WP 인덱스 목록(그 배 route 기준, 0부터). "
+                          "None=자동(요격 링 구간에 기본 전개), []=이번엔 안 깖(대기), "
+                          "[3,4,5]=해당 WP 구간에만. deploy_net=false 면 무시(안 깖).")
 
 
 class CommanderPlan(BaseModel):

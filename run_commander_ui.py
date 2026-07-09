@@ -225,6 +225,10 @@ def main() -> None:
             sim.cfg.avoid_steer = not getattr(sim.cfg, "avoid_steer", False)
             info["status"] = f"APF(충돌회피) {'ON' if sim.cfg.avoid_steer else 'OFF'}"
             draw_info()
+        elif k == "c" and hasattr(sim, "resolve_conflicts"):   # 경로 겹침 해소(중복 HOLD) 토글 — RL
+            sim.resolve_conflicts = not sim.resolve_conflicts
+            info["status"] = f"경로중복 해소 {'ON' if sim.resolve_conflicts else 'OFF'}"
+            draw_info()
         elif k == "a":
             info["auto"] = not info.get("auto")
             info["status"] = (f"자동 재계획 {'ON' if info['auto'] else 'OFF'} "

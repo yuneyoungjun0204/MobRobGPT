@@ -68,14 +68,31 @@ def build_battlefield_defense(env: "DefenseVecEnv", command: str | None = None) 
     cent = cl["centroid"][w]; cnt = cl["count"][w]
     active = cl["active"][w]; spread = cl["spread_deg"][w]
 
+    # 설치된 그물 셀의 (방위, 반경) → 클러스터별 net_covered (이미 그물 깔린 접근로)
+    ni = env.net_installed[w]
+    if ni.any():
+        G = ni.shape[0]; cell = cfg.world_size / G
+        ii, jj = np.where(ni)
+        nx = (ii + 0.5) * cell; ny = (jj + 0.5) * cell
+        net_brg = np.degrees(np.arctan2(nx - c[0], ny - c[1])) % 360.0
+        net_dist = np.hypot(nx - c[0], ny - c[1])
+    else:
+        net_brg = net_dist = None
+    NET_TOL_DEG = 6.0
+
     clusters = []
     for k in range(cfg.n_clusters):
         if not bool(active[k]) or int(cnt[k]) == 0:
             continue
         bearing = float(np.degrees(np.arctan2(cent[k, 0] - c[0], cent[k, 1] - c[1])) % 360.0)
+        cdist = float(np.hypot(cent[k, 0] - c[0], cent[k, 1] - c[1]))
+        net_covered = False
+        if net_brg is not None:
+            dbrg = np.abs(((net_brg - bearing + 180.0) % 360.0) - 180.0)
+            net_covered = bool(np.any((dbrg <= NET_TOL_DEG) & (net_dist < cdist) & (net_dist > 1.0)))
         clusters.append(EnemyCluster(
             id=k, center=Point(x=float(cent[k, 0]), y=float(cent[k, 1])),
-            bearing=bearing, spread=float(spread[k]),
+            bearing=bearing, spread=float(spread[k]), net_covered=net_covered,
             count=int(cnt[k]), approach_speed=float(cfg.enemy_speed)))
 
     Kw = env.Kw
@@ -132,6 +149,9 @@ class CommandedDefenseEnv(DefenseVecEnv):
         self._SK = ("captures", "breaches", "ally_collisions", "nets_used")
         self.stats = {k: 0 for k in self._SK + ("survived",)}
         self._sprev = {k: 0.0 for k in self._SK}
+        self.resolve_conflicts = False  # 기본 OFF: 겹침/중복 판단은 LLM 이 담당(프롬프트). c 키로 코드 강제 ON
+        self._cmd_deploy = np.ones(self.P, bool)   # 배별 그물 투척 여부(LLM deploy_net)
+        self._cmd_net_legs = [None] * self.P       # 배별 그물 레그 WP 인덱스(LLM net_legs; None=자동)
 
     # ── LLM 계획 주입 (매 결정 현재 상태로 재매핑) ──
     def set_plan(self, plan, command: str | None = None) -> None:
@@ -151,6 +171,13 @@ class CommandedDefenseEnv(DefenseVecEnv):
             return
         state = build_battlefield_defense(self, self._plan_command)
         self._inject(plan_to_assign(self._plan, state))
+        # 배별 그물 투척여부·레그 = 담당 클러스터의 deploy_net/net_legs (LLM 결정)
+        deploy_by = {d.cluster_id: bool(d.deploy_net) for d in self._plan.deployments}
+        legs_by = {d.cluster_id: d.net_legs for d in self._plan.deployments}
+        for p in range(self.P):
+            k = int(self._assign[0, p])
+            self._cmd_deploy[p] = deploy_by.get(k, True) if k >= 0 else True
+            self._cmd_net_legs[p] = legs_by.get(k, None) if k >= 0 else None
 
     def _inject(self, a) -> None:
         K = self.cfg.n_clusters
@@ -176,7 +203,78 @@ class CommandedDefenseEnv(DefenseVecEnv):
         if self.gain != 1.0:
             act = dict(act); act["cont"] = act["cont"] * self.gain
         self._apply_actions(_act_to_env(act, 1, self.P, self._actor.Kw))
+        self._apply_net_decision()                           # LLM 의 그물 투척여부·레그로 net_mask 덮어씀
+        if self.resolve_conflicts:
+            self._resolve_route_conflicts()                  # 경로 겹침 → 무리 중 1대만 남기고 HOLD
         self._ev = self.fresh_ev()
+
+    def _apply_net_decision(self):
+        """휴리스틱이 정한 net_mask 를 LLM 의 deploy_net/net_legs 로 덮어쓴다(배정된 배만).
+        deploy_net=False → 그물 0(위치만). net_legs=[i,j] → 그 레그에만. None → 휴리스틱 유지."""
+        Kw = self.Kw
+        for p in range(self.P):
+            if int(self._assign[0, p]) < 0:
+                continue
+            if not self._cmd_deploy[p]:
+                self.net_mask[0, p, :] = False; self.doing_net[0, p] = False
+            elif self._cmd_net_legs[p] is not None:
+                m = np.zeros(Kw, bool)
+                for idx in self._cmd_net_legs[p]:
+                    if 0 <= int(idx) < Kw:
+                        m[int(idx)] = True
+                self.net_mask[0, p] = m
+                if not m.any():
+                    self.doing_net[0, p] = False
+
+    def _resolve_route_conflicts(self):
+        """계획 경로가 '진짜 중복(같은 커버리지)'인 배만 HOLD(제자리 정지). 서로 다른 클러스터로
+        가는(교차하더라도) 경로는 건드리지 않는다 — 과잉 HOLD 로 방어 구멍이 나기 때문. 중복 판정:
+          (1) 같은 클러스터에 2척+ → 요격점 근접/전개중 한 대만 남기고 나머지 HOLD.
+          (2) 계획 경로가 이미 설치된 그물을 지남 → 그 커버는 이미 됨(중복) → HOLD.
+        전개중(doing_net)인 배는 그물을 마저 깔도록 HOLD 대상에서 제외한다.
+        (경로 교차=충돌 위험은 APF/충돌집계가 담당 — 여기서 HOLD 하면 wave 에서 과잉 HOLD.)"""
+        w = 0; P = self.P
+        active = [p for p in range(P)
+                  if int(self._assign[w, p]) >= 0 and bool(self.a_alive[w, p])]
+        if len(active) < 1:
+            return set()
+        R = {p: self.route[w, p] for p in active}
+        dI = {p: float(np.hypot(*(self.a_pos[w, p] - self._assignI[w, p]))) for p in active}
+        painting = {p: bool(self.doing_net[w, p]) for p in active}
+        hold = set()
+
+        # (1) 같은 클러스터 = 중복 → 한 대만 유지(전개중>요격근접), 나머지 HOLD
+        by_cl: dict[int, list] = {}
+        for p in active:
+            by_cl.setdefault(int(self._assign[w, p]), []).append(p)
+        for ps in by_cl.values():
+            if len(ps) > 1:
+                keeper = min([q for q in ps if painting[q]] or ps, key=lambda q: dI[q])
+                hold |= {q for q in ps if q != keeper and not painting[q]}
+
+        # (2) 이미 설치된 그물과 겹치는 경로 → 중복 → HOLD
+        for p in active:
+            if not painting[p] and self._route_hits_net(R[p]):
+                hold.add(p)
+
+        for p in hold:                                        # HOLD 적용: 이번 결정 제자리 정지
+            self._assign[w, p] = -1
+            self.route[w, p, :, :] = self.a_pos[w, p]         # 경로 접어 정지 + 깔끔한 렌더
+        return hold
+
+    def _route_hits_net(self, route_p) -> bool:
+        """계획 경로가 이미 설치된 그물 셀 근방(±1셀)을 지나면 True (그물 중복 전개 방지)."""
+        ni = self.net_installed[0]
+        if not ni.any():
+            return False
+        G = ni.shape[0]; cell = self.cfg.world_size / G
+        for x, y in route_p:
+            ci = int(x / cell); cj = int(y / cell)
+            i0, i1 = max(0, ci - 1), min(G, ci + 2)
+            j0, j1 = max(0, cj - 1), min(G, cj + 2)
+            if ni[i0:i1, j0:j1].any():
+                return True
+        return False
 
     def step(self):
         if bool(self.done[0]):

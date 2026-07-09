@@ -72,6 +72,8 @@ class CommandedSimulator(Simulator):
         P = self.cfg.n_allies
         self._deploy_net = np.ones(P, bool)    # 배별 '지금 그물 투척?' (LLM deploy_net, 100스텝마다)
         self._last_deploy = np.ones(P, bool)   # 직전 투척여부(변경 시 경로 재생성 트리거)
+        self._net_legs = [None] * P            # 배별 그물 깔 WP 인덱스(LLM net_legs; None=자동)
+        self._last_legs = [None] * P           # 직전 net_legs (변경 시 경로 재생성 트리거)
 
     def set_plan(self, plan, command: str | None = None) -> None:
         """LLM 계획 저장 → **매 스텝** 현재 전장으로 재매핑(죽은 배·위치변화 즉시 적응).
@@ -115,11 +117,13 @@ class CommandedSimulator(Simulator):
                 self.assign[:] = prev            # 연속성 힌트로 직전 배정 사용
             state = build_battlefield(self, self._plan_command)
             self._inject_assign(plan_to_assign(self._plan, state))
-            # 배별 그물 투척 여부 = 담당 클러스터의 deploy_net (LLM이 100스텝마다 결정)
+            # 배별 그물 투척 여부·레그 = 담당 클러스터의 deploy_net/net_legs (LLM이 결정)
             deploy_by_cluster = {d.cluster_id: bool(d.deploy_net) for d in self._plan.deployments}
+            legs_by_cluster = {d.cluster_id: d.net_legs for d in self._plan.deployments}
             for i in range(self.cfg.n_allies):
                 k = int(self.assign[i])
                 self._deploy_net[i] = deploy_by_cluster.get(k, True) if k >= 0 else True
+                self._net_legs[i] = legs_by_cluster.get(k, None) if k >= 0 else None
             return
         # 3) 고정 배정(하위호환). 없으면 전원 예비(정지).
         if self._commanded_assign is None:
@@ -186,21 +190,30 @@ class CommandedSimulator(Simulator):
                 continue
             if self.a_painting[i]:                    # 전개중 = 현재 그물 유지(떨림 방지)
                 continue
-            dep_changed = bool(self._deploy_net[i]) != bool(self._last_deploy[i])
+            dep_changed = (bool(self._deploy_net[i]) != bool(self._last_deploy[i])
+                           or self._net_legs[i] != self._last_legs[i])
             if self._plan_cluster[i] == k and self.a_paths[i] and not dep_changed:
-                continue                              # 담당 동일·경로 잔존·투척여부 유지 → 그대로
+                continue                              # 담당 동일·경로 잔존·투척여부·레그 유지 → 그대로
             self.a_paths[i] = self._build_cluster_path(i, k)
             self._plan_cluster[i] = k
             self._plan_t[i] = self.t
             self._last_deploy[i] = bool(self._deploy_net[i])
+            self._last_legs[i] = self._net_legs[i]
 
     def _build_cluster_path(self, i, k):
-        """deploy_net=False(LLM 투척 보류)면 요격 진입점까지만 이동 후 대기(그물 미전개).
-        True 면 원본 방사형 그물 부채꼴 경로. LLM 이 100스텝마다 투척 시점을 결정."""
+        """그물 투척 여부·레그를 LLM 이 결정: deploy_net=False → 요격 진입점까지만(미전개).
+        net_legs=None → 휴리스틱 기본(요격 링 구간 전개). []=미전개. [i,j]=그 WP 인덱스만 전개."""
         path = super()._build_cluster_path(i, k)
-        if path and not self._deploy_net[i]:
-            wp = dict(path[0]); wp["paint"] = False   # 진입 WP 하나·페인트 끔 → 위치만 잡고 대기
+        legs = self._net_legs[i]
+        # 투척 안 함(deploy_net False 또는 net_legs=[]) → 진입 WP 하나만, 페인트 끔
+        if path and (not self._deploy_net[i] or (legs is not None and len(legs) == 0)):
+            wp = dict(path[0]); wp["paint"] = False
             return [wp]
+        # net_legs 지정 → 그 WP 인덱스에만 그물(나머지 transit)
+        if path and legs is not None:
+            legset = {int(x) for x in legs}
+            for idx, wp in enumerate(path):
+                wp["paint"] = idx in legset
         return path
 
 
