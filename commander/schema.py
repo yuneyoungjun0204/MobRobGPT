@@ -36,6 +36,8 @@ class EnemyCluster(BaseModel):
     spread: float = Field(..., description="각 스프레드[deg] — 무리 폭")
     count: int = Field(..., ge=0, description="이 클러스터의 적 척수")
     approach_speed: float = Field(..., description="모선 방향 평균 접근속도[m/step]")
+    net_covered: bool = Field(False, description="접근 방위에 이미 설치된 그물이 있어 포획 예상 여부. "
+                                                "true면 새 배정 불필요(건너뛰고 예비로).")
 
 
 class AllyShip(BaseModel):
@@ -98,6 +100,14 @@ class BattlefieldState(BaseModel):
             r_reach = min(r_reach, c.max_intercept_radius)
             r_reach = max(r_reach, 0.0)
 
+            # 옹기종기 판단용: 가장 가까운 다른 클러스터와의 방위차[deg] (작을수록 밀집)
+            others = [o.bearing for o in self.enemy_clusters if o.id != cl.id]
+            if others:
+                gap = min(abs(((cl.bearing - ob + 180.0) % 360.0) - 180.0) for ob in others)
+                nearest_gap = round(gap, 2)
+            else:
+                nearest_gap = 360.0
+
             clusters.append({
                 "id": cl.id,
                 "center": [round(cl.center.x, 2), round(cl.center.y, 2)],
@@ -109,6 +119,8 @@ class BattlefieldState(BaseModel):
                 "approach_dir": [round(ux, 4), round(uy, 4)],
                 "perp_dir": [round(px, 4), round(py, 4)],
                 "reachable_radius": round(r_reach, 2),
+                "net_covered": cl.net_covered,
+                "nearest_cluster_gap_deg": nearest_gap,
             })
 
         # lane_angle: 아군을 방위상 균등 분리(고유 섹터 보장). 힌트일 뿐 배정은 LLM이 결정.

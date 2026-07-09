@@ -175,16 +175,34 @@ def build_battlefield(sim: Simulator, command: str | None = None) -> Battlefield
     active = cl["active"][0]
     spread = cl["spread_deg"][0]
 
+    # 설치된 그물 셀의 (방위, 반경) 미리 계산 → 클러스터별 net_covered 판정용
+    ni, nj = np.where(sim.net_installed) if hasattr(sim, "net_installed") else (np.array([]), np.array([]))
+    if len(ni):
+        cellsz = sim.grid.cell
+        nx = (ni + 0.5) * cellsz; ny = (nj + 0.5) * cellsz
+        net_brg = np.degrees(np.arctan2(nx - c[0], ny - c[1])) % 360.0
+        net_dist = np.hypot(nx - c[0], ny - c[1])
+    else:
+        net_brg = net_dist = None
+    NET_TOL_DEG = 6.0            # 클러스터 접근 방위 ±허용각 안에 그물이 있으면 커버로 간주
+
     clusters = []
     for k in range(cfg.n_clusters):
         if not bool(active[k]) or int(cnt[k]) == 0:
             continue
         bearing = float(np.degrees(np.arctan2(cent[k, 0] - c[0], cent[k, 1] - c[1])) % 360.0)
+        cdist = float(np.hypot(cent[k, 0] - c[0], cent[k, 1] - c[1]))
+        # 접근 방위(±TOL)에 & 모선~클러스터 사이 반경에 설치 그물이 있으면 포획 예상.
+        net_covered = False
+        if net_brg is not None:
+            dbrg = np.abs(((net_brg - bearing + 180.0) % 360.0) - 180.0)
+            net_covered = bool(np.any((dbrg <= NET_TOL_DEG) & (net_dist < cdist) & (net_dist > 1.0)))
         clusters.append(EnemyCluster(
             id=k,
             center=Point(x=float(cent[k, 0]), y=float(cent[k, 1])),
             bearing=bearing, spread=float(spread[k]),
             count=int(cnt[k]), approach_speed=float(cfg.enemy_speed),
+            net_covered=net_covered,
         ))
 
     allies = [

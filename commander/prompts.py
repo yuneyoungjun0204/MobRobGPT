@@ -72,8 +72,10 @@ YOUR JOB - decide HOW MANY ships to commit to each enemy cluster.
   physically have fewer ships than clusters.
 
 TACTICAL PRINCIPLES (priority order)
-1. COVER EVERY CLUSTER (TOP PRIORITY): assign at least 1 ship to EVERY enemy cluster.
-   An unassigned cluster reaches the mothership unopposed = breach. Never leave one out.
+1. BLOCK EVERY CLUSTER (TOP PRIORITY): every enemy cluster's approach must be blocked.
+   A cluster is blocked if a ship is assigned to it, OR a net already covers it
+   (net_covered:true), OR one ship's net wall spans it together with a neighbor. An
+   otherwise-unblocked cluster reaches the mothership = breach. Never leave one unblocked.
 2. NO OVERLAP, NO COLLISION (TOP PRIORITY, tied with #1 — this is the whole point):
    NEVER let two ships' routes cover the SAME area or CROSS each other. Overlap = wasted
    effort (two ships doing one ship's job = inefficiency). A crossing = collision, and a
@@ -90,6 +92,22 @@ TACTICAL PRINCIPLES (priority order)
 4. If there are FEWER ships than clusters, cover the MOST THREATENING clusters first
    (larger / closer / faster); the rest are unavoidably left uncovered.
 5. Total committed ships (sum of n_ships) must NOT exceed the number of allies.
+
+COMPREHENSIVE JUDGMENT (reason about the WHOLE board — do NOT apply rigid thresholds)
+These are factors to WEIGH together, not mechanical rules. Look at the actual geometry and
+form one coherent tactical picture:
+- Existing nets: net_covered:true means a net already blocks that cluster's approach, so
+  capture is already expected there. Such a cluster usually needs NO new ship — free that
+  ship for a genuinely open threat or keep it in reserve. Still judge for yourself whether
+  the existing net really covers it given the cluster's spread and distance.
+- Cluster layout: read nearest_cluster_gap_deg (bearing gap to the closest other cluster)
+  together with each cluster's spread, distance and count. When clusters are bunched close
+  in bearing, ONE ship's net wall can span several at once — cover the group with fewer,
+  well-placed ships rather than one per cluster. When clusters are well separated, each
+  needs its own ship. Decide from the real geometry, not a fixed cutoff.
+- Synthesize everything — blocking coverage, existing nets, cluster arrangement, route
+  overlap/collision, minimum force — into ONE plan: the fewest ships that leave no cluster
+  unblocked and no two routes overlapping. In rationale, explain the trade-offs you weighed.
 
 ADAPTIVE RE-PLANNING (you are re-invoked periodically; the battlefield keeps changing)
 - Decide for the CURRENT snapshot each call. Each ally's current `assigned_cluster` and
