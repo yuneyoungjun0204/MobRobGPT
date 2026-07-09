@@ -372,12 +372,28 @@ def plan_to_assign(plan, state: BattlefieldState) -> np.ndarray:
             if aid in available:
                 commit(aid, d.cluster_id)
 
-    # 2) 담당 배가 0인 클러스터만 폴백: 효율+안전 복합점수 최소 배 1척
-    for d in deps:
-        if available and not any(assign[j] == d.cluster_id for j in range(P)):
-            pick = min(available, key=lambda i: _ship_cost(allies[i], icept[d.cluster_id],
-                                                           assigned_pairs, W))
-            commit(pick, d.cluster_id)
+    # 2) 담당 배가 0인 클러스터 → 전역 최소비용 매칭(헝가리안)으로 효율 최적 배정.
+    #    탐욕(클러스터별 최근접)은 한 배가 먼저 가져가면 다른 배가 더 나은 매칭을 놓쳐 총
+    #    이동거리·선회가 커짐. 전 아군×미담당클러스터 비용행렬을 한 번에 최소화 → 전역 최적.
+    uncovered = [d.cluster_id for d in deps
+                 if not any(assign[j] == d.cluster_id for j in range(P))]
+    avail = sorted(available)
+    if uncovered and avail:
+        slots = uncovered[:len(avail)]          # 아군 부족 시 위협 큰 클러스터 우선(deps=threat desc)
+        cost = np.array([[_ship_cost(allies[aid], icept[cid], assigned_pairs, W)
+                          for cid in slots] for aid in avail], dtype=float)
+        try:
+            from scipy.optimize import linear_sum_assignment
+            rows, cols = linear_sum_assignment(cost)          # 전역 최소비용(헝가리안)
+        except Exception:                                     # scipy 없으면 탐욕 폴백
+            rows, cols = [], []
+            order = sorted(range(cost.size), key=lambda f: cost.flat[f])
+            for f in order:
+                ri, ci = divmod(f, len(slots))
+                if ri not in rows and ci not in cols:
+                    rows.append(ri); cols.append(ci)
+        for ri, ci in zip(list(rows), list(cols)):
+            commit(avail[ri], slots[ci])
 
     # 3) HOLD: 지정 아군은 제자리 정지(assign=-1). 전개중이면 그물은 마저 설치됨.
     for i in getattr(plan, "hold_ships", None) or []:

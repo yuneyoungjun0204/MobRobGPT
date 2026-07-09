@@ -107,6 +107,11 @@ def main() -> None:
           f"Kw={cfg.transit_wp} wp_adjust_max={cfg.wp_adjust_max}")
 
     cfg.avoid_steer = bool(args.apf)   # 기본 OFF: 순수 RL 경로(APF 안전층 없음)
+    cfg.enemy_wave_near = 2600.0       # 파상: 웨이브 간 텀 확실히 (gap↑, near↓ → 3단이 맵 안)
+    cfg.enemy_wave_gap = 1800.0
+    cfg.spawn_phase_lo = 1.0           # 스폰 랜덤 당김 끄기 → 웨이브 텀 설계대로
+    cfg.free_current_wp = True         # 추종 중인 현재 WP도 매 결정 변동(고정 해제)
+    # 재배정 시 새 경로를 WP1(처음)부터 추종 (preserve_ptr_on_reeng 는 끔=기본)
     env = DefenseVecEnv(num_worlds=1, cfg=cfg, enemy_mode=args.enemy)
     P, Kw = env.P, actor.Kw
 

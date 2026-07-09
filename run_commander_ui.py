@@ -8,7 +8,7 @@
 (Ollama 없으면 위협비례 휴리스틱 폴백.)
 
 배정은 **매 스텝** 현재 전장으로 재매핑(sticky) → 배가 격침되면 남은 배로 자동 재배분.
-LLM 전체 재계획은 주기(기본 100 step)마다. 아군끼리 충돌하면 양쪽 다 격침(비활성화).
+LLM 전체 재계획은 주기(기본 50 step)마다. 아군끼리 충돌하면 양쪽 다 격침(비활성화).
 
 실행:
     python run_commander_ui.py
@@ -16,7 +16,7 @@ LLM 전체 재계획은 주기(기본 100 step)마다. 아군끼리 충돌하면
     python run_commander_ui.py --enemy wave
 조작키: [space] 재생/일시정지  [r] 랜덤 리셋  [q] 종료  [a] 자동 재계획 토글
        [1] 집중  [2] 파상  [3] 양동  (상단 버튼과 동일 — 그 대형으로 리셋·재시작)
-옵션: --replan N  (N step 마다 LLM 자동 재계획, 전장 변화 적응. 0=끄기, 기본 100)
+옵션: --replan N  (N step 마다 LLM 자동 재계획, 전장 변화 적응. 0=끄기, 기본 50)
      --rl          (경로 기동을 강화학습 정책으로 — 배정은 여전히 LLM. DefenseVecEnv 백엔드)
      --gain K      (--rl 시 RL 잔차 배율, 기본 1. 크게 하면 휴리스틱 이탈 과장)
      --ckpt PATH   (--rl 정책 체크포인트, 기본 boatattack_sim/models/rl_latest.pt)
@@ -24,6 +24,7 @@ LLM 전체 재계획은 주기(기본 100 step)마다. 아군끼리 충돌하면
 import sys
 import random
 import textwrap
+import threading
 
 
 def _arg(flag, default=None):
@@ -36,7 +37,7 @@ def _arg(flag, default=None):
 def main() -> None:
     enemy = _arg("--enemy", "random")
     backend = "openai" if "--openai" in sys.argv else "ollama"
-    replan = int(_arg("--replan", "100"))   # LLM 자동 재계획 주기(step). 0=끄기
+    replan = int(_arg("--replan", "50"))    # LLM 자동 재계획 주기(step). 0=끄기
     rl = "--rl" in sys.argv                  # 경로 기동을 RL 정책으로 (배정은 여전히 LLM)
     gain = float(_arg("--gain", "1"))        # RL 잔차 배율(시각화용)
     ckpt = _arg("--ckpt", "boatattack_sim/models/rl_latest.pt")
@@ -128,7 +129,7 @@ def main() -> None:
         "status": "대기 중 (아군 정지)",
         "last_cmd": DEFAULT_CMD,
         "auto": replan > 0,                       # LLM 자동 재계획 ON/OFF
-        "replan_period": replan if replan > 0 else 100,
+        "replan_period": replan if replan > 0 else 50,
         "last_replan_t": 0,
     }
 
@@ -153,26 +154,53 @@ def main() -> None:
                      fontsize=10.5, family=matplotlib.rcParams["font.family"],
                      transform=ax_info.transAxes)
 
+    def _llm_worker(bf, cmd, gen):
+        """백그라운드 스레드: LLM 호출만 수행(시뮬 미접근). 리셋 시 gen 이 바뀌면 결과 폐기."""
+        try:
+            plan = commander.plan(bf)
+            res = ("ok", plan, cmd)
+        except Exception as e:
+            res = ("err", e, cmd)
+        if info.get("gen", 0) == gen:             # 리셋 안 됐을 때만 결과 반영
+            info["_pending"] = res
+
+    def _reset_llm():
+        """리셋/대형변경 시 진행 중 LLM 호출 무효화(결과 폐기) + busy 해제."""
+        info["gen"] = info.get("gen", 0) + 1
+        info["busy"] = False
+        info.pop("_pending", None)
+
     def on_submit(cmd: str):
+        """LLM 호출을 '논블로킹'으로 시작만 한다 → 호출 동안 시뮬은 계속 진행(WP 추종·적 전진).
+        결과는 update() 가 도착 시 _apply_result 로 적용."""
         cmd = (cmd or "").strip()
         if not cmd:
             return
-        if info.get("busy"):        # 재진입 가드: 이전 호출 처리 중이면 무시(중복/스택 방지)
-            print("[on_submit] 이전 명령 처리 중 — 무시")
+        if info.get("busy"):        # 이전 호출 진행 중 — 새 호출 무시(한 번에 하나)
             return
         info["busy"] = True
         info["last_cmd"] = cmd                    # 자동 재계획이 이 명령을 반복 사용
-        info["last_replan_t"] = _scalar_t()       # 재계획 타이머 리셋 (RL: t가 배열 → 스칼라화)
-        print(f"\n[on_submit] 콜백 발화, 입력='{cmd}'")
+        info["last_replan_t"] = _scalar_t()       # 재계획 타이머 리셋
+        info["cmd"], info["status"] = cmd, "지휘관 호출 중… (시뮬 계속 진행)"
+        draw_info(); fig.canvas.draw_idle()
+        bf = _build_bf(sim, command=cmd)          # 전장 스냅샷(메인 스레드) → 스레드로 전달
+        gen = info.get("gen", 0)
+        print(f"\n[on_submit] LLM 호출 시작(논블로킹), 입력='{cmd}'")
+        threading.Thread(target=_llm_worker, args=(bf, cmd, gen), daemon=True).start()
+
+    def _apply_result():
+        """LLM 결과가 도착했으면 메인 스레드에서 계획 적용(현재 전장 기준 재매핑)."""
+        pend = info.pop("_pending", None)
+        if pend is None:
+            return
         try:
-            info["cmd"], info["status"] = cmd, "지휘관 호출 중…"
-            draw_info(); fig.canvas.draw_idle()   # flush_events() 제거 → 키 콜백 재진입 방지
-
-            bf = _build_bf(sim, command=cmd)
-            plan = commander.plan(bf)                      # LLM 동기 호출 (클러스터별 투입 척수)
-            assign = plan_to_assign(plan, bf)              # 표시용 초기 매핑
+            status, payload, cmd = pend
+            if status == "err":
+                raise payload
+            plan = payload
+            bf = _build_bf(sim, command=cmd)               # 결과 도착 시점의 현재 전장으로 매핑
+            assign = plan_to_assign(plan, bf)
             sim.set_plan(plan, cmd)                        # 매 스텝 재매핑(죽은 배·위치 적응)
-
             held = set(getattr(plan, "hold_ships", None) or [])
             committed = int((assign >= 0).sum())
             reserve = sim.cfg.n_allies - committed - len(held & {i for i in range(sim.cfg.n_allies) if assign[i] < 0})
@@ -187,18 +215,15 @@ def main() -> None:
                               + "  ".join(_tag(i, a) for i, a in enumerate(assign.tolist())))
             info["rationale"] = plan.rationale
             info["status"] = "배정 적용됨"
-            print(f"[명령] {cmd}")
-            print(f"  deployments={[(d.cluster_id, d.ally_ids) for d in plan.deployments]}  "
+            print(f"[명령 적용] deployments={[(d.cluster_id, d.ally_ids) for d in plan.deployments]}  "
                   f"hold={sorted(held)}  assign={assign.tolist()}")
-            print(f"  rationale: {plan.rationale}")
-            draw_info()
         except Exception as e:
             import traceback
             traceback.print_exc()
             info["status"] = f"오류: {type(e).__name__}: {e}"
-            draw_info()
         finally:
             info["busy"] = False
+            draw_info()
 
     text_box.on_submit(on_submit)
 
@@ -207,6 +232,7 @@ def main() -> None:
         sim.enemy_mode = mode
         sim.reset(seed=random.randint(0, 2_000_000_000))   # 매번 다른 시드 → 변형
         sim.set_command(None); sim.running = True
+        _reset_llm()                                       # 진행 중 LLM 무효화
         info["status"] = f"[{label}] 대형 리셋 — 지휘관 호출 중…"
         draw_info(); fig.canvas.draw_idle()
         on_submit(DEFAULT_CMD)
@@ -243,6 +269,7 @@ def main() -> None:
                 pass
             finally:
                 info["busy"] = False
+            _reset_llm()                        # 진행 중 LLM 무효화
             on_submit(DEFAULT_CMD)              # 실제 적용 1회
         elif k == "q":
             plt.close(fig)
@@ -254,8 +281,10 @@ def main() -> None:
 
     def update(_):
         if sim.running and not _is_done():
-            sim.step()
-            # 유동적 재계획: 주기(기본 100 step)마다 현재 전장으로 LLM 재호출 (RL 모드 포함)
+            sim.step()                                  # LLM 추론 중에도 계속 진행(WP 추종·적 전진)
+            if info.get("_pending") is not None:        # LLM 결과 도착 → 이번 프레임에 적용
+                _apply_result()
+            # 유동적 재계획: 주기마다 LLM 재호출(논블로킹). busy면 스킵(한 번에 하나).
             if (info.get("auto") and not info.get("busy")
                     and _scalar_t() - info.get("last_replan_t", 0) >= info["replan_period"]):
                 print(f"[auto-replan] t={_scalar_t()}")

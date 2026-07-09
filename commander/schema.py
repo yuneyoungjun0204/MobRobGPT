@@ -84,6 +84,7 @@ class BattlefieldState(BaseModel):
         v_a = max(c.ally_speed, 1e-6)
 
         clusters = []
+        icept = {}                                 # 클러스터별 요격점(효율 배정 힌트용)
         for cl in self.enemy_clusters:
             dx, dy = cx - cl.center.x, cy - cl.center.y
             d = math.hypot(dx, dy)
@@ -99,6 +100,8 @@ class BattlefieldState(BaseModel):
             # 전역 상한과 world 경계로 캡.
             r_reach = min(r_reach, c.max_intercept_radius)
             r_reach = max(r_reach, 0.0)
+            # 요격점: 모선에서 클러스터 방향으로 r_reach 만큼 (배가 실제 향하는 지점)
+            icept[cl.id] = (cx - ux * r_reach, cy - uy * r_reach)
 
             # 옹기종기 판단용: 가장 가까운 다른 클러스터와의 방위차[deg] (작을수록 밀집)
             others = [o.bearing for o in self.enemy_clusters if o.id != cl.id]
@@ -128,6 +131,16 @@ class BattlefieldState(BaseModel):
         allies = []
         for i, a in enumerate(self.allies):
             lane_angle = round((360.0 * i) / n, 2)
+            # 효율 배정 힌트: 이 배 → 각 클러스터 요격점까지 거리[m]·선회량[deg] (미리 계산).
+            #   LLM 이 좌표 암산 없이 이 숫자로 '총 거리+선회 최소' 매칭을 고르게 한다.
+            to_clusters = []
+            for cl in self.enemy_clusters:
+                ix, iy = icept[cl.id]
+                dist = math.hypot(ix - a.pos.x, iy - a.pos.y)
+                desired = math.degrees(math.atan2(ix - a.pos.x, iy - a.pos.y)) % 360.0
+                turn = abs(((desired - a.heading + 180.0) % 360.0) - 180.0)
+                to_clusters.append({"id": cl.id, "dist": round(dist, 1), "turn": round(turn, 1)})
+
             allies.append({
                 "id": a.id,
                 "alive": a.alive,
@@ -137,6 +150,8 @@ class BattlefieldState(BaseModel):
                 "assigned_cluster": a.assigned_cluster,
                 "lane_angle": lane_angle,
                 "deploying": a.deploying,
+                # 이 배가 각 클러스터를 맡을 때 이동거리/선회 (효율 배정 근거)
+                "to_clusters": to_clusters,
                 # 현재 자동조종 경로(WP) — LLM이 경로 중복/충돌 판단에 사용
                 "route": [[round(p.x, 2), round(p.y, 2)] for p in a.route],
             })
@@ -167,7 +182,7 @@ class ClusterDeployment(BaseModel):
                                             "비우면 시스템이 효율/안전 기준으로 대신 고른다.")
     deploy_net: bool = Field(True, description="지금 그물을 투척할지(투척 시점 결정). true=그물 전개, "
                                               "false=요격 위치로 이동만 하고 아직 안 깖(대기). "
-                                              "매 재계획(100스텝)마다 다시 결정 가능.")
+                                              "매 재계획(50스텝)마다 다시 결정 가능.")
     net_legs: Optional[List[int]] = Field(
         None, description="그물을 깔 경로 WP 인덱스 목록(그 배 route 기준, 0부터). "
                           "None=자동(요격 링 구간에 기본 전개), []=이번엔 안 깖(대기), "

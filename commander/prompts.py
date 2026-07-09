@@ -68,23 +68,22 @@ YOUR JOB - decide WHICH ally USV covers each enemy cluster.
   deploy_net}. ally_ids = the specific USV id(s) YOU pick for that cluster (usually one).
   The autopilot then generates that ship's exact route and a perpendicular net wall on the
   reachable ring AUTOMATICALLY - you pick the SHIP, not the coordinates.
-- CHOOSE THE MOST EFFICIENT MATCHING (think about ALL ships together, not one cluster at a
-  time). Pick the ship↔cluster pairing that MINIMIZES, across the whole fleet:
-    • DISTANCE: total travel from each ship's pos to its cluster's reachable ring (shorter
-      = arrives sooner, matters because allies are slower than enemies).
-    • TURNING: heading change each ship must make. A ship whose `heading` already points
-      toward a cluster's bearing should take THAT cluster — assigning it to a cluster behind
-      it wastes a big turn. Match each ship to the cluster in its current heading/position
-      sector so nobody has to swing around.
-    • COLLISIONS: routes that cross force evasive turns and risk collision. Prefer a
-      pairing where lanes fan out and do NOT cross (match ships to clusters in the SAME
-      angular order around the mothership → non-crossing lanes).
-    • Only assign ships that still have nets (nets_remaining > 0).
-  So it is a joint decision: the nearest ship to one cluster may be wrong if it forces
-  another ship into a long turn or a crossing lane. Weigh distance + turning + crossings
-  together and pick the assignment that is cheapest overall. A slightly-farther ship with a
-  straight, non-crossing, no-turn lane beats a nearer one that must U-turn or cross a
-  teammate. (Leave ally_ids empty to let the system pick by these same criteria.)
+- CHOOSE THE MOST EFFICIENT MATCHING — YOU (the LLM) decide it, and the numbers are given.
+  Each ally carries `to_clusters`: a list of {id, dist, turn} = the travel distance [m] and
+  turning [deg] for THAT ship to reach EACH cluster's intercept ring. You do NOT need to
+  compute geometry — just read these numbers.
+  Pick the ship↔cluster pairing (one ship per cluster) that MINIMIZES the fleet TOTAL of
+  (dist + turn) across all committed ships — i.e. the assignment where the sum of every
+  chosen ship's `dist` (plus a bit for its `turn`) is smallest. This is a JOINT decision:
+    • The nearest ship to cluster A may be wrong if it forces another ship into a much
+      longer/again-turning trip to cluster B. Compare the WHOLE assignment's total, not each
+      cluster alone. Try the alternatives and keep the lowest total.
+    • Ties / near-ties → prefer the pairing whose lanes do NOT cross (fan out in the same
+      angular order around the mothership) — crossing lanes waste turns and risk collision.
+    • Only assign ships with nets_remaining > 0.
+  Example: allies each list dist to clusters — assign so the sum of chosen dists is minimal
+  (e.g. ship near cluster-A→A, ship near B→B), never sending a ship across the map when a
+  closer one is free. (Leave ally_ids empty only to let the system pick by these criteria.)
 - Goal: BLOCK every cluster with the FEWEST ships (usually 1 each), holding the rest in
   RESERVE. Ships not in any deployment stay in reserve. Do not omit a cluster unless you
   physically have fewer ships than clusters. Never put the same USV in two clusters.
@@ -139,23 +138,24 @@ ADAPTIVE RE-PLANNING (you are re-invoked periodically; the battlefield keeps cha
   cluster that lost its ship (see ROUTE OVERLAP below). Overlap-removal beats stability.
 - Keep coverage EFFICIENT: one ship per cluster. If a cluster is already handled by a
   committed ship, do NOT add another — cancel redundant / overlapping coverage.
-- ROUTE OVERLAP (STRICT — enforce hard): each ally carries its current `route` (list of
-  waypoint [x,y]) and `deploying`. Read the coordinates and compare every pair of committed
-  ships. If two ships' routes run through the SAME region / lay nets over the SAME sector
-  (their waypoints are close and roughly along the same bearing from the mothership), that
-  is OVERLAP = wasted duplication. You MUST fix it: keep the better-placed one and HOLD or
-  RESERVE the other. Likewise if a ship's route heads into a sector that is already
-  net_covered, HOLD/RESERVE it. Do NOT let two ships cover one sector.
-  Changing the assignment to remove overlap is FINE — reassigning or holding a ship between
-  cycles is acceptable (mild churn is OK); removing overlap and duplicate netting takes
-  priority over keeping the exact same plan. It is always better to leave a ship in RESERVE
-  than to send two along overlapping routes or into an already-netted area.
+- REDUNDANCY — KEEP EXACTLY ONE (STRICT, enforce hard). Check every pair of committed ships
+  for TWO kinds of overlap, using each ally's `route` ([x,y] waypoints), `bearing`, and
+  net_covered:
+    (a) PATH redundancy: their routes run through the SAME region — waypoints close together
+        and roughly along the same bearing from the mothership.
+    (b) BLOCKING-AREA redundancy: their net walls would cover the SAME sector/bearing band
+        (same approach corridor), OR a ship heads into a sector already net_covered:true.
+  If EITHER kind of overlap exists between two (or more) ships, that group is redundant —
+  KEEP ONLY ONE (the best-placed: closest/least-turn via `to_clusters`, or already deploying)
+  and HOLD or RESERVE all the others. One sector = one ship. Never lay a net where a net
+  already is. Reassigning/holding to remove redundancy is FINE (mild churn OK) and takes
+  priority over keeping the same plan — better to RESERVE a ship than to duplicate coverage.
 
 NET-THROW — YOU decide the timing AND which route legs get a net (both `deploy_net` + `net_legs`)
 - deploy_net:false → the ship goes to its intercept position but does NOT lay any net yet
   (waiting). Set true on a later cycle to throw. Use this to TIME the throw: hold (false)
   while the enemy is still far / not lined up, throw (true) once they commit to the ring so
-  the net is not wasted or laid too early. You are re-invoked every ~100 steps.
+  the net is not wasted or laid too early. You are re-invoked every ~50 steps.
 - net_legs (which legs): each ally's `route` is a list of waypoints [x,y]. net_legs is the
   list of that route's waypoint INDICES (0-based) where THIS ship should lay its net.
   Choose the waypoints sitting ON the reachable ring across the cluster's approach bearing
