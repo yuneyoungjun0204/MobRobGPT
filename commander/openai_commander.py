@@ -30,9 +30,11 @@ class OpenAICommander:
         self,
         model: str = "gpt-4o-mini",   # 구조적 출력 지원 모델 (gpt-3.5 는 미지원)
         api_key: str | None = None,   # None 이면 OPENAI_API_KEY 환경변수 사용
+        max_tokens: int = 1200,       # 출력 상한 — 정상 plan 은 ~300~500 토큰. 폭주(루프) 조기 차단.
         verbose: bool = True,
     ):
         self.model = model
+        self.max_tokens = int(max_tokens)
         self.verbose = verbose
         try:
             from openai import OpenAI
@@ -54,6 +56,7 @@ class OpenAICommander:
                 messages=build_messages(state),   # system + few-shot + 실제 STATE
                 response_format=CommanderPlan,   # ← 스키마 강제 + 자동 파싱
                 temperature=0,                   # 결정적 배정 (같은 전장 → 같은 계획)
+                max_tokens=self.max_tokens,      # 출력 폭주(길이초과 파싱실패) 방지
             )
             msg = completion.choices[0].message
             if getattr(msg, "refusal", None):

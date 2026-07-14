@@ -27,7 +27,7 @@ def make_commander(backend: str = "ollama", model: str | None = None, **kwargs):
     if b in ("openai", "gpt"):
         return OpenAICommander(model=model or "gpt-4o-mini", **kwargs)
     if b == "ollama":
-        return OllamaCommander(model=model or "qwen2.5:14b", **kwargs)
+        return OllamaCommander(model=model or "qwen2.5:7b", **kwargs)
     raise ValueError(f"알 수 없는 backend: {backend} (ollama|openai)")
 
 

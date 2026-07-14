@@ -26,7 +26,7 @@ def _fallback(state: BattlefieldState, reason: str) -> CommanderPlan:
 class OllamaCommander:
     def __init__(
         self,
-        model: str = "qwen2.5:14b",
+        model: str = "qwen2.5:7b",   # 벤치 결과 14b 대비 품질 동등 이상 + 추론 6배 빠름(구조적 배정엔 7b 충분)
         host: str | None = None,          # 예: "http://localhost:11434" / 원격 함정 서버
         keep_alive: str | float = "10m",  # 모델 상주 → 매 호출 콜드로드 방지
         num_ctx: int = 16384,  # system+few-shot(예시 3개)+STATE+출력 ~9k 토큰 여유(32k 지원)
