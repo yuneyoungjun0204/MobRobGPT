@@ -453,6 +453,33 @@ def plan_to_assign(plan, state: BattlefieldState) -> np.ndarray:
         for ri, ci in zip(list(rows), list(cols)):
             commit(avail[ri], slots[ci])
 
+    # 2.5) 효율 보정(2-opt): 배정된 배 쌍의 담당 클러스터를 맞바꿔 총 (이동거리+선회+경로교차)
+    #   이 뚜렷이 줄면 스왑한다. LLM 이 낸 '왼쪽 클러스터를 오른쪽 배가' 식 교차/비효율 배정을
+    #   제거(같은 배·클러스터 집합에서 '짝'만 최적화 → 최근접·최소선회·비교차). 근소차는 연속성
+    #   위해 유지(임계 W*0.1) → 교차(큰 페널티)나 명백한 비효율만 고침.
+    idxs = [aid for aid in range(P) if assign[aid] >= 0]
+    EPS = W * 0.1
+    improved = True
+    guard = 0
+    while improved and guard < 20:
+        improved = False
+        guard += 1
+        for xi in range(len(idxs)):
+            for yi in range(xi + 1, len(idxs)):
+                a1, a2 = idxs[xi], idxs[yi]
+                c1, c2 = int(assign[a1]), int(assign[a2])
+                if c1 == c2 or c1 not in icept or c2 not in icept:
+                    continue
+                s1 = (allies[a1].pos.x, allies[a1].pos.y)
+                s2 = (allies[a2].pos.x, allies[a2].pos.y)
+                cur = (_ship_cost(allies[a1], icept[c1], [(s2, icept[c2])], W)
+                       + _ship_cost(allies[a2], icept[c2], [(s1, icept[c1])], W))
+                swp = (_ship_cost(allies[a1], icept[c2], [(s2, icept[c1])], W)
+                       + _ship_cost(allies[a2], icept[c1], [(s1, icept[c2])], W))
+                if swp < cur - EPS:
+                    assign[a1], assign[a2] = c2, c1
+                    improved = True
+
     # 3) HOLD: 지정 아군은 제자리 정지(assign=-1). 전개중이면 그물은 마저 설치됨.
     for i in getattr(plan, "hold_ships", None) or []:
         if 0 <= int(i) < P:

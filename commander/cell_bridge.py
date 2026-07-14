@@ -47,6 +47,15 @@ class CommandedCellEnv(CommandedDefenseEnv):
         cfg.nets_per_ship = 3                  # ★ 그물 1개만 깔고 멈추던 문제 → 최대 3번 재전개.
         #   a_nets=3 으로 시작 → 그물 완성 후에도 a_nets>0 이라 동결(done) 안 됨 → 매 결정마다
         #   재배정·새 셀 선택·재전개(fresh route 로 leg_netted/paint_dist 리셋 = '기억 리셋').
+        # ★ 전반적 속도 2배(아군·적군). enemy_speed 는 프로퍼티(=ally_speed×enemy_speed_mult)라
+        #   ally_speed 만 2배로 하면 적 속도도 자동 2배 → 비율(2:3) 유지 = 요격 기하 동일, 기동만 빨라짐.
+        #   회전반경 유지 위해 최대 선회각도도 함께 2배(안 그러면 넓게 돌아 요격점 오버슈트).
+        cfg.ally_speed = float(getattr(cfg, "ally_speed", 6.0)) * 2.0        # 6→12 (적 9→18 자동)
+        cfg.ally_max_turn = float(getattr(cfg, "ally_max_turn", 8.0)) * 2.0
+        cfg.enemy_max_turn = float(getattr(cfg, "enemy_max_turn", 5.0)) * 2.0
+        #   ★ 결정 주기도 절반(25→12)으로 → 결정당 이동거리를 1× 수준으로 유지(정책 학습분포 안).
+        #   안 그러면 결정당 2배 이동해 오배치·요격 실패(특히 파상). '진짜 빨리감기' 효과.
+        cfg.decision_period = max(1, int(round(int(getattr(cfg, "decision_period", 25)) / 2)))
         if avoid_steer is not None:
             cfg.avoid_steer = bool(avoid_steer)
         # super().__init__ 가 _compute_assignment 를 부를 수 있으므로 속성 선주입.
@@ -70,12 +79,37 @@ class CommandedCellEnv(CommandedDefenseEnv):
         self.resolve_conflicts = False         # 셀 정책 greedy_joint 가 교차잠금 담당
         self._cmd_deploy = np.ones(self.P, bool)
         self._cmd_net_legs = [None] * self.P   # 셀 모델 미사용(호환용)
+        self._last_cells = None                # 시각화용 최근 선택 셀 [P,K]
 
     # ── LLM 계획 주입: 상위 _compute_assignment 재사용 + HOLD 집합 갱신 ──
     def _compute_assignment(self, assign_pref=None):
         super()._compute_assignment(assign_pref)            # _assign/_assignI 주입 + radius_adjust
         self._held = ({int(i) for i in (self._plan.hold_ships or [])}
                       if self._plan is not None else set())
+
+    # ── 후보셀에서 '이미 그물 깔린 곳' 제외 (행동공간에서 아예 배제) ──
+    def _cell_valid_mask(self):
+        """베이스 pruning 위에, net_installed(설치된 그물) 격자에 걸리는 후보셀을 무효화한다.
+        → 재전개(최대 3회) 배가 기존/팀원 그물 위에 중복으로 다시 깔지 않고 새 위치로 커버 확대.
+        전부 무효로 굶는 배는 원복(그물 위 아니면 어차피 안 굶음; 크래시 방지)."""
+        base = super()._cell_valid_mask()                   # [N,P,C] True=무효
+        ni = self.net_installed[0]
+        if not ni.any():
+            return base
+        G = ni.shape[0]; cell = self.cfg.world_size / G
+        ii, jj = np.where(ni)                               # 설치 그물 격자셀
+        netxy = np.stack([(ii + 0.5) * cell, (jj + 0.5) * cell], axis=1)   # [M,2] 그물셀 중심
+        cw = self.cell_world                                # [C,2]
+        R = max(float(self._cell_half()), 250.0)            # '그물 바로 위' 후보셀만 배제(섹터는 보존 → 굶음·오배치 방지)
+        # 각 후보셀 → 가장 가까운 그물셀 거리 < R 이면 무효(그물 깔린 곳)
+        d2 = ((cw[:, None, 0] - netxy[None, :, 0]) ** 2
+              + (cw[:, None, 1] - netxy[None, :, 1]) ** 2)   # [C,M]
+        occ = d2.min(1) < (R * R)                           # [C]
+        mask = base | occ[None, None, :]                    # 그 후보셀은 모든 배에게 무효
+        short = (~mask).sum(2) < int(self.cfg.cell_nets)    # 유효셀 부족한 배 → 원복(굶음 방지)
+        if short.any():
+            mask = np.where(short[..., None], base, mask)
+        return mask
 
     # ── 셀 정책 결정 + 셀 특유 오버라이드 ──
     def _rl_decide(self):
@@ -94,9 +128,22 @@ class CommandedCellEnv(CommandedDefenseEnv):
                                           cell_world=self.cell_world, mask_radius=self._mask_r)
                  if self._joint else self._actor.greedy(p))
         cells = g["cells"].view(self.N, self.P, -1).cpu().numpy()
+        self._last_cells = cells[0].copy()                  # 시각화용(선택 셀)
         self._apply_actions({"cells": cells})
         self._apply_cell_overrides()                        # HOLD 정지 + deploy_net 끔
         self._ev = self.fresh_ev()
+
+    def cell_viz(self):
+        """UI 오버레이용 후보셀 데이터: 전체후보 / 배별유효 / 그물배제 / 선택셀."""
+        ours = self._cell_valid_mask()[0]                       # net배제 포함(True=무효)
+        base = DefenseVecEnv._cell_valid_mask(self)[0]          # net배제 전
+        excluded = (~base) & ours                              # 유효였는데 그물로 배제
+        return {
+            "world": self.cell_world,
+            "valid": [np.where(~ours[p])[0] for p in range(self.P)],
+            "excluded": [np.where(excluded[p])[0] for p in range(self.P)],
+            "selected": self._last_cells,
+        }
 
     def _apply_cell_overrides(self):
         """셀 정책 적용 뒤 LLM 의 HOLD/deploy_net 을 반영(net_legs 는 셀 모델 미사용).

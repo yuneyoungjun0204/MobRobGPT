@@ -36,6 +36,33 @@ def _arg(flag, default=None):
     return default
 
 
+_CELL_SHIP_COLORS = ["#FF6B6B", "#4ECDC4", "#FFD93D", "#A78BFA"]
+
+
+def _overlay_cells_cmd(ax, viz):
+    """셀 후보 오버레이(잘 보이게): 하늘색=전체후보, 배색=배별유효, 빨강X=그물배제, 흰테두리=선택."""
+    cw = viz["world"]
+    # 전체 후보 — 크고 또렷한 하늘색 점(어두운 배경 대비)
+    ax.scatter(cw[:, 0], cw[:, 1], s=26, c="#8fe0ff", alpha=0.55,
+               edgecolors="#0a2a3a", linewidths=0.5, zorder=2.2)
+    for p, (val, exc) in enumerate(zip(viz["valid"], viz["excluded"])):
+        col = _CELL_SHIP_COLORS[p % len(_CELL_SHIP_COLORS)]
+        if len(val):                                          # 배별 유효 후보 — 배색 큰 점
+            ax.scatter(cw[val, 0], cw[val, 1], s=70, c=col, alpha=0.55,
+                       edgecolors="white", linewidths=0.6, zorder=2.6)
+        if len(exc):                                          # 그물 배제 — 굵은 빨강 X
+            ax.scatter(cw[exc, 0], cw[exc, 1], s=130, marker="X", c="#FF1744",
+                       edgecolors="white", linewidths=1.2, zorder=3.2)
+    sel = viz.get("selected")
+    if sel is not None:                                       # 선택 셀 — 큰 흰테두리 점 + 링
+        for p in range(len(sel)):
+            col = _CELL_SHIP_COLORS[p % len(_CELL_SHIP_COLORS)]
+            ax.scatter(cw[sel[p], 0], cw[sel[p], 1], s=170, facecolors=col,
+                       edgecolors="white", linewidths=2.0, zorder=6)
+            ax.scatter(cw[sel[p], 0], cw[sel[p], 1], s=320, facecolors="none",
+                       edgecolors=col, linewidths=1.4, alpha=0.8, zorder=5.8)
+
+
 def main() -> None:
     enemy = _arg("--enemy", "random")
     backend = "openai" if "--openai" in sys.argv else "ollama"
@@ -45,7 +72,7 @@ def main() -> None:
     if cell:
         rl = True
     gain = float(_arg("--gain", "1"))        # RL 잔차 배율(시각화용; 셀 모델은 무의미)
-    _ckpt_default = "boatattack_sim/models/cell_latest.pt" if cell \
+    _ckpt_default = "boatattack_sim/models/best_mixed_far.pt" if cell \
         else "boatattack_sim/models/rl_latest.pt"
     ckpt = _arg("--ckpt", _ckpt_default)
     apf = "--apf" in sys.argv                # RL 모드 APF(충돌회피 안전층). 기본 OFF, v 키로 토글
@@ -267,6 +294,10 @@ def main() -> None:
             sim.resolve_conflicts = not sim.resolve_conflicts
             info["status"] = f"경로중복 해소 {'ON' if sim.resolve_conflicts else 'OFF'}"
             draw_info()
+        elif k == "z" and cell:                     # 후보셀 오버레이 토글 (셀 모드)
+            info["show_cells"] = not info.get("show_cells", True)
+            info["status"] = f"후보셀 표시 {'ON' if info['show_cells'] else 'OFF'}"
+            draw_info()
         elif k == "a":
             info["auto"] = not info.get("auto")
             info["status"] = (f"자동 재계획 {'ON' if info['auto'] else 'OFF'} "
@@ -302,6 +333,8 @@ def main() -> None:
                 print(f"[auto-replan] t={_scalar_t()}")
                 on_submit(info.get("last_cmd", DEFAULT_CMD))
         renderer.draw_scene(ax, sim.get_frame(), bg_img=bg_img, bg_extent=bg_extent)
+        if cell and info.get("show_cells", True) and hasattr(sim, "cell_viz"):
+            _overlay_cells_cmd(ax, sim.cell_viz())          # 후보셀/그물배제/선택 오버레이 (z 토글)
         return []
 
     draw_info()

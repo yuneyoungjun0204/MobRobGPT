@@ -67,7 +67,7 @@ def _overlay_cells(ax, env, sel, valid, show):
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="셀선택 RL 정책 방어 시청")
-    ap.add_argument("--ckpt", default="boatattack_sim/models/cell_latest.pt")
+    ap.add_argument("--ckpt", default="boatattack_sim/models/best_mixed_far.pt")
     ap.add_argument("--enemy", default="diversionary")
     ap.add_argument("--spf", type=int, default=3, help="프레임당 micro-step 수")
     ap.add_argument("--seed", type=int, default=1)
