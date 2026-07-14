@@ -11,7 +11,7 @@ Context7(/ollama/ollama-python) 확인 API:
 from __future__ import annotations
 
 from .schema import BattlefieldState, CommanderPlan
-from .prompts import SYSTEM_PROMPT, build_user_content
+from .prompts import build_messages
 from ._validate import sanitize_plan
 from .fallback import heuristic_plan
 
@@ -29,7 +29,7 @@ class OllamaCommander:
         model: str = "qwen2.5:14b",
         host: str | None = None,          # 예: "http://localhost:11434" / 원격 함정 서버
         keep_alive: str | float = "10m",  # 모델 상주 → 매 호출 콜드로드 방지
-        num_ctx: int = 4096,
+        num_ctx: int = 16384,  # system+few-shot(예시 3개)+STATE+출력 ~9k 토큰 여유(32k 지원)
         num_predict: int = 800,
         verbose: bool = True,
     ):
@@ -57,13 +57,11 @@ class OllamaCommander:
         try:
             resp = self.client.chat(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": build_user_content(state)},
-                ],
+                messages=build_messages(state),   # system + few-shot + 실제 STATE
                 format=CommanderPlan.model_json_schema(),   # ← 스키마 강제
                 options={
                     "temperature": 0,          # 결정적 배정
+                    "seed": 0,                 # 재현성(프로세스 간 동일 출력 — 평가 신호 안정화)
                     "num_ctx": self.num_ctx,
                     "num_predict": self.num_predict,
                 },

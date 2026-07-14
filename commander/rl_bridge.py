@@ -22,7 +22,7 @@ from boatattack_sim.model.actor import load_actor
 from .schema import (
     BattlefieldState, Mothership, EnemyCluster, AllyShip, Constraints, Point,
 )
-from .sim_bridge import plan_to_assign
+from .sim_bridge import plan_to_assign, route_crosses_net, covered_by_teammate
 
 
 # ── numpy obs ↔ torch, 행동 dict → env (train/grpo.py 와 동일) ──
@@ -96,17 +96,23 @@ def build_battlefield_defense(env: "DefenseVecEnv", command: str | None = None) 
             count=int(cnt[k]), approach_speed=float(cfg.enemy_speed)))
 
     Kw = env.Kw
+    ninst = env.net_installed[w] if hasattr(env, "net_installed") else None
+    cov = covered_by_teammate(env._assignI[w], env._assign[w], env.a_alive[w], c, cfg.net_max_len)
     allies = []
     for i in range(env.P):
         alive = bool(env.a_alive[w, i])
+        pts = [(float(env.route[w, i, k, 0]), float(env.route[w, i, k, 1])) for k in range(Kw)]
+        hits_net = (alive and not bool(env.doing_net[w, i])
+                    and route_crosses_net(pts, ninst, cfg.world_size))
         allies.append(AllyShip(
             id=i, pos=Point(x=float(env.a_pos[w, i, 0]), y=float(env.a_pos[w, i, 1])),
             heading=float(env.a_hdg[w, i]), nets_remaining=int(env.a_nets[w, i]),
             alive=alive,
             assigned_cluster=int(env._assign[w, i]) if int(env._assign[w, i]) >= 0 else None,
-            route=([Point(x=float(env.route[w, i, k, 0]), y=float(env.route[w, i, k, 1]))
-                    for k in range(Kw)] if alive else []),
-            deploying=bool(env.doing_net[w, i])))
+            route=([Point(x=x, y=y) for x, y in pts] if alive else []),
+            deploying=bool(env.doing_net[w, i]),
+            route_hits_net=hits_net,
+            cluster_covered_by_teammate=bool(cov[i])))
 
     if env.e_alive[w].any():
         d = np.hypot(env.e_pos[w, env.e_alive[w], 0] - c[0],
@@ -114,6 +120,11 @@ def build_battlefield_defense(env: "DefenseVecEnv", command: str | None = None) 
         threat = float(np.clip(1.0 - d / (cfg.world_size / 2.0), 0.0, 1.0))
     else:
         threat = 0.0
+
+    # 적 포메이션(집중/양동/파상)을 LLM 에 알려 포메이션별 플레이북을 쓰게 한다.
+    mode = str(env.world_mode[w]) if getattr(env, "world_mode", None) is not None else ""
+    tag = f"[ENEMY FORMATION: {mode}]" if mode else ""
+    cmd_full = (f"{tag} {command}".strip() if command else tag) or None
 
     return BattlefieldState(
         mothership=Mothership(pos=Point(x=float(c[0]), y=float(c[1])),
@@ -124,7 +135,7 @@ def build_battlefield_defense(env: "DefenseVecEnv", command: str | None = None) 
                                 enemy_speed=float(cfg.enemy_speed),
                                 world_size=float(cfg.world_size),
                                 max_intercept_radius=float(cfg.world_size / 3.0)),
-        command=command)
+        command=cmd_full)
 
 
 class CommandedDefenseEnv(DefenseVecEnv):
@@ -134,6 +145,7 @@ class CommandedDefenseEnv(DefenseVecEnv):
                  gain: float = 1.0, avoid_steer: bool = False):
         actor, cfg = load_actor(ckpt, device=device)
         cfg.avoid_steer = bool(avoid_steer)   # 기본 OFF: 순수 RL 경로(APF 안전층 없음). 학습분포 이탈 주의.
+        cfg.n_clusters = 3                     # 클러스터 최대 3개 (LLM 이 3개 그룹으로 다룸)
         # 파상(wave): 웨이브 간 텀을 확실히 → gap↑(1000→1800), near↓(4000→2600)로 3단이 맵 안(≤6300)에.
         cfg.enemy_wave_near = 2600.0
         cfg.enemy_wave_gap = 1800.0
@@ -169,21 +181,33 @@ class CommandedDefenseEnv(DefenseVecEnv):
         self._plan = None
 
     def _compute_assignment(self, assign_pref=None):
-        super()._compute_assignment(assign_pref)             # 기본 배정 + 교점/중심
+        prev = self._assign[0].copy() if getattr(self, "_assign", None) is not None else None
+        super()._compute_assignment(assign_pref)             # 기본 배정 + 교점/중심(_assign 덮어씀)
         if self._plan is None:
             self._assign[0] = -1                             # 명령 전엔 전원 예비(정지)
             self._assignI[0] = 0.0
             self._assign_cent[0] = np.array(self.center)[None, :]
             return
+        if prev is not None:
+            self._assign[0] = prev   # 연속성 기준 = 직전 배정(build_battlefield_defense 가 읽어 sticky)
         state = build_battlefield_defense(self, self._plan_command)
         self._inject(plan_to_assign(self._plan, state))
-        # 배별 그물 투척여부·레그 = 담당 클러스터의 deploy_net/net_legs (LLM 결정)
+        # 배별 그물 투척여부·레그·거리배율 = 담당 클러스터의 deploy_net/net_legs/radius_adjust (LLM)
         deploy_by = {d.cluster_id: bool(d.deploy_net) for d in self._plan.deployments}
         legs_by = {d.cluster_id: d.net_legs for d in self._plan.deployments}
+        rad_by = {d.cluster_id: float(getattr(d, "radius_adjust", 1.0) or 1.0)
+                  for d in self._plan.deployments}
+        c = np.array(self.center, np.float64)
         for p in range(self.P):
             k = int(self._assign[0, p])
             self._cmd_deploy[p] = deploy_by.get(k, True) if k >= 0 else True
             self._cmd_net_legs[p] = legs_by.get(k, None) if k >= 0 else None
+            # 거리 밀기/당기기: 요격점·중심을 모선 기준으로 radius_adjust 배 → 그물벽 반경 이동
+            if k >= 0:
+                r = max(0.5, min(1.6, rad_by.get(k, 1.0)))
+                if r != 1.0:
+                    self._assign_cent[0, p] = c + (self._assign_cent[0, p] - c) * r
+                    self._assignI[0, p] = c + (self._assignI[0, p] - c) * r
 
     def _inject(self, a) -> None:
         K = self.cfg.n_clusters

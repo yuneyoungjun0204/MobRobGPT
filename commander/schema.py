@@ -50,6 +50,11 @@ class AllyShip(BaseModel):
     route: List[Point] = Field(default_factory=list,
                                description="현재 자동조종 경로 WP (경로 중복·충돌 판단용)")
     deploying: bool = Field(False, description="현재 그물 전개 중 여부")
+    route_hits_net: bool = Field(False, description="현재 경로가 이미 설치된 그물을 가로지르는지. "
+                                                    "true면 그 그물에 걸려 격침 위험 → 대기(HOLD)시킬 것.")
+    cluster_covered_by_teammate: bool = Field(
+        False, description="이 배의 담당 클러스터 접근로가 '다른 클러스터에 배정된' 팀원의 그물벽에 "
+                           "이미/곧 차단되는지. true면 이 배는 중복 → 대기(HOLD)시킬 것.")
 
 
 class Constraints(BaseModel):
@@ -131,6 +136,11 @@ class BattlefieldState(BaseModel):
         allies = []
         for i, a in enumerate(self.allies):
             lane_angle = round((360.0 * i) / n, 2)
+            # 아군의 '모선 기준 방위'[deg] — 클러스터 bearing 과 같은 규약(0=북, 시계방향).
+            #   이 값이 클러스터 bearing 과 가까운 아군 = '같은 쪽에 있던' 배 → 그 클러스터를
+            #   맡기면 경로가 교차하지 않는다(non-crossing). 왼쪽 위협→왼쪽 배, 후방→후방 배.
+            bearing_from_center = round(
+                math.degrees(math.atan2(a.pos.x - cx, a.pos.y - cy)) % 360.0, 2)
             # 효율 배정 힌트: 이 배 → 각 클러스터 요격점까지 거리[m]·선회량[deg] (미리 계산).
             #   LLM 이 좌표 암산 없이 이 숫자로 '총 거리+선회 최소' 매칭을 고르게 한다.
             to_clusters = []
@@ -149,7 +159,11 @@ class BattlefieldState(BaseModel):
                 "nets_remaining": a.nets_remaining,
                 "assigned_cluster": a.assigned_cluster,
                 "lane_angle": lane_angle,
+                "bearing_from_center": bearing_from_center,  # 모선 기준 이 배의 방위(클러스터 bearing 과 매칭)
                 "deploying": a.deploying,
+                "route_hits_net": a.route_hits_net,   # 경로가 설치 그물 가로지름 → HOLD 대상
+                "cluster_covered_by_teammate": a.cluster_covered_by_teammate,  # 팀원 그물에 덮임 → 중복
+
                 # 이 배가 각 클러스터를 맡을 때 이동거리/선회 (효율 배정 근거)
                 "to_clusters": to_clusters,
                 # 현재 자동조종 경로(WP) — LLM이 경로 중복/충돌 판단에 사용
@@ -187,6 +201,10 @@ class ClusterDeployment(BaseModel):
         None, description="그물을 깔 경로 WP 인덱스 목록(그 배 route 기준, 0부터). "
                           "None=자동(요격 링 구간에 기본 전개), []=이번엔 안 깖(대기), "
                           "[3,4,5]=해당 WP 구간에만. deploy_net=false 면 무시(안 깖).")
+    radius_adjust: float = Field(1.0, description="이 클러스터 요격 지점을 모선 기준으로 밀거나(>1, 바깥/"
+                                                  "더 멀리서 요격=여유 확보) 당기는(<1, 안쪽/더 가까이) 배율. "
+                                                  "1.0=기본. 빠른 적은 밀어서(>1) 일찍 차단, 아끼려면 당김(<1). "
+                                                  "0.6~1.4 권장.")
 
 
 class CommanderPlan(BaseModel):

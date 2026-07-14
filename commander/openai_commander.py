@@ -13,7 +13,7 @@ Context7(/openai/openai-python) 확인 API:
 from __future__ import annotations
 
 from .schema import BattlefieldState, CommanderPlan
-from .prompts import SYSTEM_PROMPT, build_user_content
+from .prompts import build_messages
 from ._validate import sanitize_plan
 from .fallback import heuristic_plan
 
@@ -51,10 +51,7 @@ class OpenAICommander:
         try:
             completion = self.client.chat.completions.parse(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": build_user_content(state)},
-                ],
+                messages=build_messages(state),   # system + few-shot + 실제 STATE
                 response_format=CommanderPlan,   # ← 스키마 강제 + 자동 파싱
                 temperature=0,                   # 결정적 배정 (같은 전장 → 같은 계획)
             )

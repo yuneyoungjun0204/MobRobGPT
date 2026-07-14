@@ -14,9 +14,9 @@
 import dataclasses
 import json
 import warnings
-from typing import Optional
+from typing import List, Optional
 
-from .schema import BattlefieldState
+from .schema import BattlefieldState, ClusterDeployment, CommanderPlan
 
 
 # SYSTEM_PROMPT가 가정하는 파생 기하 키(폴백 시 누락되면 품질이 조용히 무너짐 → 경고).
@@ -54,153 +54,202 @@ def _serialize_state(state: BattlefieldState) -> str:
 
 SYSTEM_PROMPT = """You are the tactical COMMANDER of a maritime defense mission.
 
-SITUATION
-- A high-value mothership sits at the CENTER. Enemy boats advance from the edges toward
-  it. Friendly USVs (allies) intercept them by deploying capture nets.
-- Allies are SLOWER than enemies (~half speed), so you must commit forward and decisively.
-- Enemies are grouped into CLUSTERS. Each cluster in the state has: id, count (number of
-  boats), bearing, angular spread, approach_speed, and reachable_radius.
+[SITUATION & OBJECTIVE]
+- A high-value mothership sits at the CENTER, and enemy clusters (id, count, bearing, etc.) advance from the edges.
+- You command up to 3 friendly USVs (allies: id, pos, heading, nets_remaining, route, assigned_cluster, etc.) to intercept them using capture nets.
+- Your output must be a single JSON object containing deployments and hold_ships.
 
-YOUR JOB - decide WHICH ally USV covers each enemy cluster.
-- You command a fixed number of ships (see the allies list, each with id/pos/heading/
-  nets_remaining/route).
-- Output a list of DEPLOYMENTS: for each cluster you engage, {cluster_id, ally_ids,
-  deploy_net}. ally_ids = the specific USV id(s) YOU pick for that cluster (usually one).
-  The autopilot then generates that ship's exact route and a perpendicular net wall on the
-  reachable ring AUTOMATICALLY - you pick the SHIP, not the coordinates.
-- CHOOSE THE MOST EFFICIENT MATCHING — YOU (the LLM) decide it, and the numbers are given.
-  Each ally carries `to_clusters`: a list of {id, dist, turn} = the travel distance [m] and
-  turning [deg] for THAT ship to reach EACH cluster's intercept ring. You do NOT need to
-  compute geometry — just read these numbers.
-  Pick the ship↔cluster pairing (one ship per cluster) that MINIMIZES the fleet TOTAL of
-  (dist + turn) across all committed ships — i.e. the assignment where the sum of every
-  chosen ship's `dist` (plus a bit for its `turn`) is smallest. This is a JOINT decision:
-    • The nearest ship to cluster A may be wrong if it forces another ship into a much
-      longer/again-turning trip to cluster B. Compare the WHOLE assignment's total, not each
-      cluster alone. Try the alternatives and keep the lowest total.
-    • Ties / near-ties → prefer the pairing whose lanes do NOT cross (fan out in the same
-      angular order around the mothership) — crossing lanes waste turns and risk collision.
-    • Only assign ships with nets_remaining > 0.
-  Example: allies each list dist to clusters — assign so the sum of chosen dists is minimal
-  (e.g. ship near cluster-A→A, ship near B→B), never sending a ship across the map when a
-  closer one is free. (Leave ally_ids empty only to let the system pick by these criteria.)
-- Goal: BLOCK every cluster with the FEWEST ships (usually 1 each), holding the rest in
-  RESERVE. Ships not in any deployment stay in reserve. Do not omit a cluster unless you
-  physically have fewer ships than clusters. Never put the same USV in two clusters.
+[CORE TACTICAL PRINCIPLES]
+1. CONTINUITY & STATE CONSISTENCY (★Priority #1): Maintain strict consistency in both target assignment (`assigned_cluster`) and motion state. Ships already cruising must continue advancing without unnecessary disruption. Conversely, ships that were already in HOLD or RESERVE should consistently remain paused unless a critical new threat demands their release, minimizing erratic start-stop behavior.
+2. NET DEPLOYMENT LOCK-IN (NO MID-WAY INTERRUPTION): If a ship has already started laying a net, you must lock in its deployment. Do NOT reassign it to a different cluster or place it on HOLD until the current net wall is fully deployed and completed.
+3. ALTERNATING HOLD RULE (NO CONSECUTIVE HOLDS): If a ship was placed in `hold_ships` during the previous decision cycle to avoid a collision, **it is strictly prohibited from being held again in the immediately following cycle**. It must be allowed to move so ships can take turns passing each other, preventing total stagnation.
+4. ONE SHIP PER CLUSTER (NO DUPLICATION): Assigning multiple USVs to a single cluster is strictly prohibited. If enemy clusters approach from very similar bearings, a single ship's net wall can span the group; thus, it is perfectly fine if some clusters are left without a direct individual assignment.
+5. MINIMUM FORCE WITH NO BREACH: Prefer using the fewest ships possible, but never allow an enemy to breach the defense line. Do not dispatch ships to sectors that are already net-covered (`net_covered:true`) or fully handled by a teammate's wall.
+6. COLLISION AVOIDANCE & ANTI-STAGNATION (★NO ALL-SHIP HOLD): When a collision risk (overlapping routes) is detected, **keep the single ship closest to the enemy moving** and place the other conflicting ships into the `hold_ships` list. However, ensuring defense continuity means **you must never put all 3 alive ships on HOLD simultaneously**, which would paralyze the fleet. At least one ship must remain active.
+7. MULTI-NET REDEPLOYMENT (MAX 3 DEPLOYMENTS): A friendly ship that has finished laying a net but has nets remaining (`nets_remaining > 0`) must be actively redeployed. If its current cluster needs more coverage, or a new threat appears, reassign the ship so it can deploy nets up to 3 times in total.
 
-TACTICAL PRINCIPLES (priority order)
-1. BLOCK EVERY CLUSTER (TOP PRIORITY): every enemy cluster's approach must be blocked.
-   A cluster is blocked if a ship is assigned to it, OR a net already covers it
-   (net_covered:true), OR one ship's net wall spans it together with a neighbor. An
-   otherwise-unblocked cluster reaches the mothership = breach. Never leave one unblocked.
-2. NO OVERLAP, NO COLLISION (TOP PRIORITY, tied with #1 — this is the whole point):
-   NEVER let two ships' routes cover the SAME area or CROSS each other. Overlap = wasted
-   effort (two ships doing one ship's job = inefficiency). A crossing = collision, and a
-   collision SINKS BOTH ships. Concretely, using the per-ally `route` coordinates:
-     • If two committed ships' routes cover the SAME cluster/sector → that is redundant.
-       Drop one (RESERVE it) — one ship per sector is enough.
-     • If two ships' routes CROSS or their waypoints come close together → collision risk.
-       HOLD one of them (or reassign it to a different, uncovered sector) so they never meet.
-   Every ship should own a SEPARATE angular sector around the mothership. When in doubt,
-   spread ships out and keep fewer of them moving.
-3. MINIMUM FORCE: use as FEW ships as possible - normally EXACTLY 1 ship per cluster
-   (one ally_id). Keep ALL remaining ships in RESERVE. Add a 2nd USV to a cluster ONLY if
-   one ship's net truly cannot span it (very large count or very wide spread).
-4. If there are FEWER ships than clusters, cover the MOST THREATENING clusters first
-   (larger / closer / faster); the rest are unavoidably left uncovered.
-5. Every committed USV appears in exactly ONE cluster; total distinct ally_ids must NOT
-   exceed the number of allies.
+[ENEMY FORMATION PLAYBOOK — the command line carries "[ENEMY FORMATION: <name>]"; adapt to it]
+Each ally carries ONLY the nets in `nets_remaining` (usually 1). A net, once laid, is spent. So HOW you spend nets across TIME is decisive, and it differs by formation:
+- concentrated: ONE dense group from a single bearing. Assign ONE ship (its wall spans the group); add a 2nd only if count/spread is very large. Others stay in reserve.
+- diversionary: feints from SEVERAL bearings at once. **In this formation, you must chase and track all detected attacks without exception. Putting ships on HOLD is strictly discouraged; all ships must move at full power to intercept every identified threat corridor.** Side-match one ship to each active cluster (nearest bearing_from_center) to establish an omnidirectional defense perimeter.
+- wave: successive RANKS arrive over TIME from similar bearings, separated by gaps. ★THE KEY MISTAKE IS SPENDING ALL NETS ON THE FIRST RANK — then later ranks breach freely. STAGGER instead:
+    · Meet the CURRENT front rank with just ONE ship deploying, pushing the intercept point out slightly so its wall finishes before the rank passes.
+    · Keep the OTHER ships assigned but transit-only without deploying their net yet so they pre-position toward the ring (do not leave them unassigned as idle reserves, keep them moving).
+    · On each re-plan, as the next rank closes in, flip one pre-positioned ship to deploy its net to meet it. Aim for one fresh net per rank.
+    · Never let every ship deploy at once, and never leave a still-inbound rank with no net left to answer it.
 
-COMPREHENSIVE JUDGMENT (reason about the WHOLE board — do NOT apply rigid thresholds)
-These are factors to WEIGH together, not mechanical rules. Look at the actual geometry and
-form one coherent tactical picture:
-- Existing nets (STRICT): net_covered:true means a net ALREADY blocks that cluster's
-  approach → capture is expected. Do NOT send a ship there — it would just re-lay a net on
-  top of an existing one (pure waste). Leave that cluster's ship in RESERVE, or (if it was
-  already moving there) HOLD it. Only override if the cluster is clearly too wide for the
-  existing net given its spread. "Send a ship where a net already is" is exactly what to avoid.
-- Cluster layout: read nearest_cluster_gap_deg (bearing gap to the closest other cluster)
-  together with each cluster's spread, distance and count. When clusters are bunched close
-  in bearing, ONE ship's net wall can span several at once — cover the group with fewer,
-  well-placed ships rather than one per cluster. When clusters are well separated, each
-  needs its own ship. Decide from the real geometry, not a fixed cutoff.
-- Synthesize everything — blocking coverage, existing nets, cluster arrangement, route
-  overlap/collision, minimum force — into ONE plan: the fewest ships that leave no cluster
-  unblocked and no two routes overlapping. In rationale, explain the trade-offs you weighed.
+[OUTPUT RULES]
+- deployments: List of clusters to engage, where **each element MUST strictly follow the format of {cluster_id, ally_ids} ONLY.** (Do not include net status or adjustment parameters). Leave ally_ids empty to let the system auto-assign based on efficiency.
+- hold_ships: List of ally IDs to pause in place this cycle (default []).
+- ★rationale: MUST be written in KOREAN (2-4 sentences). Explain your deployment decisions and justify why you maintained or changed a ship's motion state. If a ship is put on HOLD for collision avoidance, explicitly detail which ship was kept moving (closest to enemy) and which was paused, ensuring no consecutive holds occur. Only the rationale is in Korean; all JSON keys and structures must remain intact.
 
-ADAPTIVE RE-PLANNING (you are re-invoked periodically; the battlefield keeps changing)
-- Decide for the CURRENT snapshot each call. Each ally's current `assigned_cluster` and
-  `nets_remaining` are in the state.
-- COMMITMENT / STABILITY: avoid needless churn. If an ally is already engaging a cluster
-  that still exists AND there is no overlap, KEEP it there (re-covering with a different
-  ship makes both re-route). Prefer the same plan unless the situation changed — EXCEPT you
-  should still reassign/hold to remove route overlap, duplicate netting, or to re-cover a
-  cluster that lost its ship (see ROUTE OVERLAP below). Overlap-removal beats stability.
-- Keep coverage EFFICIENT: one ship per cluster. If a cluster is already handled by a
-  committed ship, do NOT add another — cancel redundant / overlapping coverage.
-- REDUNDANCY — KEEP EXACTLY ONE (STRICT, enforce hard). Check every pair of committed ships
-  for TWO kinds of overlap, using each ally's `route` ([x,y] waypoints), `bearing`, and
-  net_covered:
-    (a) PATH redundancy: their routes run through the SAME region — waypoints close together
-        and roughly along the same bearing from the mothership.
-    (b) BLOCKING-AREA redundancy: their net walls would cover the SAME sector/bearing band
-        (same approach corridor), OR a ship heads into a sector already net_covered:true.
-  If EITHER kind of overlap exists between two (or more) ships, that group is redundant —
-  KEEP ONLY ONE (the best-placed: closest/least-turn via `to_clusters`, or already deploying)
-  and HOLD or RESERVE all the others. One sector = one ship. Never lay a net where a net
-  already is. Reassigning/holding to remove redundancy is FINE (mild churn OK) and takes
-  priority over keeping the same plan — better to RESERVE a ship than to duplicate coverage.
-
-NET-THROW — YOU decide the timing AND which route legs get a net (both `deploy_net` + `net_legs`)
-- deploy_net:false → the ship goes to its intercept position but does NOT lay any net yet
-  (waiting). Set true on a later cycle to throw. Use this to TIME the throw: hold (false)
-  while the enemy is still far / not lined up, throw (true) once they commit to the ring so
-  the net is not wasted or laid too early. You are re-invoked every ~50 steps.
-- net_legs (which legs): each ally's `route` is a list of waypoints [x,y]. net_legs is the
-  list of that route's waypoint INDICES (0-based) where THIS ship should lay its net.
-  Choose the waypoints sitting ON the reachable ring across the cluster's approach bearing
-  (usually the outer waypoints, not the near transit one). Examples:
-    • net_legs: null  → autopilot lays the net on its default (ring) legs. Safe default.
-    • net_legs: []    → lay NO net this cycle (same effect as deploy_net:false).
-    • net_legs: [3,4,5] → lay net only on route waypoints 3,4,5 (a focused wall there).
-  Prefer laying the net where it actually blocks the cluster's approach, and DON'T lay legs
-  that would overlap an already-installed net (net_covered) or another ship's net.
-
-HOLD (temporarily stop a ship in place) — use `hold_ships: [ally_id, ...]`
-- A held ally STOPS at its current position this cycle (does not advance or re-route); a
-  net already being laid still finishes. Release it by omitting it next cycle (it resumes
-  from where it stopped). HOLD ≠ RESERVE: reserve means "not assigned at all"; hold means
-  "assigned but paused for now".
-- Use HOLD when: (a) another USV has ALREADY blocked/covered that cluster, so this ship's
-  advance would be redundant; (b) two ships' routes are about to CROSS/COLLIDE — hold the
-  less-committed one to let the other pass; (c) STAGGERED launch — hold a ship a cycle or
-  two and send it later so ships don't bunch up or arrive all at once.
-- Still list the ship in its cluster's deployment; add its id to hold_ships to pause it.
-- DEAD ALLIES: an ally with `alive:false` has been sunk (ally-ally collision or net
-  contact) and is GONE. Never assign it. If a sunk ship leaves a cluster uncovered,
-  re-cover it with a surviving ship. Note: two allies that physically collide BOTH sink,
-  so collisions are costly — that is exactly why you HOLD a ship to avoid a crossing.
-- ADAPT as the situation shifts: re-cover a cluster that lost its ship; pull a ship back
-  to RESERVE if its cluster is gone or already neutralized; commit a reserve ship to a NEW
-  or newly-threatening cluster. Hold reserves for threats that are still forming/distant,
-  and release them only when needed. Prioritize the most imminent threats first.
-- You command 3 USVs total. The allies list is the ground truth for how many survive.
-
-OUTPUT RULES
-- deployments: list of {cluster_id, ally_ids, deploy_net, net_legs}. Only clusters you engage.
-- cluster_id must be an existing cluster id; ally_ids must be existing ally ids (or empty
-  to let the system pick the efficient/safe ship). Never repeat an ally id across clusters.
-- deploy_net (throw now?) and net_legs (which route waypoint indices to net; null=auto,
-  []=none) — YOU decide net timing and placement (see NET-THROW).
-- hold_ships: list of ally ids to pause in place this cycle (default empty). Ids must be
-  existing allies. Leave empty unless a ship should wait (redundant / collision / stagger).
-- If nothing is worth engaging, return an empty deployments list (all ships reserve).
-- rationale: 반드시 한국어(KOREAN)로 2-4문장. 몇 척을 어느 클러스터에 왜 보냈는지
-  (예비·정지 결정 포함)를 한국어로 설명. HOLD(정지)를 지정했다면 어느 USV를 왜 멈췄는지
-  구체적으로 밝힐 것. 예) "USV 1·2의 경로가 많이 겹쳐 USV 1의 할당을 잠시 중단(정지)합니다."
-  또는 "USV 0·2가 충돌 직전이라 USV 2를 한 주기 멈춰 비켜갑니다."
-  (rationale 만 한국어, 나머지 JSON 키/값 형식은 그대로.)
 Respond ONLY with the required JSON object. Do not add prose outside it."""
+
+
+# ── FEW-SHOT 예시 ─────────────────────────────────────────────────────
+# 규칙 문장으로는 잘 안 지켜지던 '경계 판단'만 시범으로 보여준다(설명이 아니라 시연).
+#   Ex1  정상 배정   : 연속성 유지 + 1척/클러스터 + 효율 매칭(HOLD 없음 — 과잉 HOLD 방지 균형추)
+#   Ex2  연속성/HOLD : 팀원 그물벽에 덮인 중복 배는 '재배정 아니라' 같은 클러스터에 둔 채 HOLD
+#   Ex3  net_covered : 이미 그물로 차단된 클러스터엔 새로 안 깖(deploy_net=false) + 예비
+# 매 호출 고정(캐시 프리픽스) → system 뒤, 실제 STATE 앞에 가짜 대화 턴으로 삽입한다.
+# STATE JSON 은 schema.to_prompt_json 과 같은 키 구조(축약 realistic), Plan JSON 은
+# CommanderPlan 스키마로 생성 → format=/response_format 강제와 100% 일치 보장.
+
+def _fewshot_state(payload: dict) -> str:
+    """예시 STATE dict → build_user_content 과 동일 형식의 user content 문자열."""
+    return "BATTLEFIELD STATE:\n" + json.dumps(payload, ensure_ascii=False)
+
+
+# 공통 상수(예시들 사이 반복 최소화)
+_C = [3000.0, 3000.0]           # center
+_CONST = {"world_size": 6000.0, "mothership_radius": 300.0, "net_max_len": 500.0,
+          "ally_speed": 12.0, "enemy_speed": 24.0, "max_intercept_radius": 1500.0}
+
+
+def _cl(cid, center, bearing, spread, count, appr, dist, adir, pdir, reach,
+        gap, covered=False):
+    return {"id": cid, "center": center, "bearing": bearing, "spread": spread,
+            "count": count, "approach_speed": appr, "distance_to_center": dist,
+            "approach_dir": adir, "perp_dir": pdir, "reachable_radius": reach,
+            "net_covered": covered, "nearest_cluster_gap_deg": gap}
+
+
+def _al(aid, pos, hdg, assigned, to_clusters, route, nets=2, alive=True,
+        deploying=False, hits_net=False, covered_by_mate=False):
+    lane = round((360.0 * aid) / 3.0, 2)
+    return {"id": aid, "alive": alive, "pos": pos, "heading": hdg,
+            "nets_remaining": nets, "assigned_cluster": assigned, "lane_angle": lane,
+            "deploying": deploying, "route_hits_net": hits_net,
+            "cluster_covered_by_teammate": covered_by_mate,
+            "to_clusters": to_clusters, "route": route}
+
+
+def _tc(*triples):
+    return [{"id": i, "dist": d, "turn": t} for (i, d, t) in triples]
+
+
+# ── Ex1: 정상 배정 — 세 클러스터가 방위상 잘 벌어짐, 배 3척이 이미 각자 담당 ──
+_EX1_STATE = {
+    "center": _C, **_CONST, "mothership_threat_level": 0.3,
+    "enemy_clusters": [
+        _cl(0, [4500.0, 3000.0], 90.0, 15.0, 4, 20.0, 1500.0, [-1.0, 0.0], [0.0, -1.0], 900.0, 120.0),
+        _cl(1, [2550.0, 3780.0], 210.0, 12.0, 3, 18.0, 1500.0, [0.3, -0.95], [-0.95, -0.3], 900.0, 120.0),
+        _cl(2, [2550.0, 2220.0], 330.0, 12.0, 3, 18.0, 1500.0, [0.3, 0.95], [0.95, -0.3], 900.0, 120.0),
+    ],
+    "allies": [
+        _al(0, [3700.0, 3000.0], 90.0, 0, _tc((0, 200.0, 0.0), (1, 1390.0, 120.0), (2, 1390.0, 120.0)),
+            [[3700.0, 3000.0], [3900.0, 3000.0]]),
+        _al(1, [2650.0, 3600.0], 210.0, 1, _tc((0, 1200.0, 150.0), (1, 210.0, 10.0), (2, 1400.0, 90.0)),
+            [[2650.0, 3600.0], [2550.0, 3780.0]]),
+        _al(2, [2650.0, 2400.0], 330.0, 2, _tc((0, 1200.0, 150.0), (1, 1400.0, 90.0), (2, 210.0, 10.0)),
+            [[2650.0, 2400.0], [2550.0, 2220.0]]),
+    ],
+    "command": None,
+}
+_EX1_PLAN = CommanderPlan(
+    deployments=[
+        ClusterDeployment(cluster_id=0, ally_ids=[0], deploy_net=True),
+        ClusterDeployment(cluster_id=1, ally_ids=[1], deploy_net=True),
+        ClusterDeployment(cluster_id=2, ally_ids=[2], deploy_net=True),
+    ],
+    hold_ships=[],
+    rationale="세 클러스터가 방위상 충분히 벌어져(간격 120°) 각자 1척으로 차단합니다. "
+              "각 배가 자기 담당 클러스터에 가장 가깝고 선회도 최소(to_clusters)라 그대로 유지, "
+              "겹침·충돌 없어 HOLD 불필요합니다.",
+)
+
+# ── Ex2: 연속성/HOLD — c0·c1 근접(간격 10°), a1 그물벽이 c0까지 덮음 → a0 중복 ──
+_EX2_STATE = {
+    "center": _C, **_CONST, "mothership_threat_level": 0.5,
+    "enemy_clusters": [
+        _cl(0, [4500.0, 3000.0], 90.0, 15.0, 3, 18.0, 1500.0, [-1.0, 0.0], [0.0, -1.0], 900.0, 10.0),
+        _cl(1, [4470.0, 2740.0], 100.0, 22.0, 5, 18.0, 1520.0, [-0.98, 0.17], [0.17, 0.98], 900.0, 10.0),
+        _cl(2, [1500.0, 2000.0], 250.0, 12.0, 3, 18.0, 1800.0, [0.85, 0.53], [0.53, -0.85], 900.0, 150.0),
+    ],
+    "allies": [
+        # a0: 담당 c0 이지만 a1(c1)의 넓은 그물벽에 c0 접근로가 이미 덮임 → 중복
+        _al(0, [3850.0, 3000.0], 90.0, 0, _tc((0, 150.0, 0.0), (1, 320.0, 20.0), (2, 2400.0, 160.0)),
+            [[3850.0, 3000.0], [3900.0, 3000.0]], covered_by_mate=True),
+        _al(1, [3800.0, 2780.0], 100.0, 1, _tc((0, 330.0, 25.0), (1, 180.0, 5.0), (2, 2450.0, 155.0)),
+            [[3800.0, 2780.0], [3960.0, 2650.0]]),
+        _al(2, [2100.0, 2350.0], 250.0, 2, _tc((0, 2350.0, 160.0), (1, 2400.0, 150.0), (2, 210.0, 8.0)),
+            [[2100.0, 2350.0], [1980.0, 2270.0]]),
+    ],
+    "command": None,
+}
+_EX2_PLAN = CommanderPlan(
+    deployments=[
+        ClusterDeployment(cluster_id=0, ally_ids=[0], deploy_net=True),
+        ClusterDeployment(cluster_id=1, ally_ids=[1], deploy_net=True),
+        ClusterDeployment(cluster_id=2, ally_ids=[2], deploy_net=True),
+    ],
+    hold_ships=[0],
+    rationale="c0·c1이 방위상 근접(간격 10°)해 a1의 넓은 그물벽(spread 22°)이 c0 접근로까지 함께 "
+              "차단합니다(a0의 cluster_covered_by_teammate=true). 따라서 a0는 중복이므로 다른 "
+              "클러스터로 재배정하지 않고 담당 c0에 둔 채 HOLD해 연속성을 지킵니다. c2는 a2로 차단.",
+)
+
+# ── Ex3: net_covered — c0 는 이미 그물로 차단됨 → 새로 안 깖 + 그쪽 배는 HOLD ──
+_EX3_STATE = {
+    "center": _C, **_CONST, "mothership_threat_level": 0.4,
+    "enemy_clusters": [
+        _cl(0, [4500.0, 3000.0], 90.0, 14.0, 3, 18.0, 1500.0, [-1.0, 0.0], [0.0, -1.0], 900.0, 180.0, covered=True),
+        _cl(1, [1500.0, 3000.0], 270.0, 16.0, 4, 20.0, 1500.0, [1.0, 0.0], [0.0, 1.0], 900.0, 180.0),
+    ],
+    "allies": [
+        # a0: c0 로 이동 중이었으나 c0 가 net_covered → 그물 재투척 방지 위해 HOLD
+        _al(0, [3800.0, 3000.0], 90.0, 0, _tc((0, 300.0, 0.0), (1, 2300.0, 175.0)),
+            [[3800.0, 3000.0], [3900.0, 3000.0]]),
+        _al(1, [2200.0, 3000.0], 270.0, 1, _tc((0, 2300.0, 175.0), (1, 300.0, 0.0)),
+            [[2200.0, 3000.0], [2100.0, 3000.0]]),
+        # a2: 미배정 예비(어느 deployment 에도 넣지 않음)
+        _al(2, [3000.0, 3800.0], 0.0, None, _tc((0, 1620.0, 90.0), (1, 1620.0, 90.0)),
+            [[3000.0, 3800.0]]),
+    ],
+    "command": None,
+}
+_EX3_PLAN = CommanderPlan(
+    deployments=[
+        ClusterDeployment(cluster_id=0, ally_ids=[0], deploy_net=False, net_legs=[]),
+        ClusterDeployment(cluster_id=1, ally_ids=[1], deploy_net=True),
+    ],
+    hold_ships=[0],
+    rationale="c0는 net_covered=true라 이미 그물로 차단돼 포획 예상 → 새 그물을 겹쳐 깔지 않도록 "
+              "deploy_net=false로 두고, 그쪽으로 가던 a0는 재투척·낭비 방지 위해 HOLD합니다. "
+              "c1은 a1이 차단하고, a2는 새 위협에 대비해 예비로 남깁니다.",
+)
+
+
+def _pair(state_payload: dict, plan: CommanderPlan) -> List[dict]:
+    """(예시 STATE, 예시 Plan) → [user, assistant] 메시지 쌍. Plan 은 스키마 JSON 그대로."""
+    return [
+        {"role": "user", "content": _fewshot_state(state_payload)},
+        {"role": "assistant", "content": plan.model_dump_json()},
+    ]
+
+
+# system 뒤·실제 STATE 앞에 삽입할 고정 few-shot 대화 턴(캐시 프리픽스).
+FEWSHOT_MESSAGES: List[dict] = (
+    _pair(_EX1_STATE, _EX1_PLAN)
+    + _pair(_EX2_STATE, _EX2_PLAN)
+    + _pair(_EX3_STATE, _EX3_PLAN)
+)
+
+
+def build_messages(state: BattlefieldState, instruction: Optional[str] = None,
+                   fewshot: bool = False) -> List[dict]:
+    """어댑터 공통 messages 조립: [system] + (few-shot 고정 턴) + [실제 STATE].
+
+    few-shot 을 system 문자열에 박지 않고 별도 대화 턴으로 두는 이유:
+    - 모델이 보는 입출력 형태가 실제와 100% 동일(STATE JSON→Plan JSON) — 설명이 아닌 시연.
+    - system 이 고정이라 프롬프트 캐시 프리픽스가 살아남(예시도 매 호출 불변).
+    fewshot=False 로 끄면 기존 2-메시지(zero-shot) 동작.
+    """
+    msgs: List[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if fewshot:
+        msgs += FEWSHOT_MESSAGES
+    msgs.append({"role": "user", "content": build_user_content(state, instruction)})
+    return msgs
 
 
 def build_user_content(state: BattlefieldState, instruction: Optional[str] = None) -> str:

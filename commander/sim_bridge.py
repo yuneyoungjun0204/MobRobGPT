@@ -52,6 +52,7 @@ def scaled_config(world_size: float = DEFAULT_WORLD_SIZE, enemy_speed_mult: floa
         moback_size=base.moback_size * s,
         enemy_speed_mult=enemy_speed_mult,
         geo_lat=geo_lat, geo_lon=geo_lon,
+        n_clusters=3,                          # 클러스터 최대 3개
     )
 
 
@@ -217,6 +218,53 @@ class CommandedSimulator(Simulator):
         return path
 
 
+def route_crosses_net(pts, net_installed, world_size) -> bool:
+    """경로 WP 목록이 이미 설치된 그물 셀(±1셀) 근방을 지나면 True (그물 접촉 격침 위험)."""
+    if net_installed is None or not net_installed.any() or not pts:
+        return False
+    G = net_installed.shape[0]; cell = world_size / G
+    for x, y in pts:
+        ci = int(x / cell); cj = int(y / cell)
+        i0, i1 = max(0, ci - 1), min(G, ci + 2)
+        j0, j1 = max(0, cj - 1), min(G, cj + 2)
+        if net_installed[i0:i1, j0:j1].any():
+            return True
+    return False
+
+
+def covered_by_teammate(assignI, assign, alive, center, net_max_len):
+    """각 아군의 담당 클러스터 접근로가 '다른 클러스터에 배정된' 다른 아군의 그물벽에 덮이는지 [P] bool.
+
+    그물벽은 요격점(assignI)에 수직으로 net_max_len 길이 → 모선 기준 각폭 half=atan(L/2 / r).
+    아군 i 의 접근 방위가 다른 아군 j(다른 클러스터)의 각폭 안에 들면 i 는 중복(덮임).
+    """
+    P = len(assign)
+    c = np.asarray(center, np.float64)
+    out = [False] * P
+    brg = []
+    rad = []
+    half = []
+    for p in range(P):
+        v = np.asarray(assignI[p], np.float64) - c
+        r = float(np.hypot(v[0], v[1]))
+        rad.append(r)
+        brg.append(float(np.degrees(np.arctan2(v[0], v[1])) % 360.0) if r > 1.0 else None)
+        half.append(float(np.degrees(np.arctan2(net_max_len / 2.0, max(r, 1.0)))))
+    for i in range(P):
+        if not alive[i] or int(assign[i]) < 0 or brg[i] is None:
+            continue
+        for j in range(P):
+            if j == i or not alive[j] or int(assign[j]) < 0 or int(assign[j]) == int(assign[i]):
+                continue
+            if brg[j] is None:
+                continue
+            d = abs(((brg[i] - brg[j] + 180.0) % 360.0) - 180.0)
+            if d <= half[j]:                        # i 접근방위가 j 그물벽 각폭 안 → 덮임
+                out[i] = True
+                break
+    return out
+
+
 def build_battlefield(sim: Simulator, command: str | None = None) -> BattlefieldState:
     """시뮬 현재 상태 → BattlefieldState. 클러스터 id = 시뮬 클러스터 인덱스(1:1)."""
     cfg = sim.cfg
@@ -261,6 +309,8 @@ def build_battlefield(sim: Simulator, command: str | None = None) -> Battlefield
             net_covered=net_covered,
         ))
 
+    ninst = getattr(sim, "net_installed", None)
+    cov = covered_by_teammate(sim.assignI, sim.assign, sim.a_alive, c, cfg.net_max_len)
     allies = [
         AllyShip(id=i,
                  pos=Point(x=float(sim.a_pos[i, 0]), y=float(sim.a_pos[i, 1])),
@@ -271,7 +321,11 @@ def build_battlefield(sim: Simulator, command: str | None = None) -> Battlefield
                  # 현재 자동조종 경로(WP) 와 전개 상태 → LLM 경로 중복/충돌 판단용 (죽은 배는 빈 경로)
                  route=([Point(x=float(w["x"]), y=float(w["y"])) for w in sim.a_paths[i]]
                         if bool(sim.a_alive[i]) else []),
-                 deploying=bool(sim.a_painting[i]))
+                 deploying=bool(sim.a_painting[i]),
+                 route_hits_net=(bool(sim.a_alive[i]) and not bool(sim.a_painting[i])
+                                 and route_crosses_net([(w["x"], w["y"]) for w in sim.a_paths[i]],
+                                                       ninst, cfg.world_size)),
+                 cluster_covered_by_teammate=bool(cov[i]))
         for i in range(cfg.n_allies)
     ]
 
@@ -380,7 +434,11 @@ def plan_to_assign(plan, state: BattlefieldState) -> np.ndarray:
     avail = sorted(available)
     if uncovered and avail:
         slots = uncovered[:len(avail)]          # 아군 부족 시 위협 큰 클러스터 우선(deps=threat desc)
+        # ★ 연속성(sticky): 현재 담당 클러스터면 비용 차감 → 타겟이 매 스텝 뒤바뀌는 것 억제
+        #   (이만큼 더 싸야 전환). 담당 클러스터가 사라지면 매칭 안 돼 자연히 재배정됨.
+        STICKY = W * 0.45   # 연속성 최우선 — 현재 담당을 크게 선호(확실히 더 나을 때만 전환)
         cost = np.array([[_ship_cost(allies[aid], icept[cid], assigned_pairs, W)
+                          - (STICKY if allies[aid].assigned_cluster == cid else 0.0)
                           for cid in slots] for aid in avail], dtype=float)
         try:
             from scipy.optimize import linear_sum_assignment

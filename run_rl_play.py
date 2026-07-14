@@ -107,6 +107,7 @@ def main() -> None:
           f"Kw={cfg.transit_wp} wp_adjust_max={cfg.wp_adjust_max}")
 
     cfg.avoid_steer = bool(args.apf)   # 기본 OFF: 순수 RL 경로(APF 안전층 없음)
+    cfg.n_clusters = 3                 # 클러스터 최대 3개
     cfg.enemy_wave_near = 2600.0       # 파상: 웨이브 간 텀 확실히 (gap↑, near↓ → 3단이 맵 안)
     cfg.enemy_wave_gap = 1800.0
     cfg.spawn_phase_lo = 1.0           # 스폰 랜덤 당김 끄기 → 웨이브 텀 설계대로

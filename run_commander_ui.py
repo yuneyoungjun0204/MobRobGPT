@@ -8,7 +8,7 @@
 (Ollama 없으면 위협비례 휴리스틱 폴백.)
 
 배정은 **매 스텝** 현재 전장으로 재매핑(sticky) → 배가 격침되면 남은 배로 자동 재배분.
-LLM 전체 재계획은 주기(기본 50 step)마다. 아군끼리 충돌하면 양쪽 다 격침(비활성화).
+LLM 전체 재계획은 주기(기본 100 step)마다. 아군끼리 충돌하면 양쪽 다 격침(비활성화).
 
 실행:
     python run_commander_ui.py
@@ -16,10 +16,12 @@ LLM 전체 재계획은 주기(기본 50 step)마다. 아군끼리 충돌하면 
     python run_commander_ui.py --enemy wave
 조작키: [space] 재생/일시정지  [r] 랜덤 리셋  [q] 종료  [a] 자동 재계획 토글
        [1] 집중  [2] 파상  [3] 양동  (상단 버튼과 동일 — 그 대형으로 리셋·재시작)
-옵션: --replan N  (N step 마다 LLM 자동 재계획, 전장 변화 적응. 0=끄기, 기본 50)
-     --rl          (경로 기동을 강화학습 정책으로 — 배정은 여전히 LLM. DefenseVecEnv 백엔드)
-     --gain K      (--rl 시 RL 잔차 배율, 기본 1. 크게 하면 휴리스틱 이탈 과장)
-     --ckpt PATH   (--rl 정책 체크포인트, 기본 boatattack_sim/models/rl_latest.pt)
+옵션: --replan N  (N step 마다 LLM 자동 재계획, 전장 변화 적응. 0=끄기, 기본 100)
+     --rl          (경로 기동을 강화학습 잔차 정책으로 — 배정은 여전히 LLM. DefenseVecEnv 백엔드)
+     --cell        (경로/그물을 '셀선택' 정책(CellPointerActor)으로 — 배정은 여전히 LLM. --rl 함의.
+                    LLM 배정→_assign 주입→셀 정책이 obs+후보셀 pruning 으로 존중. 기본 ckpt=cell_latest.pt)
+     --gain K      (--rl 시 RL 잔차 배율, 기본 1. 크게 하면 휴리스틱 이탈 과장. 셀 모델은 무의미)
+     --ckpt PATH   (RL 정책 체크포인트. 기본: --cell=cell_latest.pt, 그 외=rl_latest.pt)
 """
 import sys
 import random
@@ -37,10 +39,15 @@ def _arg(flag, default=None):
 def main() -> None:
     enemy = _arg("--enemy", "random")
     backend = "openai" if "--openai" in sys.argv else "ollama"
-    replan = int(_arg("--replan", "50"))    # LLM 자동 재계획 주기(step). 0=끄기
+    replan = int(_arg("--replan", "100"))   # LLM 자동 재계획 주기(step). 0=끄기
     rl = "--rl" in sys.argv                  # 경로 기동을 RL 정책으로 (배정은 여전히 LLM)
-    gain = float(_arg("--gain", "1"))        # RL 잔차 배율(시각화용)
-    ckpt = _arg("--ckpt", "boatattack_sim/models/rl_latest.pt")
+    cell = "--cell" in sys.argv              # RL 을 '셀선택' 정책(CellPointerActor)으로 (--rl 함의)
+    if cell:
+        rl = True
+    gain = float(_arg("--gain", "1"))        # RL 잔차 배율(시각화용; 셀 모델은 무의미)
+    _ckpt_default = "boatattack_sim/models/cell_latest.pt" if cell \
+        else "boatattack_sim/models/rl_latest.pt"
+    ckpt = _arg("--ckpt", _ckpt_default)
     apf = "--apf" in sys.argv                # RL 모드 APF(충돌회피 안전층). 기본 OFF, v 키로 토글
     _flagvals = {sys.argv[i + 1] for i, a in enumerate(sys.argv)
                  if a.startswith("--") and i + 1 < len(sys.argv)}
@@ -67,7 +74,12 @@ def main() -> None:
     matplotlib.rcParams["axes.unicode_minus"] = False
     warnings.filterwarnings("ignore", message="Glyph .* missing from font")
 
-    if rl:   # RL 경로 기동 (배정=LLM, 경로=강화학습 정책 / DefenseVecEnv 백엔드)
+    if cell:  # 셀선택 RL 정책 (배정=LLM, 경로/그물=셀 정책 / DefenseVecEnv 셀 백엔드)
+        from commander.cell_bridge import CommandedCellEnv, build_battlefield_defense
+        print(f"셀 정책 로딩 중… ({ckpt})")
+        sim = CommandedCellEnv(ckpt, enemy_mode=enemy, avoid_steer=apf)   # 기본 APF OFF, --apf 로 ON
+        _build_bf = build_battlefield_defense
+    elif rl:   # RL 경로 기동 (배정=LLM, 경로=강화학습 잔차 정책 / DefenseVecEnv 백엔드)
         from commander.rl_bridge import CommandedDefenseEnv, build_battlefield_defense
         print(f"RL 정책 로딩 중… ({ckpt}, gain={gain})")
         sim = CommandedDefenseEnv(ckpt, enemy_mode=enemy, gain=gain, avoid_steer=apf)
