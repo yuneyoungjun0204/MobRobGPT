@@ -192,9 +192,9 @@ class CommandedDefenseEnv(DefenseVecEnv):
             self._assign[0] = prev   # 연속성 기준 = 직전 배정(build_battlefield_defense 가 읽어 sticky)
         state = build_battlefield_defense(self, self._plan_command)
         self._inject(plan_to_assign(self._plan, state))
-        # 배별 그물 투척여부·레그·거리배율 = 담당 클러스터의 deploy_net/net_legs/radius_adjust (LLM)
-        deploy_by = {d.cluster_id: bool(d.deploy_net) for d in self._plan.deployments}
-        legs_by = {d.cluster_id: d.net_legs for d in self._plan.deployments}
+        # 배별 그물 투척여부·레그·거리배율 (스키마 최소화 후엔 기본값; 구버전 필드 있으면 존중)
+        deploy_by = {d.cluster_id: bool(getattr(d, "deploy_net", True)) for d in self._plan.deployments}
+        legs_by = {d.cluster_id: getattr(d, "net_legs", None) for d in self._plan.deployments}
         rad_by = {d.cluster_id: float(getattr(d, "radius_adjust", 1.0) or 1.0)
                   for d in self._plan.deployments}
         c = np.array(self.center, np.float64)

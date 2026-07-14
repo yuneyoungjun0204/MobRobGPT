@@ -186,33 +186,26 @@ class BattlefieldState(BaseModel):
         return json.dumps(payload, ensure_ascii=False)
 
 
-# ── 출력: 교전 배분 (LLM은 '어느 클러스터에 몇 척'만 결정 — 경로는 시뮬이 기하로 생성) ──
+# ── 출력: 교전 배분 (LLM은 '어느 클러스터에 어느 배'만 결정 — 경로·그물·거리는 시뮬/정책이 처리) ──
+#   ★ A1 스키마 최소화: LLM 출력 필드를 실제 쓰는 것만(cluster_id, ally_ids)으로 축소.
+#     (deploy_net/net_legs/radius_adjust 제거 → strict 스키마 모순 해소·폭주 방지·통제성↑)
 class ClusterDeployment(BaseModel):
     cluster_id: int = Field(..., description="담당 적 클러스터 id")
     ally_ids: List[int] = Field(default_factory=list,
-                                description="이 클러스터를 맡을 아군 USV id 목록(네가 직접 선택). "
-                                            "효율(요격 위치에 가깝고·선회 적고·그물 보유)이고 안전"
-                                            "(다른 배 경로와 교차·충돌 안 함)한 배를 고를 것. 보통 1척. "
+                                description="이 클러스터를 맡을 아군 USV id 목록. 효율(요격점에 가깝고·"
+                                            "선회 적음)·안전(다른 배 경로와 비교차)한 배 선택. 보통 1척. "
                                             "비우면 시스템이 효율/안전 기준으로 대신 고른다.")
-    deploy_net: bool = Field(True, description="지금 그물을 투척할지(투척 시점 결정). true=그물 전개, "
-                                              "false=요격 위치로 이동만 하고 아직 안 깖(대기). "
-                                              "매 재계획(50스텝)마다 다시 결정 가능.")
-    net_legs: Optional[List[int]] = Field(
-        None, description="그물을 깔 경로 WP 인덱스 목록(그 배 route 기준, 0부터). "
-                          "None=자동(요격 링 구간에 기본 전개), []=이번엔 안 깖(대기), "
-                          "[3,4,5]=해당 WP 구간에만. deploy_net=false 면 무시(안 깖).")
-    radius_adjust: float = Field(1.0, description="이 클러스터 요격 지점을 모선 기준으로 밀거나(>1, 바깥/"
-                                                  "더 멀리서 요격=여유 확보) 당기는(<1, 안쪽/더 가까이) 배율. "
-                                                  "1.0=기본. 빠른 적은 밀어서(>1) 일찍 차단, 아끼려면 당김(<1). "
-                                                  "0.6~1.4 권장.")
 
 
 class CommanderPlan(BaseModel):
+    # ★ A2 추론-우선: rationale 를 맨 앞에 둬 '생각 후 결정'(먼저 근거를 쓰고 배정 확정).
+    rationale: str = Field(..., description="먼저 여기에 판단 근거(생각 과정)를 한국어로 쓴다. 어느 배를 "
+                                            "어느 클러스터에 왜 배정하는지(가장 가깝고 선회 적은 배·비교차), "
+                                            "HOLD·예비 이유. 이 필드를 먼저 채운 뒤 아래 deployments 를 결정한다.")
     deployments: List[ClusterDeployment] = Field(
-        ..., description="클러스터별 투입 선박 수. 합계는 아군 총수 이하 — 남는 선박은 예비(정지).")
+        ..., description="클러스터별 투입 배정. 합계는 아군 총수 이하 — 남는 배는 예비(정지).")
     hold_ships: List[int] = Field(
         default_factory=list,
         description="이번 주기에 '제자리 정지(HOLD)'시킬 아군 id 목록. 배정돼 있어도 이 목록에 "
                     "있으면 전진하지 않고 현재 위치에서 대기(전개중 그물은 마저 설치). 다른 배가 "
                     "이미 차단했거나, 두 배가 충돌 직전이거나, 시간차 출격이 필요할 때 사용.")
-    rationale: str = Field(..., description="투입 척수·예비·정지(HOLD) 판단 근거(생각 과정)")

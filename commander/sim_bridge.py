@@ -119,8 +119,8 @@ class CommandedSimulator(Simulator):
             state = build_battlefield(self, self._plan_command)
             self._inject_assign(plan_to_assign(self._plan, state))
             # 배별 그물 투척 여부·레그 = 담당 클러스터의 deploy_net/net_legs (LLM이 결정)
-            deploy_by_cluster = {d.cluster_id: bool(d.deploy_net) for d in self._plan.deployments}
-            legs_by_cluster = {d.cluster_id: d.net_legs for d in self._plan.deployments}
+            deploy_by_cluster = {d.cluster_id: bool(getattr(d, "deploy_net", True)) for d in self._plan.deployments}
+            legs_by_cluster = {d.cluster_id: getattr(d, "net_legs", None) for d in self._plan.deployments}
             for i in range(self.cfg.n_allies):
                 k = int(self.assign[i])
                 self._deploy_net[i] = deploy_by_cluster.get(k, True) if k >= 0 else True

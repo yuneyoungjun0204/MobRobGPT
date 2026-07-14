@@ -27,8 +27,7 @@ def sanitize_plan(plan: CommanderPlan, state: BattlefieldState) -> CommanderPlan
         for aid in (d.ally_ids or []):
             if aid in ally_ids and aid not in seen_ship:
                 seen_ship.add(aid); ids.append(aid)
-        new_deps.append(ClusterDeployment(cluster_id=d.cluster_id, ally_ids=ids,
-                                          deploy_net=d.deploy_net, net_legs=d.net_legs))
+        new_deps.append(ClusterDeployment(cluster_id=d.cluster_id, ally_ids=ids))
     holds = list(dict.fromkeys(i for i in (plan.hold_ships or []) if i in ally_ids))
     return CommanderPlan(deployments=new_deps, hold_ships=holds, rationale=plan.rationale)
 

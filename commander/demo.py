@@ -42,7 +42,7 @@ def print_plan(plan, state) -> None:
     print("\n=== CommanderPlan (클러스터별 배정 USV) ===")
     for d in plan.deployments:
         who = d.ally_ids if d.ally_ids else "자동선택(효율/안전)"
-        print(f"  cluster {d.cluster_id}: USV {who}  net={'Y' if d.deploy_net else '-'}")
+        print(f"  cluster {d.cluster_id}: USV {who}  net={'Y' if getattr(d, 'deploy_net', True) else '-'}")
     if plan.hold_ships:
         print(f"  HOLD(정지): USV {plan.hold_ships}")
     assign = plan_to_assign(plan, state)

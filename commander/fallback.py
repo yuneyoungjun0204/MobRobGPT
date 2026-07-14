@@ -16,7 +16,7 @@ def heuristic_plan(state: BattlefieldState) -> CommanderPlan:
     covered = clusters[:P]          # 아군 수까지 위협 큰 클러스터부터 1척씩
     uncovered = clusters[P:]        # 아군보다 클러스터가 많으면 나머지는 불가피하게 미커버
     # ally_ids 는 비워둔다 → plan_to_assign 이 효율/안전 복합점수로 배를 대신 선택.
-    deployments = [ClusterDeployment(cluster_id=cl.id, ally_ids=[], deploy_net=True) for cl in covered]
+    deployments = [ClusterDeployment(cluster_id=cl.id, ally_ids=[]) for cl in covered]
     committed = len(deployments)
     rat = (f"[휴리스틱] 최소방어: 클러스터당 1척으로 {committed}개 커버 "
            f"(투입 {committed}/{P}척, 예비 {P - committed}척).")
