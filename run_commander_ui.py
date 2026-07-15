@@ -75,6 +75,9 @@ def main() -> None:
     _ckpt_default = "boatattack_sim/models/best_mixed_far.pt" if cell \
         else "boatattack_sim/models/rl_latest.pt"
     ckpt = _arg("--ckpt", _ckpt_default)
+    # --specialized [경로]: 공격양상 기하분류 → 집중/양동/파상 특화 셀 정책 라우팅(--cell 전용)
+    specialized_root = (_arg("--specialized", "specialized_cos6k_model")
+                        if ("--specialized" in sys.argv and cell) else None)
     apf = "--apf" in sys.argv                # RL 모드 APF(충돌회피 안전층). 기본 OFF, v 키로 토글
     _flagvals = {sys.argv[i + 1] for i, a in enumerate(sys.argv)
                  if a.startswith("--") and i + 1 < len(sys.argv)}
@@ -103,8 +106,12 @@ def main() -> None:
 
     if cell:  # 셀선택 RL 정책 (배정=LLM, 경로/그물=셀 정책 / DefenseVecEnv 셀 백엔드)
         from commander.cell_bridge import CommandedCellEnv, build_battlefield_defense
-        print(f"셀 정책 로딩 중… ({ckpt})")
-        sim = CommandedCellEnv(ckpt, enemy_mode=enemy, avoid_steer=apf)   # 기본 APF OFF, --apf 로 ON
+        if specialized_root:
+            print(f"셀 특화 라우팅 로딩 중… (집중/양동/파상, {specialized_root})")
+        else:
+            print(f"셀 정책 로딩 중… ({ckpt})")
+        sim = CommandedCellEnv(ckpt, enemy_mode=enemy, avoid_steer=apf,   # 기본 APF OFF, --apf 로 ON
+                               specialized_root=specialized_root)
         _build_bf = build_battlefield_defense
     elif rl:   # RL 경로 기동 (배정=LLM, 경로=강화학습 잔차 정책 / DefenseVecEnv 백엔드)
         from commander.rl_bridge import CommandedDefenseEnv, build_battlefield_defense
@@ -335,6 +342,11 @@ def main() -> None:
         renderer.draw_scene(ax, sim.get_frame(), bg_img=bg_img, bg_extent=bg_extent)
         if cell and info.get("show_cells", True) and hasattr(sim, "cell_viz"):
             _overlay_cells_cmd(ax, sim.cell_viz())          # 후보셀/그물배제/선택 오버레이 (z 토글)
+        if specialized_root and getattr(sim, "_formation", None):   # 특화 라우팅: 현재 대형 표시
+            _KMODE = {"concentrated": "집중", "diversionary": "양동", "wave": "파상"}
+            ax.text(0.99, 0.99, f"공격양상: {_KMODE.get(sim._formation, sim._formation)}  → 특화모델",
+                    transform=ax.transAxes, color="#FFD54F", fontsize=11, va="top", ha="right",
+                    weight="bold")
         return []
 
     draw_info()

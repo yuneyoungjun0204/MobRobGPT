@@ -484,6 +484,15 @@ def plan_to_assign(plan, state: BattlefieldState) -> np.ndarray:
     for i in getattr(plan, "hold_ships", None) or []:
         if 0 <= int(i) < P:
             assign[int(i)] = -1
+
+    # 4) ★ 최소 1대 활성 보장(전원 HOLD/예비 금지): 살아있는 배가 전부 assign<0 이면,
+    #    가장 위협 큰 활성 클러스터에 가장 싸게 갈 수 있는 1대를 강제 배정(HOLD 해제).
+    alive_ids = [a.id for a in state.allies if a.alive]
+    active_cl = [c for c in state.enemy_clusters]
+    if alive_ids and active_cl and not any(assign[i] >= 0 for i in alive_ids):
+        tgt = max(active_cl, key=lambda c: threat.get(c.id, 0))     # 가장 위협 큰 클러스터
+        best = min(alive_ids, key=lambda i: _ship_cost(allies[i], icept[tgt.id], [], W))
+        assign[best] = tgt.id                                       # 이 배는 활성(HOLD 해제)
     return assign
 
 

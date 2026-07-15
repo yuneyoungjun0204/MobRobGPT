@@ -35,8 +35,17 @@ class CommandedCellEnv(CommandedDefenseEnv):
     """LLM 배정을 존중하는 셀선택 RL 실행 환경(1월드). 경로/그물은 셀 정책이 기동."""
 
     def __init__(self, ckpt: str, enemy_mode: str = "diversionary", device: str = "cpu",
-                 avoid_steer: bool | None = None, joint: bool = True):
-        actor, cfg = load_cell_actor(ckpt, device=device)
+                 avoid_steer: bool | None = None, joint: bool = True,
+                 specialized_root: str | None = None):
+        # ★ specialized_root 주면: 공격양상 기하분류 → 집중/양동/파상 특화 셀 정책 라우팅.
+        #   (단일 ckpt 대신 3종 특화모델을 로드해 매 결정 대형에 맞는 모델로 추론)
+        self._router = None
+        if specialized_root:
+            from .formation_router import SpecializedCellRouter
+            self._router = SpecializedCellRouter(specialized_root, device=device)
+            actor, cfg = self._router.actors["concentrated"], self._router.cfg   # cfg 원천 + 폴백 actor
+        else:
+            actor, cfg = load_cell_actor(ckpt, device=device)
         if not getattr(cfg, "cell_action", False):
             raise ValueError(f"{ckpt} 는 셀선택(cell_action) 정책이 아닙니다. "
                              f"잔차 정책이면 CommandedDefenseEnv 를 쓰세요.")
@@ -80,12 +89,18 @@ class CommandedCellEnv(CommandedDefenseEnv):
         self._cmd_deploy = np.ones(self.P, bool)
         self._cmd_net_legs = [None] * self.P   # 셀 모델 미사용(호환용)
         self._last_cells = None                # 시각화용 최근 선택 셀 [P,K]
+        self._formation = None                 # 라우터가 고른 현재 대형(시각화/로그용)
 
     # ── LLM 계획 주입: 상위 _compute_assignment 재사용 + HOLD 집합 갱신 ──
     def _compute_assignment(self, assign_pref=None):
         super()._compute_assignment(assign_pref)            # _assign/_assignI 주입 + radius_adjust
-        self._held = ({int(i) for i in (self._plan.hold_ships or [])}
-                      if self._plan is not None else set())
+        # HOLD 집합 = 계획의 hold_ships 중 '실제로 미배정(assign<0)'인 배만.
+        #   → plan_to_assign 의 '최소 1대 활성' 보장으로 강제 배정된 배는 HOLD 제외(동결 안 함).
+        if self._plan is not None:
+            self._held = {int(i) for i in (self._plan.hold_ships or [])
+                          if int(self._assign[0, int(i)]) < 0}
+        else:
+            self._held = set()
 
     # ── 후보셀에서 '이미 그물 깔린 곳' 제외 (행동공간에서 아예 배제) ──
     def _cell_valid_mask(self):
@@ -120,13 +135,20 @@ class CommandedCellEnv(CommandedDefenseEnv):
                 self.net_mask[0, p, :] = False; self.doing_net[0, p] = False
             self._ev = self.fresh_ev()
             return
+        # ★ 특화 라우팅: 공격양상 기하분류 → 그 대형 특화 정책 선택(없으면 단일 self._actor)
+        if self._router is not None:
+            self._formation = self._router.select(self)     # 'concentrated'|'diversionary'|'wave'
+            actor = self._router.actors[self._formation]
+        else:
+            self._formation = None
+            actor = self._actor
         obs = self.build_cell_obs()                         # 내부서 _compute_assignment(주입) 호출
         ot = cell_obs_to_torch(obs, self._device)
         with torch.no_grad():
-            p, self._h = self._actor(ot, self._h)
-            g = (self._actor.greedy_joint(p, self.N, self.P,
-                                          cell_world=self.cell_world, mask_radius=self._mask_r)
-                 if self._joint else self._actor.greedy(p))
+            p, self._h = actor(ot, self._h)
+            g = (actor.greedy_joint(p, self.N, self.P,
+                                    cell_world=self.cell_world, mask_radius=self._mask_r)
+                 if self._joint else actor.greedy(p))
         cells = g["cells"].view(self.N, self.P, -1).cpu().numpy()
         self._last_cells = cells[0].copy()                  # 시각화용(선택 셀)
         self._apply_actions({"cells": cells})
