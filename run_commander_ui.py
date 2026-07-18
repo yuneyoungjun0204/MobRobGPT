@@ -76,7 +76,7 @@ def main() -> None:
         else "boatattack_sim/models/rl_latest.pt"
     ckpt = _arg("--ckpt", _ckpt_default)
     # --specialized [경로]: 공격양상 기하분류 → 집중/양동/파상 특화 셀 정책 라우팅(--cell 전용)
-    specialized_root = (_arg("--specialized", "specialized_cos6k_model")
+    specialized_root = (_arg("--specialized", "30_model")
                         if ("--specialized" in sys.argv and cell) else None)
     apf = "--apf" in sys.argv                # RL 모드 APF(충돌회피 안전층). 기본 OFF, v 키로 토글
     _flagvals = {sys.argv[i + 1] for i, a in enumerate(sys.argv)

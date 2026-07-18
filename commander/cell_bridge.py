@@ -67,6 +67,7 @@ class CommandedCellEnv(CommandedDefenseEnv):
         cfg.decision_period = max(1, int(round(int(getattr(cfg, "decision_period", 25)) / 2)))
         if avoid_steer is not None:
             cfg.avoid_steer = bool(avoid_steer)
+        cfg.mother_keepout = True               # ★ APF는 꺼도 모선-전용 회피는 항상(모선 충돌 방지)
         # super().__init__ 가 _compute_assignment 를 부를 수 있으므로 속성 선주입.
         self._actor = actor
         self._device = device
