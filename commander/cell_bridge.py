@@ -26,6 +26,7 @@ import numpy as np
 import torch
 
 from boatattack_sim.env.defense_env import DefenseVecEnv
+from boatattack_sim.env.config import RewardCfg
 from boatattack_sim.model.cell_actor import load_cell_actor, cell_obs_to_torch
 
 from .rl_bridge import CommandedDefenseEnv, build_battlefield_defense
@@ -36,7 +37,8 @@ class CommandedCellEnv(CommandedDefenseEnv):
 
     def __init__(self, ckpt: str, enemy_mode: str = "diversionary", device: str = "cpu",
                  avoid_steer: bool | None = None, joint: bool = True,
-                 specialized_root: str | None = None):
+                 specialized_root: str | None = None,
+                 world_size: float | None = None):
         # ★ specialized_root 주면: 공격양상 기하분류 → 집중/양동/파상 특화 셀 정책 라우팅.
         #   (단일 ckpt 대신 3종 특화모델을 로드해 매 결정 대형에 맞는 모델로 추론)
         self._router = None
@@ -49,6 +51,14 @@ class CommandedCellEnv(CommandedDefenseEnv):
         if not getattr(cfg, "cell_action", False):
             raise ValueError(f"{ckpt} 는 셀선택(cell_action) 정책이 아닙니다. "
                              f"잔차 정책이면 CommandedDefenseEnv 를 쓰세요.")
+        # ★ 스케일 변환(선택): world_size 를 주면 모든 길이를 비례 축소해 그 크기 실험장으로.
+        #   관측이 길이/길이 비율이라 정규화 입력이 수학적으로 동일 → 재학습 불필요.
+        #   (다른 오버라이드보다 **먼저** 적용 — 이후 값들은 배율·개수라 순서 무관.)
+        rcfg = RewardCfg()
+        if world_size is not None:
+            _s = float(world_size) / float(cfg.world_size)
+            cfg.apply_scale(_s)
+            rcfg.apply_scale(_s)     # 보상 길이항(영향반경·배정 cost[m])도 같이
         # ★ 체크포인트 자체 config(world·cell 격자·evade/weave 등) 유지 — 학습분포 충실.
         #   LLM 정합을 위해서만 최소 오버라이드.
         cfg.n_clusters = 3                     # LLM 이 최대 3그룹으로 다룸(셀 정책은 클러스터수 불변)
@@ -76,7 +86,7 @@ class CommandedCellEnv(CommandedDefenseEnv):
         self._plan_command = None
         self._held: set[int] = set()
         self._joint = bool(joint)
-        DefenseVecEnv.__init__(self, num_worlds=1, cfg=cfg, enemy_mode=enemy_mode)
+        DefenseVecEnv.__init__(self, num_worlds=1, cfg=cfg, rcfg=rcfg, enemy_mode=enemy_mode)
         self._actor.eval()
         self._h = self._actor.init_hidden(self.P, device)   # cell_recurrent=False 면 None
         self._mask_r = float(self._cell_half())             # joint 교차잠금 반경(격자 반칸)

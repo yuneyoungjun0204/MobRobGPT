@@ -78,6 +78,9 @@ def main() -> None:
     # --specialized [경로]: 공격양상 기하분류 → 집중/양동/파상 특화 셀 정책 라우팅(--cell 전용)
     specialized_root = (_arg("--specialized", "30_model")
                         if ("--specialized" in sys.argv and cell) else None)
+    # --world <m>: 실험장 한 변 크기(m). 주면 모든 길이를 비례축소 → 33m 수조 등에서 그대로 사용.
+    #   관측이 길이/길이 비율이라 정규화 입력이 동일 → 재학습 없이 동작(tests/test_scale_e2e.py 검증).
+    world_size = float(_arg("--world", "0")) or None
     apf = "--apf" in sys.argv                # RL 모드 APF(충돌회피 안전층). 기본 OFF, v 키로 토글
     _flagvals = {sys.argv[i + 1] for i, a in enumerate(sys.argv)
                  if a.startswith("--") and i + 1 < len(sys.argv)}
@@ -110,8 +113,11 @@ def main() -> None:
             print(f"셀 특화 라우팅 로딩 중… (집중/양동/파상, {specialized_root})")
         else:
             print(f"셀 정책 로딩 중… ({ckpt})")
+        if world_size is not None:
+            print(f"  ★ 스케일 변환: world_size={world_size}m (모든 길이 비례축소, 재학습 불필요)")
         sim = CommandedCellEnv(ckpt, enemy_mode=enemy, avoid_steer=apf,   # 기본 APF OFF, --apf 로 ON
-                               specialized_root=specialized_root)
+                               specialized_root=specialized_root,
+                               world_size=world_size)
         _build_bf = build_battlefield_defense
     elif rl:   # RL 경로 기동 (배정=LLM, 경로=강화학습 잔차 정책 / DefenseVecEnv 백엔드)
         from commander.rl_bridge import CommandedDefenseEnv, build_battlefield_defense
