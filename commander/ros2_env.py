@@ -16,6 +16,9 @@ from typing import Optional
 
 from .ros2_sensor_bridge import create_ros2_bridge, ROS2SensorBridge, ROS2_AVAILABLE
 from .sim_bridge import plan_to_assign
+from .schema import (
+    BattlefieldState, Mothership, EnemyCluster, AllyShip, Constraints, Point,
+)
 
 
 class ROS2CommanderEnv:
@@ -262,46 +265,73 @@ class ROS2CommanderEnv:
         return paths
 
 
-def build_battlefield_ros2(env: ROS2CommanderEnv, command: str = "") -> dict:
-    """ROS2 환경에서 전장 상태 구축 (LLM 입력용)."""
-    clusters = []
+def build_battlefield_ros2(env: ROS2CommanderEnv, command: str = "") -> BattlefieldState:
+    """ROS2 환경에서 전장 상태 구축 (LLM 입력용).
+
+    BattlefieldState 객체를 반환하여 ollama_commander 등과 호환.
+    """
+    c = env.center
+    cfg = env.cfg
 
     # 간단한 클러스터링 (실제로는 더 정교해야 함)
+    clusters = []
     alive_enemies = np.where(env.e_alive)[0]
     if len(alive_enemies) > 0:
         # 위치 기반 간단 클러스터링
         positions = env.e_pos[alive_enemies]
         centroid = positions.mean(axis=0)
 
-        clusters.append({
-            "id": 0,
-            "centroid_x": float(centroid[0]),
-            "centroid_y": float(centroid[1]),
-            "count": len(alive_enemies),
-            "distance_to_mothership": float(np.linalg.norm(centroid - env.center)),
-            "approach_speed": env.cfg.enemy_speed,
-        })
+        # 방위각 계산 (모선 기준)
+        bearing = float(np.degrees(np.arctan2(centroid[0] - c[0], centroid[1] - c[1])) % 360.0)
 
+        clusters.append(EnemyCluster(
+            id=0,
+            center=Point(x=float(centroid[0]), y=float(centroid[1])),
+            bearing=bearing,
+            spread=30.0,  # 기본 스프레드
+            count=len(alive_enemies),
+            approach_speed=float(cfg.enemy_speed),
+            net_covered=False,
+        ))
+
+    # 위협 수준 계산
+    if env.e_alive.any():
+        d = np.hypot(env.e_pos[env.e_alive, 0] - c[0], env.e_pos[env.e_alive, 1] - c[1]).min()
+        threat = float(np.clip(1.0 - d / (env.world_size / 2.0), 0.0, 1.0))
+    else:
+        threat = 0.0
+
+    # 아군 상태
     allies = []
     for p in range(env.P):
-        allies.append({
-            "id": p,
-            "x": float(env.a_pos[p, 0]),
-            "y": float(env.a_pos[p, 1]),
-            "heading": float(env.a_hdg[p]),
-            "nets_remaining": int(env.a_nets[p]),
-            "alive": bool(env.a_alive[p]),
-        })
+        allies.append(AllyShip(
+            id=p,
+            pos=Point(x=float(env.a_pos[p, 0]), y=float(env.a_pos[p, 1])),
+            heading=float(env.a_hdg[p]),
+            nets_remaining=int(env.a_nets[p]),
+            alive=bool(env.a_alive[p]),
+            assigned_cluster=int(env._assign[p]) if int(env._assign[p]) >= 0 else None,
+            route=[Point(x=float(env.route[p, k, 0]), y=float(env.route[p, k, 1]))
+                   for k in range(env.Kw) if env.net_mask[p, k]],
+            deploying=bool(env.doing_net[p]),
+            route_hits_net=False,
+            cluster_covered_by_teammate=False,
+        ))
 
-    return {
-        "clusters": clusters,
-        "allies": allies,
-        "mothership": {
-            "x": float(env.center[0]),
-            "y": float(env.center[1]),
-            "radius": env.mothership_radius,
-        },
-        "world_size": env.world_size,
-        "t": env.t,
-        "ros2_mode": True,
-    }
+    return BattlefieldState(
+        mothership=Mothership(
+            pos=Point(x=float(c[0]), y=float(c[1])),
+            radius=float(env.mothership_radius),
+            threat_level=threat,
+        ),
+        enemy_clusters=clusters,
+        allies=allies,
+        constraints=Constraints(
+            net_max_len=float(getattr(cfg, "net_max_len", 800.0)),
+            ally_speed=float(cfg.ally_speed),
+            enemy_speed=float(cfg.enemy_speed),
+            world_size=float(env.world_size),
+            max_intercept_radius=float(env.world_size / 3.0),
+        ),
+        command=command if command else None,
+    )
