@@ -160,11 +160,13 @@ class ROS2SensorBridge:
         n_enemies: int = 10,
         world_size: float = 12600.0,
         on_state_update: Optional[Callable] = None,
+        imu_frame: str = "NED",  # "ENU" or "NED"
     ):
         self.n_allies = n_allies
         self.n_enemies = n_enemies
         self.world_size = world_size
         self.on_state_update = on_state_update
+        self.imu_frame = imu_frame.upper()
 
         # 센서 상태
         self.state = SensorState(n_allies=n_allies, n_enemies=n_enemies)
@@ -215,10 +217,27 @@ class ROS2SensorBridge:
 
         # GPS → 시뮬 좌표
         a_sim = self.geo_bridge.to_sim(snap["ally_geo"][:, 0], snap["ally_geo"][:, 1])
-        a_hdg = self.geo_bridge.hdg_to_sim(snap["ally_hdg_enu"])
-
         e_sim = self.geo_bridge.to_sim(snap["enemy_geo"][:, 0], snap["enemy_geo"][:, 1])
-        e_hdg = self.geo_bridge.hdg_to_sim(snap["enemy_hdg_enu"])
+
+        # Heading 변환: IMU 프레임에 따라 다름
+        if self.imu_frame == "NED":
+            # NED: yaw는 이미 nav 규약 (0=North, CW+) → 변환 불필요
+            a_hdg = snap["ally_hdg_enu"] % 360.0
+            e_hdg = snap["enemy_hdg_enu"] % 360.0
+        else:
+            # ENU: yaw는 0=East, CCW+ → nav 규약으로 변환
+            a_hdg = self.geo_bridge.hdg_to_sim(snap["ally_hdg_enu"])
+            e_hdg = self.geo_bridge.hdg_to_sim(snap["enemy_hdg_enu"])
+
+        # 모선 위치: /mothership/fix에서 수신된 경우 동적 업데이트
+        mothership_geo = snap["mothership_geo"]
+        if mothership_geo is not None:
+            center = self.geo_bridge.to_sim(
+                np.array([mothership_geo[0]]),
+                np.array([mothership_geo[1]])
+            )[0]
+        else:
+            center = self.geo_bridge.sim_center
 
         return {
             "ally_pos": a_sim,
@@ -227,7 +246,7 @@ class ROS2SensorBridge:
             "enemy_pos": e_sim,
             "enemy_hdg": e_hdg,
             "enemy_alive": snap["enemy_alive"],
-            "center": self.geo_bridge.sim_center,
+            "center": center,
         }
 
     def publish_waypoints(self, routes_sim: np.ndarray, net_mask: np.ndarray = None):
@@ -308,6 +327,15 @@ if ROS2_AVAILABLE:
                 )
                 self.enemy_fix_subs.append(fix_sub)
 
+            # 구독: 모선 GPS
+            self.mothership_sub = self.create_subscription(
+                NavSatFix,
+                "/mothership/fix",
+                self._mothership_fix_cb,
+                sensor_qos,
+                callback_group=self.cb_group
+            )
+
             # 발행: 아군 WP
             self.wp_pubs = []
             for i in range(bridge.n_allies):
@@ -339,6 +367,11 @@ if ROS2_AVAILABLE:
             if self.bridge.on_state_update:
                 self.bridge.on_state_update()
 
+        def _mothership_fix_cb(self, msg: NavSatFix):
+            """모선 GPS 콜백."""
+            self.bridge.state.update_mothership(lat=msg.latitude, lon=msg.longitude)
+            self.get_logger().debug(f"Mothership: {msg.latitude:.6f}, {msg.longitude:.6f}")
+
         def publish_waypoints(self, routes_geo: List[List[dict]]):
             """GPS 경로 발행."""
             for i, wps in enumerate(routes_geo):
@@ -366,13 +399,21 @@ def create_ros2_bridge(
     n_enemies: int = 10,
     world_size: float = 12600.0,
     on_state_update: Optional[Callable] = None,
+    imu_frame: str = "NED",  # "ENU" or "NED" - IMU orientation frame
 ) -> ROS2SensorBridge:
-    """ROS2 브릿지 생성 및 시작."""
+    """ROS2 브릿지 생성 및 시작.
+
+    Args:
+        imu_frame: IMU 좌표 프레임
+            - "NED": 항해 표준 (0°=North, CW+) - 변환 없이 사용
+            - "ENU": ROS 표준 (0°=East, CCW+) - nav 규약으로 변환
+    """
     bridge = ROS2SensorBridge(
         n_allies=n_allies,
         n_enemies=n_enemies,
         world_size=world_size,
         on_state_update=on_state_update,
+        imu_frame=imu_frame,
     )
 
     if ROS2_AVAILABLE:
