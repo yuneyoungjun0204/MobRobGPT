@@ -126,34 +126,40 @@ class CommandedCellEnv(CommandedDefenseEnv):
         return len(self.cell_world)
 
     def build_cell_obs(self):
-        """셀 선택 정책용 관측 구축. [N,P,...] 형태 반환."""
+        """셀 선택 정책용 관측 구축. [N,P,...] 형태 반환.
+
+        정규화: 학습 환경과 동일하게 action_grid_half (6000) 사용.
+        - 위치: 모선 중심 기준 (pos - center) / half → [-1, 1]
+        - 상대 위치/거리: / half
+        """
         cfg = self.cfg
         N, P = self.N, self.P
-        W = cfg.world_size
-        c = self.center
+        # ★ 정규화 분모: action_grid_half (학습 설정과 동일, 기본 6000)
+        half = float(getattr(cfg, 'action_grid_half', 6000.0))
+        c = self.center  # 모선 중심 (정규화 원점)
         C = self.n_cells
         cw = self.cell_world  # [C, 2]
 
         self._compute_assignment()  # _assign, _assignI 계산
 
         # ── own: [N, P, 9] ──
-        # pos2, head2, nets1, doing1, intercept2, assign_flag1
+        # pos2 (모선 중심 기준), head2, nets1, doing1, intercept2 (상대), assign_flag1
         fwd_sin = np.sin(np.radians(self.a_hdg))  # [N, P]
         fwd_cos = np.cos(np.radians(self.a_hdg))
         fwd = np.stack([fwd_sin, fwd_cos], axis=-1)  # [N, P, 2]
 
         assigned_f = (self._assign >= 0).astype(np.float64)  # [N, P]
-        to_I = self._assignI - self.a_pos  # [N, P, 2]
-        Idist = np.hypot(to_I[..., 0], to_I[..., 1])
+        to_I = self._assignI - self.a_pos  # [N, P, 2] 배→요격점 상대벡터
 
+        # ★ 위치: 모선 중심 기준 상대좌표 / half
         own = np.stack([
-            self.a_pos[..., 0] / W,
-            self.a_pos[..., 1] / W,
+            (self.a_pos[..., 0] - c[0]) / half,
+            (self.a_pos[..., 1] - c[1]) / half,
             fwd_sin, fwd_cos,
             self.a_nets / cfg.nets_per_ship,
             self.doing_net.astype(np.float64),
-            to_I[..., 0] / W * assigned_f,
-            to_I[..., 1] / W * assigned_f,
+            to_I[..., 0] / half * assigned_f,
+            to_I[..., 1] / half * assigned_f,
             assigned_f,
         ], axis=-1)  # [N, P, 9]
 
@@ -168,10 +174,10 @@ class CommandedCellEnv(CommandedDefenseEnv):
                 rel = self.a_pos[:, q, :] - self.a_pos[:, p, :]  # [N, 2]
                 d = np.hypot(rel[:, 0], rel[:, 1])
                 ally[:, p, slot, :] = np.stack([
-                    rel[:, 0] / W, rel[:, 1] / W,
+                    rel[:, 0] / half, rel[:, 1] / half,
                     self.a_nets[:, q] / cfg.nets_per_ship,
                     self.doing_net[:, q].astype(np.float64),
-                    d / W,
+                    d / half,
                     self.a_alive[:, q].astype(np.float64),
                 ], axis=-1)
                 ally_mask[:, p, slot] = ~self.a_alive[:, q]
@@ -193,8 +199,8 @@ class CommandedCellEnv(CommandedDefenseEnv):
             rel = centroid - self.a_pos[:, p:p+1, :]  # [N, Kc, 2]
             d = np.hypot(rel[..., 0], rel[..., 1])
             enemy[:, p, :, :] = np.stack([
-                rel[..., 0] / W, rel[..., 1] / W,
-                d / W,
+                rel[..., 0] / half, rel[..., 1] / half,
+                d / half,
                 (cl["count"] / max(self.M, 1)),
                 (cl["spread_deg"] / 180.0),
                 cl["active"].astype(np.float64),
@@ -211,9 +217,9 @@ class CommandedCellEnv(CommandedDefenseEnv):
             # 셀→모선 거리
             cell_to_m = np.hypot(cw[:, 0] - c[0], cw[:, 1] - c[1])  # [C]
             cell[:, p, :, :] = np.stack([
-                rel[..., 0] / W, rel[..., 1] / W,
-                d / W,
-                np.broadcast_to(cell_to_m / W, (N, C)),
+                rel[..., 0] / half, rel[..., 1] / half,
+                d / half,
+                np.broadcast_to(cell_to_m / half, (N, C)),
                 np.broadcast_to((~cell_mask[:, p, :]).astype(np.float64), (N, C)),
             ], axis=-1)
 

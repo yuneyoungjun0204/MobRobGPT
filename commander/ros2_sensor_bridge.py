@@ -11,8 +11,10 @@ commander/ros2_sensor_bridge.py — ROS2 센서 데이터 브릿지
     /ally_0/imu ~ /ally_2/imu: sensor_msgs/Imu (아군 방위)
   발행:
     /ally_0/waypoints ~ /ally_2/waypoints: nav_msgs/Path (경유점)
+    MQTT usv/ally/{id}/route: usv-simulator용 웨이포인트
 """
 
+import json
 import numpy as np
 import time
 import threading
@@ -20,6 +22,13 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Callable
 
 from .geo_bridge import GeoBridge
+
+# MQTT 임포트 (usv-simulator 연동용)
+try:
+    import paho.mqtt.client as mqtt
+    MQTT_AVAILABLE = True
+except ImportError:
+    MQTT_AVAILABLE = False
 
 # ROS2 임포트 (없으면 스텁 모드)
 try:
@@ -161,6 +170,9 @@ class ROS2SensorBridge:
         world_size: float = 12600.0,
         on_state_update: Optional[Callable] = None,
         imu_frame: str = "NED",  # "ENU" or "NED"
+        mqtt_host: str = "localhost",
+        mqtt_port: int = 9001,
+        enable_mqtt: bool = True,
     ):
         self.n_allies = n_allies
         self.n_enemies = n_enemies
@@ -181,6 +193,40 @@ class ROS2SensorBridge:
         self._node = None
         self._executor = None
         self._spin_thread = None
+
+        # MQTT 클라이언트 (usv-simulator 웨이포인트 발행용)
+        self._mqtt_client = None
+        self._mqtt_connected = False
+        if enable_mqtt and MQTT_AVAILABLE:
+            self._init_mqtt(mqtt_host, mqtt_port)
+
+    def _init_mqtt(self, host: str, port: int):
+        """MQTT 클라이언트 초기화 (usv-simulator 연동)."""
+        try:
+            self._mqtt_client = mqtt.Client(
+                client_id=f"ros2_sensor_bridge_{int(time.time())}",
+                transport="websockets"
+            )
+            self._mqtt_client.on_connect = self._on_mqtt_connect
+            self._mqtt_client.on_disconnect = self._on_mqtt_disconnect
+
+            print(f"[ROS2Bridge] Connecting to MQTT {host}:{port}...")
+            self._mqtt_client.connect_async(host, port, 60)
+            self._mqtt_client.loop_start()
+        except Exception as e:
+            print(f"[ROS2Bridge] MQTT connection failed: {e}")
+            self._mqtt_client = None
+
+    def _on_mqtt_connect(self, client, userdata, flags, rc):
+        if rc == 0:
+            print("[ROS2Bridge] MQTT connected (usv-simulator)")
+            self._mqtt_connected = True
+        else:
+            print(f"[ROS2Bridge] MQTT connection failed: {rc}")
+
+    def _on_mqtt_disconnect(self, client, userdata, rc):
+        print("[ROS2Bridge] MQTT disconnected")
+        self._mqtt_connected = False
 
     def fit_geo_bridge(self) -> bool:
         """좌표 변환 초기화 (센서 데이터로)."""
@@ -220,16 +266,12 @@ class ROS2SensorBridge:
         e_sim = self.geo_bridge.to_sim(snap["enemy_geo"][:, 0], snap["enemy_geo"][:, 1])
 
         # Heading 변환
-        # - 아군 IMU: imu_frame에 따라 NED(변환불필요) 또는 ENU(변환필요)
-        # - 적 방위: 항상 ENU로 계산됨 (update_enemy에서 atan2(dy,dx)) → 항상 변환 필요
-        if self.imu_frame == "NED":
-            # NED: 아군 yaw는 이미 nav 규약 (0=North, CW+) → 변환 불필요
-            a_hdg = snap["ally_hdg_enu"] % 360.0
-        else:
-            # ENU: 아군 yaw는 0=East, CCW+ → nav 규약으로 변환
-            a_hdg = self.geo_bridge.hdg_to_sim(snap["ally_hdg_enu"])
-
-        # 적 방위는 항상 ENU로 계산되므로 항상 변환 필요
+        # ROS2 IMU quaternion → Euler yaw는 ENU 규약 (0°=East, CCW+)
+        # NAV/SIM 규약 (0°=North, CW+)으로 변환 필요
+        #
+        # 아군 heading: quat_to_euler() 결과는 ENU → 항상 변환
+        # 적 heading: atan2(dy,dx) 결과도 ENU → 항상 변환
+        a_hdg = self.geo_bridge.hdg_to_sim(snap["ally_hdg_enu"])
         e_hdg = self.geo_bridge.hdg_to_sim(snap["enemy_hdg_enu"])
 
         # 모선 위치: /mothership/fix에서 수신된 경우 동적 업데이트
@@ -253,7 +295,7 @@ class ROS2SensorBridge:
         }
 
     def publish_waypoints(self, routes_sim: np.ndarray, net_mask: np.ndarray = None):
-        """시뮬 좌표 경로 → GPS 변환 후 발행."""
+        """시뮬 좌표 경로 → GPS 변환 후 ROS2/MQTT 발행."""
         if not self._fitted:
             return
 
@@ -268,6 +310,7 @@ class ROS2SensorBridge:
                     "lat": float(lat),
                     "lon": float(lon),
                     "deploy_net": is_net,
+                    "paint": is_net,  # usv-simulator 호환
                 })
             routes_geo.append(wp_geo)
 
@@ -275,7 +318,69 @@ class ROS2SensorBridge:
         if self._node is not None and hasattr(self._node, "publish_waypoints"):
             self._node.publish_waypoints(routes_geo)
 
+        # MQTT 발행 (usv-simulator 연동)
+        self._publish_waypoints_mqtt(routes_geo, routes_sim, net_mask)
+
         return routes_geo
+
+    def _publish_waypoints_mqtt(self, routes_geo: List[List[dict]],
+                                 routes_sim: np.ndarray, net_mask: np.ndarray):
+        """MQTT로 웨이포인트 발행 (usv-simulator용).
+
+        usv-simulator는 x=East, z=South 좌표계를 사용.
+        MobRobGPT는 x=East, y=North를 사용.
+        GPS 좌표로 전송하면 usv-simulator가 자체 변환하므로 GPS 사용.
+        """
+        if not self._mqtt_connected or self._mqtt_client is None:
+            return
+
+        sim_center = self.world_size / 2
+
+        for ally_id, wps in enumerate(routes_geo):
+            if ally_id >= self.n_allies:
+                break
+
+            # usv-simulator가 기대하는 형식
+            # 방법 1: GPS 좌표 (usv-simulator가 자체 변환)
+            waypoints = []
+            net_mask_list = []
+            for k, wp in enumerate(wps):
+                waypoints.append({
+                    "lat": wp["lat"],
+                    "lon": wp["lon"],
+                    "paint": wp.get("paint", False),
+                })
+                net_mask_list.append(wp.get("paint", False))
+
+            # 방법 2: 직접 SIM 좌표 (Y축 변환 포함)
+            # usv-simulator: x=East, z=South
+            # MobRobGPT: x=East, y=North
+            # 변환: z_usv = world_size - y_mobrob
+            waypoints_sim = []
+            for k in range(routes_sim.shape[1]):
+                if ally_id < routes_sim.shape[0]:
+                    x_sim = float(routes_sim[ally_id, k, 0])
+                    y_sim = float(routes_sim[ally_id, k, 1])
+                    # Y축 플립: usv-simulator z = world_size - MobRobGPT y
+                    z_usv = self.world_size - y_sim
+                    is_net = bool(net_mask[ally_id, k]) if net_mask is not None else False
+                    waypoints_sim.append({
+                        "x": x_sim,
+                        "z": z_usv,
+                        "paint": is_net,
+                    })
+
+            # GPS 좌표로 전송 (더 신뢰성 높음)
+            route_msg = {
+                "waypoints": waypoints,
+                "net_mask": net_mask_list,
+            }
+
+            topic = f"usv/ally/{ally_id}/route"
+            try:
+                self._mqtt_client.publish(topic, json.dumps(route_msg), qos=1)
+            except Exception as e:
+                print(f"[ROS2Bridge] MQTT publish error: {e}")
 
 
 if ROS2_AVAILABLE:
@@ -403,6 +508,9 @@ def create_ros2_bridge(
     world_size: float = 12600.0,
     on_state_update: Optional[Callable] = None,
     imu_frame: str = "NED",  # "ENU" or "NED" - IMU orientation frame
+    mqtt_host: str = "localhost",
+    mqtt_port: int = 9001,
+    enable_mqtt: bool = True,
 ) -> ROS2SensorBridge:
     """ROS2 브릿지 생성 및 시작.
 
@@ -410,6 +518,9 @@ def create_ros2_bridge(
         imu_frame: IMU 좌표 프레임
             - "NED": 항해 표준 (0°=North, CW+) - 변환 없이 사용
             - "ENU": ROS 표준 (0°=East, CCW+) - nav 규약으로 변환
+        mqtt_host: MQTT 브로커 호스트 (usv-simulator 연동)
+        mqtt_port: MQTT 브로커 WebSocket 포트
+        enable_mqtt: MQTT 웨이포인트 발행 활성화
     """
     bridge = ROS2SensorBridge(
         n_allies=n_allies,
@@ -417,6 +528,9 @@ def create_ros2_bridge(
         world_size=world_size,
         on_state_update=on_state_update,
         imu_frame=imu_frame,
+        mqtt_host=mqtt_host,
+        mqtt_port=mqtt_port,
+        enable_mqtt=enable_mqtt,
     )
 
     if ROS2_AVAILABLE:
@@ -449,6 +563,15 @@ def create_ros2_bridge(
 
 def shutdown_ros2_bridge(bridge: ROS2SensorBridge):
     """ROS2 브릿지 종료."""
+    # MQTT 정리
+    if bridge._mqtt_client is not None:
+        try:
+            bridge._mqtt_client.loop_stop()
+            bridge._mqtt_client.disconnect()
+        except Exception:
+            pass
+
+    # ROS2 정리
     if bridge._executor is not None:
         bridge._executor.shutdown()
     if bridge._node is not None:
