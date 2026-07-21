@@ -148,21 +148,36 @@ class ROS2CommanderEnv:
         if plan is None:
             return
 
-        # 배정 계산
-        assign = plan_to_assign(plan, self.P)
+        # 현재 전장 상태 구축 (plan_to_assign에 필요)
+        state = build_battlefield_ros2(self, command)
+
+        # 배정 계산 (BattlefieldState 전달)
+        assign = plan_to_assign(plan, state)
         self._assign = np.array(assign, dtype=np.int64)
 
-        # 요격점 계산 (간단한 버전)
+        # 요격점 계산: 클러스터 중심 → 모선 방향의 요격 지점
         for p in range(self.P):
-            c = self._assign[p]
-            if c >= 0:
-                # 해당 클러스터의 무게중심 방향으로 요격점 설정
-                # (실제로는 클러스터링 필요)
-                self._assignI[p] = self.center + np.array([1000, 0])
+            cid = int(self._assign[p])
+            if cid >= 0 and cid < len(state.enemy_clusters):
+                cl = state.enemy_clusters[cid]
+                # 모선 방향으로 요격점 설정
+                cx, cy = cl.center.x, cl.center.y
+                mx, my = self.center[0], self.center[1]
+                dx, dy = mx - cx, my - cy
+                d = np.hypot(dx, dy)
+                if d > 1.0:
+                    # 적보다 먼저 도달 가능한 요격 반경
+                    v_a = self.cfg.ally_speed
+                    v_e = self.cfg.enemy_speed
+                    r = v_a * d / (v_a + v_e)
+                    r = min(r, self.world_size / 3.0)  # 최대 요격 반경
+                    self._assignI[p] = np.array([mx - dx/d * r, my - dy/d * r])
+                else:
+                    self._assignI[p] = self.center.copy()
             else:
-                self._assignI[p] = self.a_pos[p]
+                self._assignI[p] = self.a_pos[p].copy()
 
-        # 경로 생성 (간단한 버전: 요격점으로 직진)
+        # 경로 생성 (요격점으로 직진)
         for p in range(self.P):
             if self._assign[p] >= 0:
                 target = self._assignI[p]
