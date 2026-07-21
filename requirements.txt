@@ -25,3 +25,7 @@ pydantic>=2.0
 
 # usv-simulator 연동 (MQTT)
 paho-mqtt>=2.0
+
+# ROS2 센서 연동 (--ros2 옵션)
+# rclpy는 ROS2 설치 시 포함 (apt install ros-humble-rclpy)
+# sensor_msgs, nav_msgs, geometry_msgs 도 ROS2에 포함
