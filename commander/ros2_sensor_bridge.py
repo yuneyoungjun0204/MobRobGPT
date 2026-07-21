@@ -219,15 +219,18 @@ class ROS2SensorBridge:
         a_sim = self.geo_bridge.to_sim(snap["ally_geo"][:, 0], snap["ally_geo"][:, 1])
         e_sim = self.geo_bridge.to_sim(snap["enemy_geo"][:, 0], snap["enemy_geo"][:, 1])
 
-        # Heading 변환: IMU 프레임에 따라 다름
+        # Heading 변환
+        # - 아군 IMU: imu_frame에 따라 NED(변환불필요) 또는 ENU(변환필요)
+        # - 적 방위: 항상 ENU로 계산됨 (update_enemy에서 atan2(dy,dx)) → 항상 변환 필요
         if self.imu_frame == "NED":
-            # NED: yaw는 이미 nav 규약 (0=North, CW+) → 변환 불필요
+            # NED: 아군 yaw는 이미 nav 규약 (0=North, CW+) → 변환 불필요
             a_hdg = snap["ally_hdg_enu"] % 360.0
-            e_hdg = snap["enemy_hdg_enu"] % 360.0
         else:
-            # ENU: yaw는 0=East, CCW+ → nav 규약으로 변환
+            # ENU: 아군 yaw는 0=East, CCW+ → nav 규약으로 변환
             a_hdg = self.geo_bridge.hdg_to_sim(snap["ally_hdg_enu"])
-            e_hdg = self.geo_bridge.hdg_to_sim(snap["enemy_hdg_enu"])
+
+        # 적 방위는 항상 ENU로 계산되므로 항상 변환 필요
+        e_hdg = self.geo_bridge.hdg_to_sim(snap["enemy_hdg_enu"])
 
         # 모선 위치: /mothership/fix에서 수신된 경우 동적 업데이트
         mothership_geo = snap["mothership_geo"]
