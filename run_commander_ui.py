@@ -14,6 +14,7 @@ LLM 전체 재계획은 주기(기본 100 step)마다. 아군끼리 충돌하면
     python run_commander_ui.py
     python run_commander_ui.py qwen2.5:7b
     python run_commander_ui.py --enemy wave
+    python run_commander_ui.py --cell --ros2   # usv-simulator 3D 시각화 연동
 조작키: [space] 재생/일시정지  [r] 랜덤 리셋  [q] 종료  [a] 자동 재계획 토글
        [1] 집중  [2] 파상  [3] 양동  (상단 버튼과 동일 — 그 대형으로 리셋·재시작)
 옵션: --replan N  (N step 마다 LLM 자동 재계획, 전장 변화 적응. 0=끄기, 기본 100)
@@ -22,6 +23,9 @@ LLM 전체 재계획은 주기(기본 100 step)마다. 아군끼리 충돌하면
                     LLM 배정→_assign 주입→셀 정책이 obs+후보셀 pruning 으로 존중. 기본 ckpt=cell_latest.pt)
      --gain K      (--rl 시 RL 잔차 배율, 기본 1. 크게 하면 휴리스틱 이탈 과장. 셀 모델은 무의미)
      --ckpt PATH   (RL 정책 체크포인트. 기본: --cell=cell_latest.pt, 그 외=rl_latest.pt)
+     --ros2        (usv-simulator 3D 시각화 연동 — MQTT로 상태 전송. localhost:9001)
+     --mqtt-host H (MQTT 브로커 호스트. 기본: localhost)
+     --mqtt-port P (MQTT 브로커 포트. 기본: 9001)
 """
 import sys
 import random
@@ -72,13 +76,17 @@ def main() -> None:
     if cell:
         rl = True
     gain = float(_arg("--gain", "1"))        # RL 잔차 배율(시각화용; 셀 모델은 무의미)
-    _ckpt_default = "boatattack_sim/models/best_mixed_far.pt" if cell \
+    _ckpt_default = "boatattack_sim/models/cell_latest.pt" if cell \
         else "boatattack_sim/models/rl_latest.pt"
     ckpt = _arg("--ckpt", _ckpt_default)
     # --specialized [경로]: 공격양상 기하분류 → 집중/양동/파상 특화 셀 정책 라우팅(--cell 전용)
     specialized_root = (_arg("--specialized", "30_model")
                         if ("--specialized" in sys.argv and cell) else None)
     apf = "--apf" in sys.argv                # RL 모드 APF(충돌회피 안전층). 기본 OFF, v 키로 토글
+    # --ros2: usv-simulator 3D 시각화 연동 (MQTT)
+    ros2_viz = "--ros2" in sys.argv
+    mqtt_host = _arg("--mqtt-host", "localhost")
+    mqtt_port = int(_arg("--mqtt-port", "9001"))
     _flagvals = {sys.argv[i + 1] for i, a in enumerate(sys.argv)
                  if a.startswith("--") and i + 1 < len(sys.argv)}
     model = next((a for a in sys.argv[1:] if not a.startswith("-") and a not in _flagvals), None)
@@ -121,6 +129,30 @@ def main() -> None:
     else:    # 휴리스틱 경로 기동 (기존)
         sim = CommandedSimulator(enemy_mode=enemy)
         _build_bf = build_battlefield
+
+    # --ros2: usv-simulator 3D 시각화 연동
+    viz_bridge = None
+    if ros2_viz:
+        try:
+            from commander.ros2_viz_bridge import Ros2VizBridge
+            print(f"usv-simulator 연동 중… (MQTT {mqtt_host}:{mqtt_port})")
+            viz_bridge = Ros2VizBridge(
+                mqtt_host=mqtt_host,
+                mqtt_port=mqtt_port,
+                geo_origin=(sim.cfg.geo_lat, sim.cfg.geo_lon),
+                world_size=sim.cfg.world_size,
+            )
+            if viz_bridge.connect():
+                viz_bridge.start_publishing()
+                print("usv-simulator 연동 성공! 브라우저에서 http://localhost:5173 열기")
+            else:
+                print("usv-simulator 연동 실패 — MQTT 브로커 확인 (npm run dev)")
+                viz_bridge = None
+        except ImportError as e:
+            print(f"usv-simulator 연동 불가: {e}")
+            print("  → pip install paho-mqtt 실행 필요")
+            viz_bridge = None
+
     sim.reset(seed=0)
     sim.running = True
 
@@ -329,6 +361,47 @@ def main() -> None:
     btn_wave.on_clicked(lambda e: apply_formation("wave", "파상"))
     btn_div.on_clicked(lambda e: apply_formation("diversionary", "양동"))
 
+    def _update_viz_bridge():
+        """usv-simulator로 현재 상태 전송."""
+        if viz_bridge is None:
+            return
+        frame = sim.get_frame()
+        # 아군
+        allies = []
+        for i in range(len(frame.get("ally_x", []))):
+            allies.append({
+                "x": frame["ally_x"][i],
+                "y": frame["ally_y"][i],
+                "heading": frame.get("ally_hdg", [0]*10)[i] if "ally_hdg" in frame else 0,
+                "speed": 6.0,
+                "alive": frame.get("ally_alive", [True]*10)[i] if "ally_alive" in frame else True,
+            })
+        # 적군
+        enemies = []
+        for i in range(len(frame.get("enemy_x", []))):
+            enemies.append({
+                "x": frame["enemy_x"][i],
+                "y": frame["enemy_y"][i],
+                "heading": frame.get("enemy_hdg", [0]*10)[i] if "enemy_hdg" in frame else 0,
+                "speed": 9.0,
+                "alive": frame.get("enemy_alive", [True]*10)[i] if "enemy_alive" in frame else True,
+            })
+        # 모선
+        center = frame.get("center", (sim.cfg.world_size/2, sim.cfg.world_size/2))
+        mothership = {"x": center[0], "y": center[1], "heading": 0}
+        # 그물
+        nets = []
+        if "net_cells" in frame:
+            # 격자 기반 그물을 세그먼트로 변환 (간략화)
+            pass
+        # 통계
+        stats = {
+            "captures": frame.get("captures", 0),
+            "breaches": frame.get("breaches", 0),
+            "step": _scalar_t(),
+        }
+        viz_bridge.update_state(allies, enemies, mothership, nets, stats)
+
     def update(_):
         if sim.running and not _is_done():
             sim.step()                                  # LLM 추론 중에도 계속 진행(WP 추종·적 전진)
@@ -339,6 +412,8 @@ def main() -> None:
                     and _scalar_t() - info.get("last_replan_t", 0) >= info["replan_period"]):
                 print(f"[auto-replan] t={_scalar_t()}")
                 on_submit(info.get("last_cmd", DEFAULT_CMD))
+            # usv-simulator 연동: 매 프레임 상태 전송
+            _update_viz_bridge()
         renderer.draw_scene(ax, sim.get_frame(), bg_img=bg_img, bg_extent=bg_extent)
         if cell and info.get("show_cells", True) and hasattr(sim, "cell_viz"):
             _overlay_cells_cmd(ax, sim.cell_viz())          # 후보셀/그물배제/선택 오버레이 (z 토글)

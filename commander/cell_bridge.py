@@ -92,6 +92,175 @@ class CommandedCellEnv(CommandedDefenseEnv):
         self._last_cells = None                # 시각화용 최근 선택 셀 [P,K]
         self._formation = None                 # 라우터가 고른 현재 대형(시각화/로그용)
 
+    # ── 셀 격자 관련 메서드 (체크포인트 cfg 기반) ──
+    def _cell_half(self) -> float:
+        """셀 격자 반칸 크기 (joint 교차잠금 반경). cell_spacing 의 절반."""
+        spacing = getattr(self.cfg, "cell_spacing", 473.0)
+        return spacing / 2.0
+
+    @property
+    def cell_world(self) -> np.ndarray:
+        """후보 셀 격자 월드 좌표 [C, 2]. 카르테시안 격자(center 기준) 생성."""
+        if hasattr(self, "_cell_world_cache"):
+            return self._cell_world_cache
+        n = getattr(self.cfg, "cell_cart_n", 20)
+        spacing = getattr(self.cfg, "cell_spacing", 473.0)
+        half = self.cfg.world_size / 2
+        # 격자 중심(모선 위치) 기준으로 n×n 셀 배치
+        x = np.linspace(half - (n-1)/2 * spacing, half + (n-1)/2 * spacing, n)
+        y = np.linspace(half - (n-1)/2 * spacing, half + (n-1)/2 * spacing, n)
+        xx, yy = np.meshgrid(x, y)
+        all_cells = np.stack([xx.ravel(), yy.ravel()], axis=1)
+        # 요격 환형 필터 (r_min ~ r_max 범위 내 셀만)
+        r_min = getattr(self.cfg, "cell_r_min", 800.0)
+        r_max = getattr(self.cfg, "cell_r_max", 4500.0)
+        c = self.center
+        dist = np.hypot(all_cells[:, 0] - c[0], all_cells[:, 1] - c[1])
+        valid = (dist >= r_min) & (dist <= r_max)
+        self._cell_world_cache = all_cells[valid]
+        return self._cell_world_cache
+
+    @property
+    def n_cells(self) -> int:
+        """유효 후보 셀 개수."""
+        return len(self.cell_world)
+
+    def build_cell_obs(self):
+        """셀 선택 정책용 관측 구축. [N,P,...] 형태 반환."""
+        cfg = self.cfg
+        N, P = self.N, self.P
+        W = cfg.world_size
+        c = self.center
+        C = self.n_cells
+        cw = self.cell_world  # [C, 2]
+
+        self._compute_assignment()  # _assign, _assignI 계산
+
+        # ── own: [N, P, 9] ──
+        # pos2, head2, nets1, doing1, intercept2, assign_flag1
+        fwd_sin = np.sin(np.radians(self.a_hdg))  # [N, P]
+        fwd_cos = np.cos(np.radians(self.a_hdg))
+        fwd = np.stack([fwd_sin, fwd_cos], axis=-1)  # [N, P, 2]
+
+        assigned_f = (self._assign >= 0).astype(np.float64)  # [N, P]
+        to_I = self._assignI - self.a_pos  # [N, P, 2]
+        Idist = np.hypot(to_I[..., 0], to_I[..., 1])
+
+        own = np.stack([
+            self.a_pos[..., 0] / W,
+            self.a_pos[..., 1] / W,
+            fwd_sin, fwd_cos,
+            self.a_nets / cfg.nets_per_ship,
+            self.doing_net.astype(np.float64),
+            to_I[..., 0] / W * assigned_f,
+            to_I[..., 1] / W * assigned_f,
+            assigned_f,
+        ], axis=-1)  # [N, P, 9]
+
+        # ── ally: [N, P, A, 6] ──
+        A = max(P - 1, 1)
+        ally = np.zeros((N, P, A, 6), dtype=np.float64)
+        ally_mask = np.ones((N, P, A), dtype=bool)
+
+        for p in range(P):
+            others = [q for q in range(P) if q != p]
+            for slot, q in enumerate(others[:A]):
+                rel = self.a_pos[:, q, :] - self.a_pos[:, p, :]  # [N, 2]
+                d = np.hypot(rel[:, 0], rel[:, 1])
+                ally[:, p, slot, :] = np.stack([
+                    rel[:, 0] / W, rel[:, 1] / W,
+                    self.a_nets[:, q] / cfg.nets_per_ship,
+                    self.doing_net[:, q].astype(np.float64),
+                    d / W,
+                    self.a_alive[:, q].astype(np.float64),
+                ], axis=-1)
+                ally_mask[:, p, slot] = ~self.a_alive[:, q]
+
+        # ── enemy: [N, P, Kc, 6] ──
+        # 클러스터 정보 사용
+        from boatattack_sim.env import clustering
+        cl = clustering.cluster_by_gaps_vec(
+            self.e_pos, self.e_alive, self.e_hdg,
+            c, cfg.enemy_speed, cfg.n_clusters, cfg.cluster_gap_deg
+        )
+        Kc = cfg.n_clusters
+        centroid = cl["centroid"]  # [N, Kc, 2]
+
+        enemy = np.zeros((N, P, Kc, 6), dtype=np.float64)
+        enemy_mask = np.ones((N, P, Kc), dtype=bool)
+
+        for p in range(P):
+            rel = centroid - self.a_pos[:, p:p+1, :]  # [N, Kc, 2]
+            d = np.hypot(rel[..., 0], rel[..., 1])
+            enemy[:, p, :, :] = np.stack([
+                rel[..., 0] / W, rel[..., 1] / W,
+                d / W,
+                (cl["count"] / max(self.M, 1)),
+                (cl["spread_deg"] / 180.0),
+                cl["active"].astype(np.float64),
+            ], axis=-1)
+            enemy_mask[:, p, :] = ~cl["active"]
+
+        # ── cell: [N, P, C, 5] ──
+        cell = np.zeros((N, P, C, 5), dtype=np.float64)
+        cell_mask = self._cell_valid_mask()  # [N, P, C] True=invalid
+
+        for p in range(P):
+            rel = cw[None, :, :] - self.a_pos[:, p:p+1, :]  # [N, C, 2]
+            d = np.hypot(rel[..., 0], rel[..., 1])
+            # 셀→모선 거리
+            cell_to_m = np.hypot(cw[:, 0] - c[0], cw[:, 1] - c[1])  # [C]
+            cell[:, p, :, :] = np.stack([
+                rel[..., 0] / W, rel[..., 1] / W,
+                d / W,
+                np.broadcast_to(cell_to_m / W, (N, C)),
+                np.broadcast_to((~cell_mask[:, p, :]).astype(np.float64), (N, C)),
+            ], axis=-1)
+
+        return {
+            "own": own, "ally": ally, "ally_mask": ally_mask,
+            "enemy": enemy, "enemy_mask": enemy_mask,
+            "cell": cell, "cell_mask": cell_mask,
+        }
+
+    def _apply_actions(self, actions):
+        """셀 선택 결과를 경로와 그물 마스크에 적용."""
+        cells = actions.get("cells")
+        if cells is None:
+            return
+
+        cells = np.asarray(cells)  # [N, P, K]
+        cw = self.cell_world  # [C, 2]
+        K = cells.shape[-1]
+
+        for w in range(self.N):
+            for p in range(self.P):
+                if not self.a_alive[w, p]:
+                    continue
+                # 선택된 셀 좌표
+                sel_idx = cells[w, p]  # [K]
+                sel_pts = cw[sel_idx]  # [K, 2]
+
+                # 경로 생성: 현재 위치 → 선택 셀들 순서대로
+                # route[w, p, :, :] 에 WP 배치 (Kw개 슬롯)
+                Kw = self.Kw
+                for k in range(min(K, Kw)):
+                    self.route[w, p, k, :] = sel_pts[k]
+                # 나머지 WP는 마지막 셀로 채움
+                if K < Kw:
+                    self.route[w, p, K:, :] = sel_pts[-1]
+
+                # 그물 마스크: 셀 사이 구간에 그물 전개
+                self.net_mask[w, p, :] = False
+                for k in range(min(K - 1, Kw)):
+                    self.net_mask[w, p, k] = True
+
+                # 전개 상태 초기화
+                self.ptr[w, p] = 0
+                self.leg_netted[w, p] = False
+                self.doing_net[w, p] = False
+                self.paint_dist[w, p] = 0.0
+
     # ── LLM 계획 주입: 상위 _compute_assignment 재사용 + HOLD 집합 갱신 ──
     def _compute_assignment(self, assign_pref=None):
         super()._compute_assignment(assign_pref)            # _assign/_assignI 주입 + radius_adjust
@@ -108,7 +277,9 @@ class CommandedCellEnv(CommandedDefenseEnv):
         """베이스 pruning 위에, net_installed(설치된 그물) 격자에 걸리는 후보셀을 무효화한다.
         → 재전개(최대 3회) 배가 기존/팀원 그물 위에 중복으로 다시 깔지 않고 새 위치로 커버 확대.
         전부 무효로 굶는 배는 원복(그물 위 아니면 어차피 안 굶음; 크래시 방지)."""
-        base = super()._cell_valid_mask()                   # [N,P,C] True=무효
+        # 베이스 마스크: 모든 셀 유효(False=valid). [N,P,C]
+        C = len(self.cell_world)
+        base = np.zeros((self.N, self.P, C), dtype=bool)    # [N,P,C] True=무효
         ni = self.net_installed[0]
         if not ni.any():
             return base
@@ -159,7 +330,9 @@ class CommandedCellEnv(CommandedDefenseEnv):
     def cell_viz(self):
         """UI 오버레이용 후보셀 데이터: 전체후보 / 배별유효 / 그물배제 / 선택셀."""
         ours = self._cell_valid_mask()[0]                       # net배제 포함(True=무효)
-        base = DefenseVecEnv._cell_valid_mask(self)[0]          # net배제 전
+        # base mask: all False (all valid) before net exclusions
+        C = len(self.cell_world)
+        base = np.zeros((self.P, C), dtype=bool)
         excluded = (~base) & ours                              # 유효였는데 그물로 배제
         return {
             "world": self.cell_world,

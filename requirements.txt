@@ -1,0 +1,27 @@
+# MobRobGPT 의존성
+# Python 3.10+ 권장
+
+# PyTorch (CUDA 12.4)
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch
+torchvision
+torchaudio
+
+# 핵심 라이브러리
+pygame
+numpy
+matplotlib
+pandas
+
+# SciPy (1.14 미만 필수 - interp2d 사용)
+scipy<1.14
+
+# OpenAI API (Assistants Beta API 사용)
+openai>=1.40,<2
+
+# Ollama (로컬 LLM 지휘관)
+ollama
+pydantic>=2.0
+
+# usv-simulator 연동 (MQTT)
+paho-mqtt>=2.0
