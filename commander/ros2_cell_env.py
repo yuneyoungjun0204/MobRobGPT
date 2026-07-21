@@ -221,16 +221,22 @@ class ROS2CellEnv:
                 self.net_mask[p, :] = False
             return
 
-        # 셀 관측 생성 (간소화 버전)
+        # 셀 관측 생성
         obs = self._build_simple_obs()
 
         # 셀 정책 추론
+        # CellPointerActor 사용법:
+        #   1. forward(obs, hidden) → p (encoded), new_hidden
+        #   2. sample(p) 또는 greedy(p) → {"cells": [B, K]}
         with torch.no_grad():
             obs_t = cell_obs_to_torch(obs, self.device)
-            actions, self._h = self._actor.act(obs_t, self._h)
-            cells = actions.cpu().numpy()  # [P, K]
+            p, self._h = self._actor(obs_t, self._h)  # forward
+            actions = self._actor.greedy(p)  # 결정적 선택
+            cells = actions["cells"].cpu().numpy()  # [B, K] where B = N*P = 1*P = P
 
-        self._last_cells = cells
+        # [P, K] 형태로 reshape (B=P 이므로 그대로)
+        K = cells.shape[1] if len(cells.shape) > 1 else 1
+        self._last_cells = cells.reshape(self.P, K)
 
         # 셀 좌표 → 경로 변환
         cell_world = self._get_cell_world()
@@ -241,43 +247,125 @@ class ROS2CellEnv:
                 self.net_mask[p, :] = False
             else:
                 # 선택된 셀들로 경로 구성
-                for k in range(min(self.Kw, len(cells[p]))):
-                    cell_idx = int(cells[p, k]) if k < len(cells[p]) else 0
-                    cell_idx = min(cell_idx, len(cell_world) - 1)
+                for k in range(min(self.Kw, K)):
+                    cell_idx = int(self._last_cells[p, k])
+                    cell_idx = min(max(cell_idx, 0), len(cell_world) - 1)
                     self.route[p, k] = cell_world[cell_idx]
                     self.net_mask[p, k] = True
+                # 나머지 WP는 마지막 셀로
+                for k in range(K, self.Kw):
+                    self.route[p, k] = self.route[p, K - 1]
+                    self.net_mask[p, k] = False
 
         # ROS2로 경로 발행
         self.publish_waypoints()
 
     def _build_simple_obs(self) -> dict:
-        """셀 정책용 간소화 관측 생성."""
-        # 실제 구현은 CommandedCellEnv.build_cell_obs를 참조해야 함
-        # 여기서는 기본 구조만 생성
-        obs = {
-            "own": np.zeros((1, self.P, 12)),  # [N, P, own_dim]
-            "ally": np.zeros((1, self.P, self.P - 1, 8)),  # [N, P, P-1, ally_dim]
-            "enemy": np.zeros((1, self.P, self.M, 8)),  # [N, P, M, enemy_dim]
-            "cell": np.zeros((1, self.P, 272, 4)),  # [N, P, n_cells, cell_dim]
-        }
+        """셀 정책용 관측 생성.
 
-        # 간단한 관측 채우기
+        cell_obs_to_torch가 요구하는 형식:
+          own: [N, P, 9] - pos2·head2·nets1·doing1 + 배정요격점2·할당플래그1
+          ally: [N, P, P-1, 6]
+          ally_mask: [N, P, P-1] bool
+          enemy: [N, P, M, 6]
+          enemy_mask: [N, P, M] bool
+          cell: [N, P, n_cells, 5]
+          cell_mask: [N, P, n_cells] bool
+        """
+        N = 1  # 단일 환경
+        cell_world = self._get_cell_world()
+        n_cells = len(cell_world)
+        W = self.world_size
+        cx, cy = self.center
+
+        # own: [N, P, 9]
+        own = np.zeros((N, self.P, 9), dtype=np.float32)
+        # ally: [N, P, P-1, 6]
+        ally = np.zeros((N, self.P, self.P - 1, 6), dtype=np.float32)
+        ally_mask = np.ones((N, self.P, self.P - 1), dtype=bool)
+        # enemy: [N, P, M, 6]
+        enemy = np.zeros((N, self.P, self.M, 6), dtype=np.float32)
+        enemy_mask = np.ones((N, self.P, self.M), dtype=bool)
+        # cell: [N, P, n_cells, 5]
+        cell = np.zeros((N, self.P, n_cells, 5), dtype=np.float32)
+        cell_mask = np.ones((N, self.P, n_cells), dtype=bool)
+
         for p in range(self.P):
-            # 자신 상태
-            obs["own"][0, p, 0] = self.a_pos[p, 0] / self.world_size
-            obs["own"][0, p, 1] = self.a_pos[p, 1] / self.world_size
-            obs["own"][0, p, 2] = np.sin(np.radians(self.a_hdg[p]))
-            obs["own"][0, p, 3] = np.cos(np.radians(self.a_hdg[p]))
-            obs["own"][0, p, 4] = self.a_nets[p] / 5.0
-            obs["own"][0, p, 5] = float(self.a_alive[p])
+            px, py = self.a_pos[p]
+            hdg_rad = np.radians(self.a_hdg[p])
 
-            # 적 상태
+            # own[9]: pos2·head2·nets1·doing1·배정요격점2·할당플래그1
+            own[0, p, 0] = (px - cx) / W  # 모선 기준 상대 위치
+            own[0, p, 1] = (py - cy) / W
+            own[0, p, 2] = np.sin(hdg_rad)
+            own[0, p, 3] = np.cos(hdg_rad)
+            own[0, p, 4] = self.a_nets[p] / 5.0
+            own[0, p, 5] = float(self.doing_net[p])
+            # 배정 요격점 (상대 좌표)
+            if self._assign[p] >= 0:
+                own[0, p, 6] = (self._assignI[p, 0] - cx) / W
+                own[0, p, 7] = (self._assignI[p, 1] - cy) / W
+                own[0, p, 8] = 1.0  # 할당됨
+            else:
+                own[0, p, 6] = 0.0
+                own[0, p, 7] = 0.0
+                own[0, p, 8] = 0.0  # 미할당
+
+            # ally[6]: 다른 아군 상태 (자신 제외)
+            ai = 0
+            for q in range(self.P):
+                if q == p:
+                    continue
+                qx, qy = self.a_pos[q]
+                q_hdg_rad = np.radians(self.a_hdg[q])
+                ally[0, p, ai, 0] = (qx - cx) / W
+                ally[0, p, ai, 1] = (qy - cy) / W
+                ally[0, p, ai, 2] = np.sin(q_hdg_rad)
+                ally[0, p, ai, 3] = np.cos(q_hdg_rad)
+                ally[0, p, ai, 4] = self.a_nets[q] / 5.0
+                ally[0, p, ai, 5] = float(self.a_alive[q])
+                ally_mask[0, p, ai] = self.a_alive[q]
+                ai += 1
+
+            # enemy[6]: 적 상태
             for e in range(self.M):
-                obs["enemy"][0, p, e, 0] = self.e_pos[e, 0] / self.world_size
-                obs["enemy"][0, p, e, 1] = self.e_pos[e, 1] / self.world_size
-                obs["enemy"][0, p, e, 2] = float(self.e_alive[e])
+                ex, ey = self.e_pos[e]
+                e_hdg_rad = np.radians(self.e_hdg[e])
+                enemy[0, p, e, 0] = (ex - cx) / W
+                enemy[0, p, e, 1] = (ey - cy) / W
+                enemy[0, p, e, 2] = np.sin(e_hdg_rad)
+                enemy[0, p, e, 3] = np.cos(e_hdg_rad)
+                # 적 → 모선 방향 (접근 속도 프록시)
+                dx, dy = cx - ex, cy - ey
+                d = np.hypot(dx, dy)
+                if d > 1.0:
+                    enemy[0, p, e, 4] = dx / d
+                    enemy[0, p, e, 5] = dy / d
+                enemy_mask[0, p, e] = self.e_alive[e]
 
-        return obs
+            # cell[5]: 셀 상태
+            for c in range(n_cells):
+                cell_x, cell_y = cell_world[c]
+                cell[0, p, c, 0] = (cell_x - cx) / W
+                cell[0, p, c, 1] = (cell_y - cy) / W
+                # 셀 → 모선 거리/방향
+                dc = np.hypot(cell_x - cx, cell_y - cy)
+                cell[0, p, c, 2] = dc / W
+                # 셀 → 배 거리
+                dp = np.hypot(cell_x - px, cell_y - py)
+                cell[0, p, c, 3] = dp / W
+                # 셀 점유 여부 (그물 설치됨)
+                cell[0, p, c, 4] = 0.0  # 간소화: 항상 비점유
+
+        return {
+            "own": own,
+            "ally": ally,
+            "ally_mask": ally_mask,
+            "enemy": enemy,
+            "enemy_mask": enemy_mask,
+            "cell": cell,
+            "cell_mask": cell_mask,
+        }
 
     def _get_cell_world(self) -> np.ndarray:
         """셀 격자 좌표 반환."""
