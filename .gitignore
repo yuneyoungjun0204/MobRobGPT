@@ -14,9 +14,11 @@ dist/
 htmlcov/
 
 # ── 가상환경 (주의: boatattack_sim/env 는 패키지이므로 'env/' 는 무시하지 않음) ──
+#   ★ ENV/ 는 반드시 루트 고정(/ENV/). Windows 는 core.ignorecase=true 라
+#     비고정 'ENV/' 가 boatattack_sim/env/ 까지 대소문자 무시 매칭해 패키지를 통째로 무시한다.
 .venv/
 venv/
-ENV/
+/ENV/
 
 # ── OS / 에디터 ─────────────────────────────────────────
 .DS_Store
@@ -40,3 +42,6 @@ font_test.png
 # ── 비밀키 (커밋 방지) ──────────────────────────────────
 .env
 *.key
+
+# ── 백업 파일 ──
+*.bak
