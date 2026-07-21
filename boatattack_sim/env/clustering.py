@@ -61,8 +61,12 @@ def enemy_clusters_vec(e_pos, e_alive, e_hdg, center, enemy_speed,
     evx = np.sin(np.deg2rad(e_hdg)) * enemy_speed
     evy = np.cos(np.deg2rad(e_hdg)) * enemy_speed
     emx = c[0] - e_pos[..., 0]; emy = c[1] - e_pos[..., 1]
-    emn = np.hypot(emx, emy) + 1e-6
-    approach = (evx * emx + evy * emy) / emn                      # [N,M]
+    # ★ 스케일 불변: '+1e-6' 같은 절대(m) 엡실론은 맵이 작아지면 상대오차가 커져
+    #   (33m 수조에서 emn~13m → 상대 8e-8) 정규화 관측이 스케일마다 미세하게 달라진다.
+    #   0-나눗셈은 마스크로 막아 순수 비율만 남긴다 → 어떤 스케일에서도 완전 동일.
+    emn = np.hypot(emx, emy)
+    _ok = emn > 0.0
+    approach = np.where(_ok, (evx * emx + evy * emy) / np.where(_ok, emn, 1.0), 0.0)                    # [N,M]
 
     cent = np.zeros((N, K, 2)); cnt = np.zeros((N, K))
     spread = np.zeros((N, K)); appr = np.zeros((N, K))
@@ -150,8 +154,12 @@ def cluster_by_gaps_vec(e_pos, e_alive, e_hdg, center, enemy_speed,
     evx = np.sin(np.deg2rad(e_hdg)) * enemy_speed
     evy = np.cos(np.deg2rad(e_hdg)) * enemy_speed
     emx = c[0] - e_pos[..., 0]; emy = c[1] - e_pos[..., 1]
-    emn = np.hypot(emx, emy) + 1e-6
-    approach = (evx * emx + evy * emy) / emn                         # [N,M]
+    # ★ 스케일 불변: '+1e-6' 같은 절대(m) 엡실론은 맵이 작아지면 상대오차가 커져
+    #   (33m 수조에서 emn~13m → 상대 8e-8) 정규화 관측이 스케일마다 미세하게 달라진다.
+    #   0-나눗셈은 마스크로 막아 순수 비율만 남긴다 → 어떤 스케일에서도 완전 동일.
+    emn = np.hypot(emx, emy)
+    _ok = emn > 0.0
+    approach = np.where(_ok, (evx * emx + evy * emy) / np.where(_ok, emn, 1.0), 0.0)                       # [N,M]
 
     cent = np.zeros((N, K, 2)); cnt = np.zeros((N, K))
     spread = np.zeros((N, K)); appr = np.zeros((N, K))

@@ -116,7 +116,9 @@ class CommandedCellEnv(CommandedDefenseEnv):
         ii, jj = np.where(ni)                               # 설치 그물 격자셀
         netxy = np.stack([(ii + 0.5) * cell, (jj + 0.5) * cell], axis=1)   # [M,2] 그물셀 중심
         cw = self.cell_world                                # [C,2]
-        R = max(float(self._cell_half()), 250.0)            # '그물 바로 위' 후보셀만 배제(섹터는 보존 → 굶음·오배치 방지)
+        # ★ 250m 하한은 길이라 스케일을 곱해야 한다. 안 곱하면 33m 수조에서
+        #   R=250m > 맵 전체 → 모든 후보셀이 배제돼 정책이 아무것도 못 고른다.
+        R = max(float(self._cell_half()), 250.0 * float(getattr(self.cfg, "scale", 1.0)))
         # 각 후보셀 → 가장 가까운 그물셀 거리 < R 이면 무효(그물 깔린 곳)
         d2 = ((cw[:, None, 0] - netxy[None, :, 0]) ** 2
               + (cw[:, None, 1] - netxy[None, :, 1]) ** 2)   # [C,M]

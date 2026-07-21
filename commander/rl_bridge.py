@@ -147,8 +147,10 @@ class CommandedDefenseEnv(DefenseVecEnv):
         cfg.avoid_steer = bool(avoid_steer)   # 기본 OFF: 순수 RL 경로(APF 안전층 없음). 학습분포 이탈 주의.
         cfg.n_clusters = 3                     # 클러스터 최대 3개 (LLM 이 3개 그룹으로 다룸)
         # 파상(wave): 웨이브 간 텀을 확실히 → gap↑(1000→1800), near↓(4000→2600)로 3단이 맵 안(≤6300)에.
-        cfg.enemy_wave_near = 2600.0
-        cfg.enemy_wave_gap = 1800.0
+        # ★ 절대 미터라 스케일을 곱한다(안 곱하면 축소맵을 2.6km 값으로 덮어써 스케일이 깨짐).
+        _s = float(getattr(cfg, "scale", 1.0))
+        cfg.enemy_wave_near = 2600.0 * _s
+        cfg.enemy_wave_gap = 1800.0 * _s
         cfg.spawn_phase_lo = 1.0     # 스폰 랜덤 당김(학습용 비동기화) 끄기 → 웨이브 텀이 설계대로
         cfg.free_current_wp = True   # 추종 중인 현재 WP도 매 결정 RL 잔차로 변동(고정 해제)
         # 재배정 시엔 새 경로를 WP1(처음)부터 추종 → preserve_ptr_on_reeng 는 끔(기본 False).

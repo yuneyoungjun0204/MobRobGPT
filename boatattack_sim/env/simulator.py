@@ -408,9 +408,9 @@ class Simulator:
             return []
         Rcap = self._R_FEAS * cfg.net_deploy_reach
         r_far = float(np.clip(cfg.net_deploy_frac * D,
-                              cfg.mothership_radius + 600.0, Rcap))   # 바깥(나중) 그물 반경
+                              cfg.mothership_radius + cfg.net_standoff_far, Rcap))   # 바깥(나중) 그물 반경
         r_near = float(np.clip(cfg.net_deploy_near * D,
-                               cfg.mothership_radius + 400.0, r_far))  # 안쪽(먼저) 그물 반경
+                               cfg.mothership_radius + cfg.net_standoff_near, r_far))  # 안쪽(먼저) 그물 반경
         n = int(min(self.a_nets[i], 3))
         if n <= 0:
             return []

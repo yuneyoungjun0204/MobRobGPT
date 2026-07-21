@@ -12,6 +12,103 @@ boatattack_sim/env/config.py — 시뮬레이터 설정 단일 정의 (Single So
 from dataclasses import dataclass, asdict, field
 
 
+# ══════════════════════════════════════════════════════════════════════
+# ★ 스케일 불변 (scale invariance) — 필드 차원 분류
+#
+#   실험장이 바뀌어도(12.6km 해상 → 33m 수조) 정책 입출력이 동일하려면,
+#   **길이 차원 필드만** 같은 비율 s 로 줄이면 된다.
+#   관측이 전부 길이/길이 비율(예: (world-center)/action_grid_half)이라
+#   s 가 약분돼 정규화 관측이 수학적으로 **완전히 동일**해지기 때문이다.
+#
+#   차원 규약: 거리=m, 시간=step, 각도=deg.
+#     길이(m)      → ×s
+#     속도(m/step) → ×s   (시간축 step 은 고정하고 길이만 줄이므로)
+#     선회율(deg/step)·각도·개수·비율·step 수 → 불변
+#
+#   grid_size(200)·net_width(cell 단위)는 개수라 불변 —
+#   cell_size = world_size/grid_size 가 자동으로 ×s 되어 물리 폭이 따라 줄어든다.
+# ══════════════════════════════════════════════════════════════════════
+
+_LEN_SIM = frozenset({
+    # 맵 / 행동격자
+    "world_size", "action_grid_half", "cell_spacing", "cell_r_min", "cell_r_max",
+    # 모선 / 적
+    "mothership_radius", "enemy_evade_look", "enemy_spawn_margin",
+    "enemy_spawn_radius", "enemy_group_jitter", "enemy_wave_gap", "enemy_wave_near",
+    # 아군 (ally_speed 는 m/step = 길이/시간 → ×s)
+    "ally_speed", "arrive_radius", "ally_row_gap", "ally_side_spacing",
+    # 그물
+    "net_max_len", "net_standoff_far", "net_standoff_near", "net_standoff_near_fan",
+    # 충돌 / 회피
+    "ally_collision_radius", "ally_mother_radius", "avoid_steer_cap",
+    "wp_repel_r", "wp_repel_mother_r",
+    # 경로 / 행동 스케일
+    "route_step", "wp_adjust_max", "fan_curve_max", "aux_radial_max", "aux_lateral_max",
+    # 관측 정규화 상수
+    "norm_k_enemy", "norm_k_mother", "norm_k_ally", "net_probe_range",
+    # 렌더링(물리 무관하나 같이 줄여야 그림이 맞음)
+    "ship_len", "ship_wid", "enemy_size", "moback_size",
+})
+
+# 길이가 **아님**이 확인된 수치 필드 (개수·비율·각도·step·좌표계 상수).
+# _LEN_SIM 과 합쳐 모든 수치 필드를 덮어야 한다(아래 _assert_classified 가 강제).
+_DIMLESS_SIM = frozenset({
+    "grid_size", "dt", "action_grid_n", "cell_cart_n", "cell_bearings", "cell_bands",
+    "cell_nets", "cell_prune_k", "cell_prune_angle", "cell_off_scale",
+    "n_enemies", "enemy_speed_mult", "enemy_max_turn", "enemy_weave_amp",
+    "enemy_weave_period", "enemy_evade_deg", "enemy_spawn_frac", "spawn_phase_lo",
+    "enemy_spawn_groups", "enemy_wave_ranks", "enemy_wave_spread",
+    "domain_rand_frac", "domain_rand_angle",
+    "n_allies", "max_pairs", "ally_max_turn", "ally_turn_gain", "ally_slow_min",
+    "ally_heading", "nets_per_ship", "deploy_speed_mult", "deploy_turn_mult",
+    "net_width", "net_paint_step", "net_deploy_near", "net_deploy_frac", "net_deploy_reach",
+    "avoid_steer_gain", "wp_repel_gain", "wp_repel_iters",
+    "attn_heads", "attn_layers", "decision_period", "transit_wp",
+    "anchor_weight", "anchor_alpha", "net_radial_frac", "fan_bearing_max",
+    "fan_rnear_amp", "fan_rfar_amp", "fan_spread_amp", "net_dir_adjust", "max_steps",
+    "moback_heading", "n_clusters", "rot_max_deg", "cluster_gap_deg",
+    "net_probe_dirs", "geo_lat", "geo_lon", "basemap_zoom", "seed", "scale",
+})
+
+_LEN_REWARD = frozenset({
+    "place_scale", "clear_net_r", "raycov_collide_m",
+    "avoid_r", "avoid_dmin", "mother_avoid_r",
+    # ★ 배정 cost 는 '미터' 단위라 길이다. 안 줄이면 6000m 보너스가
+    #   33m 맵을 통째로 덮어 배정이 stickiness 로 고착된다.
+    "w_assign_bias", "assign_sticky_bonus",
+})
+
+_DIMLESS_REWARD = frozenset({
+    "r_capture", "r_capture_indiv", "r_wipeout", "r_breach", "r_survive",
+    "r_ally_collision", "r_obstacle", "r_net_touch", "time_penalty",
+    "w_path", "w_net", "w_wp_good", "w_wp_bad", "w_threat", "gamma",
+    "w_coverage", "coverage_rays", "w_raycov", "raycov_net_bonus", "w_anchor",
+    "w_place", "w_eff", "w_smooth", "w_clear_net", "w_consist",
+    "w_assign_path", "w_idle", "assign_intercept_t",
+    "w_obstacle", "avoid_eta", "mother_avoid_w",
+})
+
+
+def _assert_classified(cfg) -> None:
+    """모든 수치 필드가 길이/무차원 중 하나로 분류돼 있는지 검증.
+
+    새 수치 필드를 추가하면 여기서 즉시 터진다 → 스케일 규칙을 반드시 결정하게 강제.
+    (분류를 빼먹으면 그 필드만 안 줄어들어 스케일 불변이 조용히 깨지는 사고 방지.)
+    """
+    if isinstance(cfg, SimConfig):
+        known, name = _LEN_SIM | _DIMLESS_SIM, "SimConfig"
+    else:
+        known, name = _LEN_REWARD | _DIMLESS_REWARD, "RewardCfg"
+    missing = {f for f, spec in cfg.__dataclass_fields__.items()
+               if isinstance(getattr(cfg, f), (int, float))
+               and not isinstance(getattr(cfg, f), bool)
+               and f not in known}
+    if missing:
+        raise AssertionError(
+            f"{name} 의 수치 필드가 스케일 분류에 없습니다: {sorted(missing)}\n"
+            f"config.py 의 _LEN_* (길이 → ×s) 또는 _DIMLESS_* (불변) 에 추가하세요.")
+
+
 @dataclass
 class SimConfig:
     """BoatAttack 방어 시뮬레이터 전체 설정."""
@@ -144,6 +241,11 @@ class SimConfig:
     net_deploy_frac:  float = 0.45   # **나중** 까는 그물 반경 = frac × 적거리 D (바깥/전방).
                                      #   near→frac 로 부채꼴 전개. 도달가능 반경(R_FEAS)서 상한.
     net_deploy_reach: float = 1.0    # 도달가능 반경(R_FEAS) 상한 배수. ↑면 더 멀리(전진↑·위험↑).
+    # ★ 모선 이격 하한(m): 그물 반경이 모선에 너무 붙지 않게 하는 최소 여유.
+    #   원래 코드에 600/400/200 으로 하드코딩돼 있어 축소맵에서 스케일이 깨졌다 → 설정으로 승격.
+    net_standoff_far:      float = 600.0  # r_far  하한 = mothership_radius + 이 값
+    net_standoff_near:     float = 400.0  # r_near 하한 (경로 부채꼴 경로)
+    net_standoff_near_fan: float = 200.0  # r_near 하한 (structured fan 경로)
 
     # ── 충돌 (충돌 시 큰 패널티 + 비활성화) ──────────────────────────
     ally_collision_radius: float = 115.0  # 아군-아군 충돌 간주 거리 (m)
@@ -272,6 +374,12 @@ class SimConfig:
     # ── 난수 ──────────────────────────────────────────────────────────
     seed: int = 0
 
+    # ── ★ 스케일 기록 ─────────────────────────────────────────────────
+    #   기본(12.6km 해상)=1.0. apply_scale/at_scale 로 줄이면 그 배율이 누적 기록된다.
+    #   체크포인트에 함께 저장돼 "이 정책이 어느 스케일에서 학습됐는지" 추적 가능.
+    #   (관측은 스케일 불변이라 학습·추론 스케일이 달라도 되지만, 기록은 남긴다.)
+    scale: float = 1.0
+
     def __post_init__(self):
         if self.n_allies > self.max_pairs:
             self.max_pairs = self.n_allies
@@ -297,6 +405,47 @@ class SimConfig:
     def center(self) -> tuple:
         """모선 위치 (맵 정중앙)."""
         return (self.world_size * 0.5, self.world_size * 0.5)
+
+    # ── ★ 스케일 불변 (scale invariance) ──────────────────────────────
+    def apply_scale(self, s: float) -> "SimConfig":
+        """길이 차원 필드를 전부 ×s (in-place). 시간·각도·개수·비율은 불변.
+
+        관측 정규화가 (world-center)/action_grid_half 처럼 **길이/길이** 라
+        모든 길이를 같은 비율로 줄이면 정규화 관측이 수학적으로 동일해진다
+        → 12.6km 해상에서 학습한 정책을 33m 수조에 재학습 없이 그대로 쓴다.
+
+        속도(m/step)도 길이다: step 수를 고정한 채 길이만 줄이므로 ×s.
+        (deg/step 선회율은 각도라 불변 — 같은 step 에 같은 각도를 돈다.)
+        """
+        s = float(s)
+        if s <= 0:
+            raise ValueError(f"scale 은 양수여야 합니다: {s}")
+        _assert_classified(self)
+        for f in _LEN_SIM:
+            setattr(self, f, getattr(self, f) * s)
+        self.scale *= s
+        return self
+
+    @classmethod
+    def at_scale(cls, *, world_size: float = None, factor: float = None, **overrides):
+        """기본 설정을 원하는 스케일로 만든 새 config.
+
+            SimConfig.at_scale(world_size=33.0)      # 33m 수조
+            SimConfig.at_scale(factor=0.01)          # 1/100 축소
+
+        overrides 는 **스케일 적용 후** 반영된다(이미 실제 단위로 준 값이므로).
+        """
+        if (world_size is None) == (factor is None):
+            raise ValueError("world_size 와 factor 중 정확히 하나만 지정하세요.")
+        base = cls()
+        if factor is None:
+            factor = float(world_size) / base.world_size
+        base.apply_scale(factor)
+        for k, v in overrides.items():
+            if k not in cls.__dataclass_fields__:
+                raise ValueError(f"알 수 없는 필드: {k}")
+            setattr(base, k, v)
+        return base
 
     # ── 직렬화 (체크포인트/export 호환) ───────────────────────────────
     def to_dict(self) -> dict:
@@ -402,6 +551,20 @@ class RewardCfg:
     #   (참고: '배p→WP0 직선이 그물 지나면 페널티'식 횡단-회피 배정은 실측상 churn↑·역효과라 폐기.)
     assign_sticky_bonus:      float = 6000.0 # 직전 배정 유지 보너스 (m; cost 차감, 0=비활성). 포화점(~6000)
                                               #   까지 빡세게: 정책 churn 17.4→5.8%(_prev_assign 연결 수정과 함께).
+
+    def apply_scale(self, s: float) -> "RewardCfg":
+        """길이 차원(영향반경·거리스케일·배정 cost[m])만 ×s. 보상 가중치는 불변.
+
+        ★ w_assign_bias/assign_sticky_bonus 는 '미터' 단위 cost 라 반드시 줄여야 한다.
+          안 줄이면 6000m 짜리 보너스가 33m 맵 전체보다 커져 배정이 완전히 고착된다.
+        """
+        s = float(s)
+        if s <= 0:
+            raise ValueError(f"scale 은 양수여야 합니다: {s}")
+        _assert_classified(self)
+        for f in _LEN_REWARD:
+            setattr(self, f, getattr(self, f) * s)
+        return self
 
     def to_dict(self) -> dict:
         return asdict(self)

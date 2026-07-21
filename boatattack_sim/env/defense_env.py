@@ -404,7 +404,7 @@ class DefenseVecEnv:
         p = self.a_pos
         mx = p[..., 0] - c[0]; my = p[..., 1] - c[1]
         md = np.hypot(mx, my); dm = md - cfg.ally_mother_radius           # 죽음원반 가장자리까지
-        R = float(getattr(rc, "mother_avoid_r", 500.0))                  # APF 와 동일 세기(과밀어내기 방지)
+        R = float(getattr(rc, "mother_avoid_r", 500.0 * getattr(self.cfg, "scale", 1.0)))                  # APF 와 동일 세기(과밀어내기 방지)
         W = float(getattr(rc, "mother_avoid_w", 1.0))
         mpush = np.where((dm < R) & av, W * (R - dm), 0.0)
         minv = 1.0 / np.maximum(md, 1e-6)
@@ -1035,8 +1035,8 @@ class DefenseVecEnv:
             return self._fan_route_netgo(fan, assigned, rad, D)
         perp = np.stack([-rad[..., 1], rad[..., 0]], -1)       # 측면축
         Rcap = self._R_FEAS * cfg.net_deploy_reach
-        r_far = np.clip(cfg.net_deploy_frac * D, cfg.mothership_radius + 600.0, Rcap)
-        r_near = np.clip(cfg.net_deploy_near * D, cfg.mothership_radius + 400.0, r_far)
+        r_far = np.clip(cfg.net_deploy_frac * D, cfg.mothership_radius + cfg.net_standoff_far, Rcap)
+        r_near = np.clip(cfg.net_deploy_near * D, cfg.mothership_radius + cfg.net_standoff_near, r_far)
         # 그물 leg 수 = min(자원, Kw-1). WP0..WP_nnet 가 부채꼴(near→far), 이후 WP 는 끝점 반복.
         nnet = int(min(cfg.nets_per_ship, Kw - 1))
         kk = np.minimum(np.arange(Kw), nnet).astype(np.float64)            # [Kw] 0..nnet,flat
@@ -1070,9 +1070,9 @@ class DefenseVecEnv:
         # [1][2] near/far 반경 (독립 스케일)
         Rcap = self._R_FEAS * cfg.net_deploy_reach
         r_far = np.clip(cfg.net_deploy_frac * D * (1 + a_rf * cfg.fan_rfar_amp),
-                        cfg.mothership_radius + 600.0, Rcap)
+                        cfg.mothership_radius + cfg.net_standoff_far, Rcap)
         r_near = np.clip(cfg.net_deploy_near * D * (1 + a_rn * cfg.fan_rnear_amp),
-                         cfg.mothership_radius + 200.0, r_far)
+                         cfg.mothership_radius + cfg.net_standoff_near_fan, r_far)
         Kf = Kw - 1
         nnet = int(min(cfg.nets_per_ship, Kf - 1))
         kk = np.minimum(np.arange(Kf), nnet).astype(np.float64)
@@ -1241,7 +1241,7 @@ class DefenseVecEnv:
         if getattr(cfg, "cell_grid", "polar") == "cartesian":
             half = float(cfg.cell_r_max) / max(int(cfg.cell_cart_n) - 1, 1)
         else:
-            half = float(getattr(cfg, "cell_spacing", 473.0)) * 0.5
+            half = float(getattr(cfg, "cell_spacing", 473.0 * getattr(cfg, "scale", 1.0))) * 0.5
         return half * float(getattr(cfg, "cell_off_scale", 1.0))
 
     def cells_to_routes(self, cells, offset=None):

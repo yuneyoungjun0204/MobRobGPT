@@ -150,6 +150,56 @@ for f in ('cell_obs_slim','action_grid_half','cell_r_max','cell_r_min',
 
 ## 5. 다른 스케일 실험장으로 이식하기 (예: 33m × 33m)
 
+### ✅ 구현됨 — `SimConfig.at_scale()` / `apply_scale()`
+
+스케일 변환은 **코드로 구현·검증**되어 있다. 손으로 값을 고칠 필요가 없다.
+
+```python
+from boatattack_sim.env.config import SimConfig, RewardCfg
+
+cfg = SimConfig.at_scale(world_size=33.0)      # 33m 수조
+r   = RewardCfg(); r.apply_scale(cfg.scale)    # 보상 길이항도 같이
+
+# 체크포인트에서 불러온 config 를 축소할 때
+actor, cfg = load_cell_actor("30_model/wave/best.pt")
+cfg.apply_scale(33.0 / cfg.world_size)
+```
+
+`config.py` 의 `_LEN_SIM` / `_LEN_REWARD` 에 **길이 차원 필드가 전부 등록**돼 있고,
+`_assert_classified()` 가 "모든 수치 필드는 길이 또는 무차원 중 하나로 분류돼야 한다"를
+강제한다 → **새 필드를 추가하면 즉시 에러**가 나서 스케일 규칙을 반드시 결정하게 된다
+(분류 누락으로 그 필드만 안 줄어들어 불변성이 조용히 깨지는 사고를 구조적으로 차단).
+
+### 검증 결과 (`tests/`)
+
+| 테스트 | 내용 | 결과 |
+|---|---|---|
+| `test_scale_invariance.py` | 12600m vs 33m 정규화 관측 직접 비교 (wave/grouped/diversionary) | 최대오차 **4.8e-14** (float64 엡실론) |
+| `test_scale_e2e.py` | 실제 셀 정책으로 90결정×16월드 주행 | 포획 533 / 돌파 214 / 충돌 10 **완전 일치** |
+
+실행:
+```bash
+PYTHONPATH=. python tests/test_scale_invariance.py
+PYTHONPATH=. python tests/test_scale_e2e.py
+```
+
+### 구현 중 발견해 고친 스케일 파괴 지점
+
+| 위치 | 문제 | 조치 |
+|---|---|---|
+| `clustering.py` | `emn = hypot(...) + 1e-6` — **절대(m) 엡실론**. 33m 맵에선 상대오차 8e-8 로 커져 `approach` 특징이 스케일마다 달라짐 | 0-나눗셈을 마스크로 처리해 순수 비율화 |
+| `cell_bridge.py` | `max(cell_half, 250.0)` — 250m 하한이 33m 맵 전체보다 커서 **후보셀 전멸** | `× cfg.scale` |
+| `rl_bridge.py` | `enemy_wave_near=2600.0` 절대 대입으로 축소 config 를 덮어씀 | `× cfg.scale` |
+| `defense_env.py`·`simulator.py` | `mothership_radius + 600/400/200` 하드코딩 이격 | `net_standoff_far/near/near_fan` 설정으로 승격(자동 스케일) |
+| `sim_bridge.scaled_config` | **14개 필드만** 수동 스케일 → `action_grid_half`(정규화 기준!)·`cell_r_*`·`norm_k_*` 등 누락, `RewardCfg` 는 아예 미적용 | `at_scale()` 위임 + `scaled_reward()` 추가 |
+
+`sim_bridge.scaled_config` 의 누락이 가장 컸다 — **정규화 분모인 `action_grid_half` 자체가
+안 줄어들어**, 축소맵에서 모든 관측이 1/382 로 쪼그라든 채 정책에 들어가고 있었다.
+
+---
+
+## 5-1. 배경 원리
+
 정규화가 **전부 상대값**이라 대부분 자동으로 따라온다. 바꿔야 할 것은 소수다.
 
 ### 바꿔야 하는 것 — 길이 차원 (m 단위)

@@ -14,7 +14,8 @@ from dataclasses import replace
 import numpy as np
 
 from boatattack_sim.env.simulator import Simulator
-from boatattack_sim.env.config import DEFAULT_CONFIG, DEFAULT_REWARD
+from boatattack_sim.env.config import (DEFAULT_CONFIG, DEFAULT_REWARD,
+                                       SimConfig, RewardCfg)
 from boatattack_sim.env import clustering
 
 from .schema import (
@@ -30,30 +31,32 @@ GEO_LON_DEFAULT = 127.4017
 
 def scaled_config(world_size: float = DEFAULT_WORLD_SIZE, enemy_speed_mult: float = 1.5,
                   geo_lat: float = GEO_LAT_DEFAULT, geo_lon: float = GEO_LON_DEFAULT):
-    """12600m 기본설정을 target world_size 로 '비율 유지' 축소 → 동역학 보존. 적=아군×mult."""
-    base = DEFAULT_CONFIG
-    s = world_size / base.world_size
-    return replace(
-        base,
+    """12600m 기본설정을 target world_size 로 '비율 유지' 축소 → 동역학 보존. 적=아군×mult.
+
+    ★ 스케일 규칙은 SimConfig.at_scale 하나로 통일(단일 소스).
+      예전엔 여기서 14개 필드만 손으로 곱했는데, action_grid_half·cell_r_min/max·
+      cell_spacing·enemy_wave_near·ally_mother_radius·wp_repel_*·wp_adjust_max·
+      route_step·norm_k_* 등이 빠져 **정규화 기준(action_grid_half)이 안 줄어드는**
+      치명적 구멍이 있었다. 이제 _LEN_SIM 전체가 자동으로 스케일된다.
+    """
+    return SimConfig.at_scale(
         world_size=world_size,
-        mothership_radius=base.mothership_radius * s,
-        enemy_spawn_margin=base.enemy_spawn_margin * s,
-        enemy_spawn_radius=base.enemy_spawn_radius * s,
-        enemy_wave_gap=base.enemy_wave_gap * s,
-        arrive_radius=base.arrive_radius * s,
-        ally_row_gap=base.ally_row_gap * s,
-        ally_side_spacing=base.ally_side_spacing * s,
-        net_max_len=base.net_max_len * s,
-        ally_collision_radius=base.ally_collision_radius * s,
-        ally_speed=base.ally_speed * s,
-        ship_len=base.ship_len * s,
-        ship_wid=base.ship_wid * s,
-        enemy_size=base.enemy_size * s,
-        moback_size=base.moback_size * s,
-        enemy_speed_mult=enemy_speed_mult,
+        enemy_speed_mult=enemy_speed_mult,     # 무차원 — 스케일 후 적용
         geo_lat=geo_lat, geo_lon=geo_lon,
         n_clusters=3,                          # 클러스터 최대 3개
     )
+
+
+def scaled_reward(world_size: float = DEFAULT_WORLD_SIZE) -> RewardCfg:
+    """world_size 에 맞춰 길이 차원 보상 파라미터(영향반경·배정 cost[m])를 축소.
+
+    ★ 예전 scaled_config 는 RewardCfg 를 전혀 안 건드렸다 →
+      assign_sticky_bonus(6000m)·w_assign_bias(2000m)·avoid_r(600m) 가 base 스케일로
+      남아, 33m 맵에선 맵 전체보다 큰 상수가 되어 배정/회피가 완전히 고착된다.
+    """
+    r = RewardCfg()
+    r.apply_scale(world_size / DEFAULT_CONFIG.world_size)
+    return r
 
 
 class CommandedSimulator(Simulator):
@@ -502,4 +505,4 @@ def apply_plan(sim: CommandedSimulator, plan, state: BattlefieldState) -> None:
 
 
 __all__ = ["CommandedSimulator", "build_battlefield", "plan_to_assign", "apply_plan",
-           "scaled_config"]
+           "scaled_config", "scaled_reward"]

@@ -84,7 +84,7 @@ def spawn_enemies(cfg: SimConfig = DEFAULT_CONFIG, rng=None, mode: str = "random
     center = np.array(cfg.center, dtype=np.float64)
     # 비-wave 기본 스폰 반경: enemy_spawn_radius(맵과 decouple) 우선, 없으면 가장자리.
     R0 = getattr(cfg, "enemy_spawn_radius", None) or (world * 0.5 - margin)
-    jit = getattr(cfg, "enemy_group_jitter", 220.0)
+    jit = getattr(cfg, "enemy_group_jitter", 150.0 * getattr(cfg, "scale", 1.0))
     G0 = max(1, getattr(cfg, "enemy_spawn_groups", 3))
     b0 = rng.uniform(0, 360)                        # 전체 방위 무작위 회전
     # ★ 도메인 랜덤화: 매 스폰마다 포메이션 '구조 파라미터'를 ±frac 흔들어 매번 다른 변형.
@@ -113,8 +113,8 @@ def spawn_enemies(cfg: SimConfig = DEFAULT_CONFIG, rng=None, mode: str = "random
         #   ★ near(가장 가까운 파, 먼저 도달)부터 +gap 씩 '바깥(뒤)'으로 미뤄 진짜 파상 구현.
         #   near=5000, gap=600, ranks=3 → 5000/5600/6200. 가까운 파도 ≥5km(near), 후속은 6km+.
         nr = max(1, getattr(cfg, "enemy_wave_ranks", 3))
-        gap = getattr(cfg, "enemy_wave_gap", 1000.0)
-        near = getattr(cfg, "enemy_wave_near", 4000.0)
+        gap = getattr(cfg, "enemy_wave_gap", 1000.0 * getattr(cfg, "scale", 1.0))
+        near = getattr(cfg, "enemy_wave_near", 4000.0 * getattr(cfg, "scale", 1.0))
         if dr:                                                        # ★ DR: 파상 '모양'만 변형(거리는 고정)
             ranks_opts = getattr(cfg, "domain_rand_ranks", (nr,))
             nr = int(rng.choice(ranks_opts))                         # 단(rank) 수 {2,3}
