@@ -15,7 +15,8 @@ LLM 전체 재계획은 주기(기본 100 step)마다. 아군끼리 충돌하면
     python run_commander_ui.py qwen2.5:7b
     python run_commander_ui.py --enemy wave
     python run_commander_ui.py --cell           # 셀선택 정책 (시뮬레이션)
-    python run_commander_ui.py --ros2           # ROS2 실시간 센서 연동
+    python run_commander_ui.py --ros2           # ROS2 실시간 센서 연동 (LLM 배정만)
+    python run_commander_ui.py --cell --ros2    # ROS2 센서 + 셀 정책 (실제 USV 제어)
 조작키: [space] 재생/일시정지  [r] 랜덤 리셋  [q] 종료  [a] 자동 재계획 토글
        [1] 집중  [2] 파상  [3] 양동  (상단 버튼과 동일 — 그 대형으로 리셋·재시작)
 옵션: --replan N  (N step 마다 LLM 자동 재계획, 전장 변화 적응. 0=끄기, 기본 100)
@@ -119,17 +120,29 @@ def main() -> None:
 
     # --ros2 모드: ROS2 실시간 센서 데이터 사용
     ros2_sensor_mode = ros2_viz and not cell and not rl  # --ros2만 단독 사용 시
+    ros2_cell_mode = ros2_viz and cell  # --ros2 + --cell: ROS2 센서 + 셀 정책
 
-    if ros2_sensor_mode:
-        # ROS2 센서 브릿지 모드 (실제 센서 데이터)
+    if ros2_cell_mode:
+        # ROS2 센서 + 셀 정책 모드
+        from commander.ros2_cell_env import ROS2CellEnv
+        from commander.ros2_env import build_battlefield_ros2
+        print("ROS2 + 셀 정책 모드 시작…")
+        print("  구독: /enemy_0~9/fix, /ally_0~2/fix, /ally_0~2/imu, /mothership/fix")
+        print("  발행: /ally_0~2/waypoints")
+        print(f"  셀 정책: {ckpt}")
+        sim = ROS2CellEnv(ckpt=ckpt, n_allies=3, n_enemies=10)
+        sim.start_ros2()
+        _build_bf = build_battlefield_ros2
+    elif ros2_sensor_mode:
+        # ROS2 센서 브릿지 모드 (실제 센서 데이터, LLM 배정만)
         from commander.ros2_env import ROS2CommanderEnv, build_battlefield_ros2
         print("ROS2 센서 모드 시작…")
-        print("  구독: /enemy_0~9/fix, /ally_0~2/fix, /ally_0~2/imu")
+        print("  구독: /enemy_0~9/fix, /ally_0~2/fix, /ally_0~2/imu, /mothership/fix")
         print("  발행: /ally_0~2/waypoints")
         sim = ROS2CommanderEnv(n_allies=3, n_enemies=10)
         sim.start_ros2()
         _build_bf = build_battlefield_ros2
-    elif cell:  # 셀선택 RL 정책 (배정=LLM, 경로/그물=셀 정책 / DefenseVecEnv 셀 백엔드)
+    elif cell:  # 셀선택 RL 정책 (시뮬레이션, 배정=LLM, 경로/그물=셀 정책)
         from commander.cell_bridge import CommandedCellEnv, build_battlefield_defense
         if specialized_root:
             print(f"셀 특화 라우팅 로딩 중… (집중/양동/파상, {specialized_root})")
@@ -147,9 +160,9 @@ def main() -> None:
         sim = CommandedSimulator(enemy_mode=enemy)
         _build_bf = build_battlefield
 
-    # --ros2 + --cell: MQTT 시각화 연동 (시뮬레이션 + 3D 뷰어)
+    # MQTT 시각화 연동 (시뮬레이션 + 3D 뷰어) - ROS2 센서 모드에서는 사용 안 함
     viz_bridge = None
-    if ros2_viz and not ros2_sensor_mode:
+    if ros2_viz and not ros2_sensor_mode and not ros2_cell_mode:
         try:
             from commander.ros2_viz_bridge import Ros2VizBridge
             print(f"usv-simulator 연동 중… (MQTT {mqtt_host}:{mqtt_port})")
