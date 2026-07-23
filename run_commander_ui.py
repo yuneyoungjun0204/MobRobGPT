@@ -66,10 +66,11 @@ def _overlay_cells_cmd(ax, viz):
 def main() -> None:
     enemy = _arg("--enemy", "random")
     backend = "openai" if "--openai" in sys.argv else "ollama"
-    replan = int(_arg("--replan", "100"))   # LLM 자동 재계획 주기(step). 0=끄기
-    rl = "--rl" in sys.argv                  # 경로 기동을 RL 정책으로 (배정은 여전히 LLM)
-    cell = "--cell" in sys.argv              # RL 을 '셀선택' 정책(CellPointerActor)으로 (--rl 함의)
-    ros2 = "--ros2" in sys.argv              # ROS2 센서 사용 (GPS/IMU → SIM 좌표)
+    replan = int(_arg("--replan", "100"))   # LLM auto-replan interval (step). 0=off
+    rl_hz = int(_arg("--rl-hz", "5"))        # RL decision frequency (1=every step, 5=every 5 steps)
+    rl = "--rl" in sys.argv                  # Route maneuvering via RL policy (allocation still LLM)
+    cell = "--cell" in sys.argv              # RL via 'cell selection' policy (implies --rl)
+    ros2 = "--ros2" in sys.argv              # ROS2 sensor mode (GPS/IMU -> SIM coords)
     if cell:
         rl = True
     gain = float(_arg("--gain", "1"))        # RL 잔차 배율(시각화용; 셀 모델은 무의미)
@@ -350,9 +351,11 @@ def main() -> None:
 
     def update(_):
         if sim.running and not _is_done():
-            # ROS2 모드: 센서 주입 + 정책 추론만 (시뮬레이션 물리 없음)
+            # ROS2 mode: sensor injection + policy inference only (no physics)
+            # LLM (high-level): cluster allocation via replan (100 steps)
+            # RL (low-level): waypoint generation via rl_hz (default 5 steps)
             if ros2_bridge is not None:
-                ros2_bridge.step_policy_only(sim)
+                ros2_bridge.step_policy_only(sim, rl_hz=rl_hz)
             else:
                 sim.step()                              # 시뮬레이션 모드: 물리 포함
             if info.get("_pending") is not None:        # LLM 결과 도착 → 이번 프레임에 적용

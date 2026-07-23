@@ -402,35 +402,42 @@ class ROS2SensorBridge:
         with self._lock:
             return self._ally_gps_valid.any() or self._enemy_alive.any()
 
-    def step_policy_only(self, env):
+    def step_policy_only(self, env, rl_hz: int = 10):
         """센서 기반 정책 추론 (자율 시뮬레이션 없음).
 
         ROS2 모드에서 env.step() 대신 사용.
-        센서 데이터가 있을 때만 위치 주입 + 정책 추론 + 발행.
-        센서 데이터가 없으면 대기 (배들 정지).
+
+        구조:
+        - LLM (고수준): env.set_plan()으로 클러스터 배정 (100 step 주기, run_commander_ui에서 관리)
+        - RL (저수준): 매 rl_hz 스텝마다 _rl_decide() → 웨이포인트 발행
+
+        Args:
+            env: CommandedCellEnv 또는 유사 환경
+            rl_hz: RL 결정 주기 (1 = 매 스텝, 5 = 5스텝마다). 기본 10.
         """
-        # 디버그: 100 스텝마다 상태 출력
         t = int(env.t[0]) if hasattr(env.t, '__getitem__') else int(env.t)
+        micro_ct = getattr(env, '_micro_ct', 0)
+
+        # 디버그: 100 스텝마다 상태 출력
         if t % 100 == 0:
             with self._lock:
                 print(f"[ROS2] t={t} ally_valid={self._ally_gps_valid.tolist()} "
-                      f"enemy_alive={self._enemy_alive.sum()}")
+                      f"enemy_alive={self._enemy_alive.sum()} rl_hz={rl_hz}")
 
-        # 센서 데이터가 없으면 대기 (자율 시뮬레이션 안 함)
+        # 센서 데이터가 없으면 대기
         if not self.has_sensor_data():
-            # 선박 위치만 발행 (현재 상태 유지)
             self.publish_ship_states(env)
             return env.get_frame()
 
-        # 1. 센서 데이터 주입
+        # 1. 센서 데이터 주입 (매 스텝)
         self.inject_to_env(env)
 
-        # 2. 정책 결정 (decision_period 마다)
-        micro_ct = getattr(env, '_micro_ct', 0)
-        if micro_ct % env.cfg.decision_period == 0:
+        # 2. RL 정책 결정 (rl_hz 마다) — LLM 배정 내에서 저수준 제어
+        #    LLM은 set_plan()으로 _assign(배→클러스터)을 주입, RL은 그 범위 내에서 WP 생성
+        if micro_ct % rl_hz == 0:
             if hasattr(env, '_rl_decide'):
                 env._rl_decide()
-            # 결정 시점에만 웨이포인트 발행 (매 프레임 X)
+            # RL 결정 직후 웨이포인트 발행 (고빈도)
             routes, masks = self.extract_waypoints(env)
             self.publish_waypoints(routes, masks)
 
@@ -438,7 +445,7 @@ class ROS2SensorBridge:
         env.t[0] += 1
         env._micro_ct = micro_ct + 1
 
-        # 4. 선박 위치 발행
+        # 4. 선박 위치 발행 (매 스텝)
         self.publish_ship_states(env)
 
         return env.get_frame()
