@@ -133,7 +133,6 @@ try:
     from rclpy.node import Node
     from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
     from sensor_msgs.msg import NavSatFix
-    from nav_msgs.msg import Path
     ROS2_OK = True
 except ImportError:
     ROS2_OK = False
@@ -157,7 +156,6 @@ class GPSPlotter(Node):
         self.enemies = [None] * 10
         self.ally_history = [deque(maxlen=50) for _ in range(3)]
         self.enemy_history = [deque(maxlen=50) for _ in range(10)]
-        self.waypoints = [[] for _ in range(3)]  # 아군별 웨이포인트 리스트
         self.lock = threading.Lock()
 
         # GPS 구독
@@ -171,17 +169,10 @@ class GPSPlotter(Node):
                 NavSatFix, f'/enemy_{i}/fix',
                 lambda msg, idx=i: self._on_enemy(idx, msg), qos)
 
-        # 웨이포인트 구독 (Path 메시지)
-        for i in range(3):
-            self.create_subscription(
-                Path, f'/ally_{i}/waypoints',
-                lambda msg, idx=i: self._on_waypoints(idx, msg), 10)
-
         print("GPS Plotter 시작 — 토픽 구독 중...")
         print("  /mothership/fix")
         print("  /ally_0/fix ~ /ally_2/fix")
         print("  /enemy_0/fix ~ /enemy_9/fix")
-        print("  /ally_0/waypoints ~ /ally_2/waypoints")
 
     def _on_mother(self, msg):
         with self.lock:
@@ -200,18 +191,6 @@ class GPSPlotter(Node):
             self.enemies[idx] = pos
             self.enemy_history[idx].append(pos)
 
-    def _on_waypoints(self, idx, msg):
-        """웨이포인트 Path 메시지 수신 (SIM 좌표, 미터)."""
-        with self.lock:
-            wps = []
-            for pose in msg.poses:
-                # Path의 position: SIM 좌표 (meters)
-                # position.x = SIM X, position.y = SIM Y
-                sim_x = pose.pose.position.x
-                sim_y = pose.pose.position.y
-                wps.append((sim_x, sim_y))  # SIM 좌표 그대로 저장
-            self.waypoints[idx] = wps
-
     def get_data(self):
         with self.lock:
             return {
@@ -220,7 +199,6 @@ class GPSPlotter(Node):
                 'enemies': self.enemies.copy(),
                 'ally_history': [list(h) for h in self.ally_history],
                 'enemy_history': [list(h) for h in self.enemy_history],
-                'waypoints': [list(wps) for wps in self.waypoints],
             }
 
 
@@ -362,28 +340,6 @@ def main():
                     x, y = half - north, half - east
                     ax2.scatter(x, y, s=80, c='#EF5350', marker='^', edgecolors='white', linewidths=0.5, zorder=5)
                     ax2.annotate(f'E{i}', (x, y + 0.8), fontsize=7, color='#EF5350', ha='center')
-
-            # 웨이포인트 — 빨간 구로 표시 + 경로선
-            # SIM 좌표: sim_x = east + half, sim_y = north + half
-            # 플롯 좌표: plot_x = half - north, plot_y = half - east (180도 회전)
-            # 변환: plot_x = W - sim_y, plot_y = W - sim_x
-            wp_colors = ['#FF5722', '#E91E63', '#9C27B0']  # 아군별 다른 색상
-            for ally_idx, wps in enumerate(data.get('waypoints', [])):
-                if wps:
-                    wp_xs, wp_ys = [], []
-                    for sim_x, sim_y in wps:
-                        # SIM → 플롯 좌표 변환 (180도 회전)
-                        plot_x = W - sim_y
-                        plot_y = W - sim_x
-                        wp_xs.append(plot_x)
-                        wp_ys.append(plot_y)
-                    # 웨이포인트 경로선
-                    if len(wp_xs) > 1:
-                        ax2.plot(wp_xs, wp_ys, '--', color=wp_colors[ally_idx % 3], lw=1.5, alpha=0.7, zorder=3)
-                    # 웨이포인트 점 (빨간 구)
-                    ax2.scatter(wp_xs, wp_ys, s=60, c=wp_colors[ally_idx % 3], marker='o',
-                               edgecolors='white', linewidths=1, alpha=0.8, zorder=4,
-                               label=f'WP A{ally_idx}' if ally_idx == 0 else '')
 
         ax2.legend(loc='upper right', fontsize=8)
 
