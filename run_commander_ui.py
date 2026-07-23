@@ -115,7 +115,7 @@ def main() -> None:
         else:
             print(f"Loading cell policy... ({ckpt})")
         if world_size is not None:
-            print(f"  ★ 스케일 변환: world_size={world_size}m (모든 길이 비례축소, 재학습 불필요)")
+            print(f"  * Scale Transform: world_size={world_size}m (proportional scaling, no retraining needed)")
         sim = CommandedCellEnv(ckpt, enemy_mode=enemy, avoid_steer=apf,   # 기본 APF OFF, --apf 로 ON
                                specialized_root=specialized_root,
                                world_size=world_size)
@@ -139,9 +139,9 @@ def main() -> None:
             _ws = world_size if world_size else sim.cfg.world_size
             ros2_bridge = ROS2SensorBridge(world_size=_ws, n_allies=sim.P, n_enemies=sim.M)
             ros2_bridge.start()
-            print(f"  ★ ROS2 센서 브릿지: world={_ws}m (GPS/IMU → SIM 좌표)")
+            print(f"  * ROS2 Sensor Bridge: world={_ws}m (GPS/IMU -> SIM coords)")
         else:
-            print("  ⚠ ROS2 사용 불가 (rclpy 없음) — 시뮬레이션 모드")
+            print("  ! ROS2 unavailable (rclpy not found) - Simulation mode")
 
     def _scalar_t():   # sim.t: CommandedSimulator=스칼라, RL(DefenseVecEnv)=배열([N]) → 스칼라화
         t = sim.t
@@ -250,7 +250,7 @@ def main() -> None:
         draw_info(); fig.canvas.draw_idle()
         bf = _build_bf(sim, command=cmd)          # 전장 스냅샷(메인 스레드) → 스레드로 전달
         gen = info.get("gen", 0)
-        print(f"\n[on_submit] LLM 호출 시작(논블로킹), 입력='{cmd}'")
+        print(f"\n[on_submit] LLM call started (non-blocking), input='{cmd}'")
         threading.Thread(target=_llm_worker, args=(bf, cmd, gen), daemon=True).start()
 
     def _apply_result():
@@ -280,12 +280,12 @@ def main() -> None:
                               + "  ".join(_tag(i, a) for i, a in enumerate(assign.tolist())))
             info["rationale"] = plan.rationale
             info["status"] = "Assignment applied"
-            print(f"[명령 적용] deployments={[(d.cluster_id, d.ally_ids) for d in plan.deployments]}  "
+            print(f"[Command Applied] deployments={[(d.cluster_id, d.ally_ids) for d in plan.deployments]}  "
                   f"hold={sorted(held)}  assign={assign.tolist()}")
         except Exception as e:
             import traceback
             traceback.print_exc()
-            info["status"] = f"오류: {type(e).__name__}: {e}"
+            info["status"] = f"Error: {type(e).__name__}: {e}"
         finally:
             info["busy"] = False
             draw_info()

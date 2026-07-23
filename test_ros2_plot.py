@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""ROS2 GPS 데이터 수신 + 실시간 플롯 테스트.
+"""ROS2 GPS Data Receiver + Real-time Plot Test.
 
-GPS 토픽(NavSatFix)의 latitude/longitude를 미터 단위로 플롯.
-usv-simulator 전장 현황 좌표계와 동일한 절대 좌표계 사용.
+Plots latitude/longitude from GPS topics (NavSatFix) in meters.
+Uses absolute coordinate system identical to usv-simulator battlefield view.
 
-실행:
+Usage:
     python test_ros2_plot.py
-    python test_ros2_plot.py --world 33    # 33m 월드
-    python test_ros2_plot.py --world 12600 # 12.6km 월드
+    python test_ros2_plot.py --world 33    # 33m world
+    python test_ros2_plot.py --world 12600 # 12.6km world
 """
 import sys
 import numpy as np
@@ -25,25 +25,25 @@ def _arg(flag, default=None):
     return default
 
 
-# 월드 크기 (--world 플래그로 설정 가능)
-WORLD_SIZE = float(_arg("--world", "33"))  # 기본 33m
+# World size (configurable via --world flag)
+WORLD_SIZE = float(_arg("--world", "33"))  # default 33m
 
 
-# ============ UTM 변환 함수 ============
+# ============ UTM Conversion Functions ============
 def latlon_to_utm(lat, lon):
-    """WGS84 lat/lon → UTM (easting, northing) 미터 변환.
+    """WGS84 lat/lon to UTM (easting, northing) in meters.
 
     Returns: (easting, northing, zone_number, zone_letter)
     """
     if not (-80.0 <= lat <= 84.0):
-        return None  # UTM 범위 밖
+        return None  # Outside UTM range
     if not (-180.0 <= lon <= 180.0):
         return None
 
     # UTM zone 계산
     zone_number = int((lon + 180) / 6) + 1
 
-    # 노르웨이/스발바르 특수 케이스
+    # Norway/Svalbard special cases
     if 56.0 <= lat < 64.0 and 3.0 <= lon < 12.0:
         zone_number = 32
     if 72.0 <= lat < 84.0:
@@ -77,7 +77,7 @@ def latlon_to_utm(lat, lon):
     elif -56 > lat >= -64: zone_letter = 'E'
     elif -64 > lat >= -72: zone_letter = 'D'
     elif -72 > lat >= -80: zone_letter = 'C'
-    else: zone_letter = 'Z'  # 범위 밖
+    else: zone_letter = 'Z'  # Out of range
 
     # WGS84 파라미터
     a = 6378137.0  # semi-major axis
@@ -108,23 +108,23 @@ def latlon_to_utm(lat, lon):
         + (61 - 58 * T + T * T + 600 * C - 330 * e2) * A ** 6 / 720))
 
     if lat < 0:
-        northing += 10000000  # 남반구 오프셋
+        northing += 10000000  # Southern hemisphere offset
 
     return (easting, northing, zone_number, zone_letter)
 
 
 def latlon_to_local_meters(lat, lon, origin_lat, origin_lon):
-    """간단한 로컬 좌표 변환 (원점 기준 미터).
+    """Simple local coordinate conversion (meters from origin).
 
-    작은 영역에서 UTM보다 단순하게 사용 가능.
+    Simpler than UTM for small areas.
     """
-    # 위도 1도 ≈ 111,320m
-    # 경도 1도 ≈ 111,320m * cos(lat)
+    # 1 degree latitude ≈ 111,320m
+    # 1 degree longitude ≈ 111,320m * cos(lat)
     d_lat = lat - origin_lat
     d_lon = lon - origin_lon
 
-    y = d_lat * 111320.0  # north (미터)
-    x = d_lon * 111320.0 * math.cos(math.radians(origin_lat))  # east (미터)
+    y = d_lat * 111320.0  # north (meters)
+    x = d_lon * 111320.0 * math.cos(math.radians(origin_lat))  # east (meters)
 
     return (x, y)
 
@@ -136,7 +136,7 @@ try:
     ROS2_OK = True
 except ImportError:
     ROS2_OK = False
-    print("rclpy 없음 — ROS2 테스트 불가")
+    print("rclpy not found - ROS2 test unavailable")
     exit(1)
 
 
@@ -150,7 +150,7 @@ class GPSPlotter(Node):
             depth=1
         )
 
-        # 데이터 저장
+        # Data storage
         self.mothership = None
         self.allies = [None, None, None]
         self.enemies = [None] * 10
@@ -158,7 +158,7 @@ class GPSPlotter(Node):
         self.enemy_history = [deque(maxlen=50) for _ in range(10)]
         self.lock = threading.Lock()
 
-        # GPS 구독
+        # GPS subscriptions
         self.create_subscription(NavSatFix, '/mothership/fix', self._on_mother, qos)
         for i in range(3):
             self.create_subscription(
@@ -169,7 +169,7 @@ class GPSPlotter(Node):
                 NavSatFix, f'/enemy_{i}/fix',
                 lambda msg, idx=i: self._on_enemy(idx, msg), qos)
 
-        print("GPS Plotter 시작 — 토픽 구독 중...")
+        print("GPS Plotter started - subscribing to topics...")
         print("  /mothership/fix")
         print("  /ally_0/fix ~ /ally_2/fix")
         print("  /enemy_0/fix ~ /enemy_9/fix")
@@ -206,31 +206,31 @@ def main():
     rclpy.init()
     node = GPSPlotter()
 
-    # ROS2 스핀 스레드
+    # ROS2 spin thread
     spin_thread = threading.Thread(target=lambda: rclpy.spin(node), daemon=True)
     spin_thread.start()
 
-    # 좌표계: 0 ~ world_size, 중심 = (world_size/2, world_size/2)
+    # Coordinate system: 0 ~ world_size, center = (world_size/2, world_size/2)
     # X=North, Y=East
     W = WORLD_SIZE
     half = W / 2
 
-    # 1.25배 여유있게 뷰 설정
+    # 1.25x margin for view
     margin = W * 0.125
     view_min = -margin
     view_max = W + margin
 
-    # Matplotlib 플롯
+    # Matplotlib plot
     fig, ax2 = plt.subplots(1, 1, figsize=(10, 10))
     fig.suptitle(f'Battlefield Status (world={W}m)\n[Scroll: zoom] [Middle drag: pan] [r: reset view]')
 
-    # 줌/팬 상태 저장 — 1.25배 여유
+    # Zoom/pan state storage with 1.25x margin
     view_state = {
         'xlim': (view_min, view_max), 'ylim': (view_min, view_max),
     }
 
     def on_scroll(event):
-        """마우스 휠로 줌 인/아웃."""
+        """Mouse wheel zoom in/out."""
         if event.inaxes is None:
             return
         scale = 1.2 if event.button == 'down' else 1/1.2
@@ -252,7 +252,7 @@ def main():
         fig.canvas.draw_idle()
 
     def on_key(event):
-        """r키로 뷰 리셋."""
+        """Reset view with 'r' key."""
         if event.key == 'r':
             view_state['xlim'] = (view_min, view_max)
             view_state['ylim'] = (view_min, view_max)
@@ -261,11 +261,11 @@ def main():
     fig.canvas.mpl_connect('scroll_event', on_scroll)
     fig.canvas.mpl_connect('key_press_event', on_key)
 
-    # 팬(드래그) 상태
+    # Pan (drag) state
     pan_state = {'pressed': False, 'x': 0, 'y': 0, 'ax': None}
 
     def on_press(event):
-        if event.button == 2 and event.inaxes:  # 중간 버튼
+        if event.button == 2 and event.inaxes:  # Middle button
             pan_state['pressed'] = True
             pan_state['x'] = event.xdata
             pan_state['y'] = event.ydata
@@ -296,7 +296,7 @@ def main():
     def update(_):
         data = node.get_data()
 
-        # 좌표계: X=North, Y=East
+        # Coordinate system: X=North, Y=East
         ax2.clear()
         ax2.set_title(f'Battlefield Status (world={W}m)')
         ax2.set_xlabel('North (m)')
@@ -306,37 +306,37 @@ def main():
         ax2.set_aspect('equal')
         ax2.grid(True, alpha=0.3)
 
-        # 월드 경계선
+        # World boundary
         ax2.plot([0, W, W, 0, 0], [0, 0, W, W, 0], 'k--', lw=1, alpha=0.5)
 
         if data['mothership']:
-            # GPS 좌표 (발행자가 이제 정상 순서로 보냄)
-            origin_lat, origin_lon = data['mothership']  # 정상 순서
+            # GPS coordinates (publisher sends in correct order)
+            origin_lat, origin_lon = data['mothership']  # Normal order
 
-            # 모선 위치 = 중심 (world_size/2, world_size/2)
+            # Mothership position = center (world_size/2, world_size/2)
             mx, my = half, half
             ax2.scatter(mx, my, s=200, c='gold', marker='*', label='Mothership', zorder=10)
 
-            # 중심선 표시
+            # Center lines
             ax2.axhline(half, color='gray', lw=0.5, alpha=0.3)
             ax2.axvline(half, color='gray', lw=0.5, alpha=0.3)
 
-            # 아군 — GPS → 절대 좌표 변환 (180도 회전)
+            # Allies - GPS to absolute coordinate conversion (180 degree rotation)
             for i, pos in enumerate(data['allies']):
                 if pos:
-                    lat, lon = pos  # 정상 순서
+                    lat, lon = pos  # Normal order
                     east, north = latlon_to_local_meters(lat, lon, origin_lat, origin_lon)
-                    # X=North, Y=East (180도 회전: 부호 반전)
+                    # X=North, Y=East (180 degree rotation: sign inversion)
                     x, y = half - north, half - east
                     ax2.scatter(x, y, s=100, c='#42A5F5', marker='o', edgecolors='white', linewidths=1, zorder=5)
                     ax2.annotate(f'A{i}', (x, y + 0.8), fontsize=8, color='#42A5F5', ha='center')
 
-            # 적군 — GPS → 절대 좌표 변환 (180도 회전)
+            # Enemies - GPS to absolute coordinate conversion (180 degree rotation)
             for i, pos in enumerate(data['enemies']):
                 if pos:
-                    lat, lon = pos  # 정상 순서
+                    lat, lon = pos  # Normal order
                     east, north = latlon_to_local_meters(lat, lon, origin_lat, origin_lon)
-                    # X=North, Y=East (180도 회전: 부호 반전)
+                    # X=North, Y=East (180 degree rotation: sign inversion)
                     x, y = half - north, half - east
                     ax2.scatter(x, y, s=80, c='#EF5350', marker='^', edgecolors='white', linewidths=0.5, zorder=5)
                     ax2.annotate(f'E{i}', (x, y + 0.8), fontsize=7, color='#EF5350', ha='center')
@@ -347,8 +347,8 @@ def main():
 
     anim = FuncAnimation(fig, update, interval=100, blit=False)
 
-    print(f"\n플롯 창 열림 (world={W}m, center=({half}, {half}))")
-    print("usv-simulator 전장 현황 좌표계와 동일. 종료하려면 창을 닫으세요.")
+    print(f"\nPlot window opened (world={W}m, center=({half}, {half}))")
+    print("Same coordinate system as usv-simulator battlefield view. Close window to exit.")
     try:
         plt.show()
     finally:
