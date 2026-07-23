@@ -598,7 +598,7 @@ def _draw_cam(ax, fd, view, bg_img=None, bg_extent=None):
     if view is None:
         ax.clear()
         ax.set_facecolor(_THEME_DARK["sea"]); ax.set_xticks([]); ax.set_yticks([])
-        ax.text(0.5, 0.5, "CAM\n(대상 없음)", transform=ax.transAxes,
+        ax.text(0.5, 0.5, "CAM\n(no target)", transform=ax.transAxes,
                 color="#6B7A90", fontsize=8, ha="center", va="center")
         for s in ax.spines.values():
             s.set_color("#6B7A90"); s.set_linewidth(1.2)

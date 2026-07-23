@@ -69,6 +69,7 @@ def main() -> None:
     replan = int(_arg("--replan", "100"))   # LLM 자동 재계획 주기(step). 0=끄기
     rl = "--rl" in sys.argv                  # 경로 기동을 RL 정책으로 (배정은 여전히 LLM)
     cell = "--cell" in sys.argv              # RL 을 '셀선택' 정책(CellPointerActor)으로 (--rl 함의)
+    ros2 = "--ros2" in sys.argv              # ROS2 센서 사용 (GPS/IMU → SIM 좌표)
     if cell:
         rl = True
     gain = float(_arg("--gain", "1"))        # RL 잔차 배율(시각화용; 셀 모델은 무의미)
@@ -110,9 +111,9 @@ def main() -> None:
     if cell:  # 셀선택 RL 정책 (배정=LLM, 경로/그물=셀 정책 / DefenseVecEnv 셀 백엔드)
         from commander.cell_bridge import CommandedCellEnv, build_battlefield_defense
         if specialized_root:
-            print(f"셀 특화 라우팅 로딩 중… (집중/양동/파상, {specialized_root})")
+            print(f"Loading specialized cell routing... (Concentrated/Diversionary/Wave, {specialized_root})")
         else:
-            print(f"셀 정책 로딩 중… ({ckpt})")
+            print(f"Loading cell policy... ({ckpt})")
         if world_size is not None:
             print(f"  ★ 스케일 변환: world_size={world_size}m (모든 길이 비례축소, 재학습 불필요)")
         sim = CommandedCellEnv(ckpt, enemy_mode=enemy, avoid_steer=apf,   # 기본 APF OFF, --apf 로 ON
@@ -121,7 +122,7 @@ def main() -> None:
         _build_bf = build_battlefield_defense
     elif rl:   # RL 경로 기동 (배정=LLM, 경로=강화학습 잔차 정책 / DefenseVecEnv 백엔드)
         from commander.rl_bridge import CommandedDefenseEnv, build_battlefield_defense
-        print(f"RL 정책 로딩 중… ({ckpt}, gain={gain})")
+        print(f"Loading RL policy... ({ckpt}, gain={gain})")
         sim = CommandedDefenseEnv(ckpt, enemy_mode=enemy, gain=gain, avoid_steer=apf)
         _build_bf = build_battlefield_defense
     else:    # 휴리스틱 경로 기동 (기존)
@@ -129,6 +130,18 @@ def main() -> None:
         _build_bf = build_battlefield
     sim.reset(seed=0)
     sim.running = True
+
+    # ROS2 센서 브릿지 (--ros2 + --cell 전용)
+    ros2_bridge = None
+    if ros2 and cell:
+        from commander.ros2_bridge import ROS2SensorBridge, ROS2_AVAILABLE
+        if ROS2_AVAILABLE:
+            _ws = world_size if world_size else sim.cfg.world_size
+            ros2_bridge = ROS2SensorBridge(world_size=_ws, n_allies=sim.P, n_enemies=sim.M)
+            ros2_bridge.start()
+            print(f"  ★ ROS2 센서 브릿지: world={_ws}m (GPS/IMU → SIM 좌표)")
+        else:
+            print("  ⚠ ROS2 사용 불가 (rclpy 없음) — 시뮬레이션 모드")
 
     def _scalar_t():   # sim.t: CommandedSimulator=스칼라, RL(DefenseVecEnv)=배열([N]) → 스칼라화
         t = sim.t
@@ -140,22 +153,22 @@ def main() -> None:
 
     commander = make_commander(backend, model)
     model = commander.model   # 실제 사용 모델명(라벨용)
-    print(f"모델 로딩 중… ({model}) — 로드 후 창이 뜹니다.")
+    print(f"Loading model... ({model}) — window opens after load.")
     commander.warmup()        # 창 뜨기 전에 모델 메모리 로드 → 첫 명령 지연 제거
 
     # 위성사진 배경 (Esri World Imagery). 오프라인/실패 시 해색 배경으로 폴백.
     from commander.satellite import fetch_satellite_bg
     bg_img = bg_extent = None
     try:
-        print("위성 배경 로딩 중…")
+        print("Loading satellite background...")
         res = fetch_satellite_bg(sim.cfg.geo_lat, sim.cfg.geo_lon, sim.cfg.world_size)
         if res:
             bg_img, bg_extent = res
-            print("위성 배경 로드 완료")
+            print("Satellite background loaded")
         else:
-            print("위성 배경 실패(오프라인?) → 해색 배경 폴백")
+            print("Satellite background failed (offline?) → sea color fallback")
     except Exception as e:
-        print(f"위성 배경 오류({e}) → 해색 배경 폴백")
+        print(f"Satellite background error ({e}) → sea color fallback")
 
     fig = plt.figure(figsize=(13.5, 9.0))
     ax = fig.add_axes((0.03, 0.11, 0.58, 0.80))          # 씬(왼쪽)
@@ -165,20 +178,20 @@ def main() -> None:
     ax_b1 = fig.add_axes((0.03, 0.935, 0.16, 0.045))
     ax_b2 = fig.add_axes((0.205, 0.935, 0.16, 0.045))
     ax_b3 = fig.add_axes((0.38, 0.935, 0.16, 0.045))
-    DEFAULT_CMD = "모든 적군 포획"
-    text_box = TextBox(ax_box, "명령 ", initial=DEFAULT_CMD)
-    btn_conc = Button(ax_b1, "집중")
-    btn_wave = Button(ax_b2, "파상")
-    btn_div = Button(ax_b3, "양동")
+    DEFAULT_CMD = "Capture all enemies"
+    text_box = TextBox(ax_box, "Command ", initial=DEFAULT_CMD)
+    btn_conc = Button(ax_b1, "Concentrated")
+    btn_wave = Button(ax_b2, "Wave")
+    btn_div = Button(ax_b3, "Diversionary")
 
     info = {
-        "cmd": "(없음)",
-        "assign": "전원 예비(정지) — 명령 대기",
-        "rationale": "명령 전에는 아군이 움직이지 않습니다(순수 LLM 제어).\n"
-                     "하단 입력창에 명령을 입력하고 Enter 를 누르세요.\n"
-                     "예) 정면 밀집 무리를 우선 차단\n"
-                     "예) 큰 무리에 2척, 1척은 예비",
-        "status": "대기 중 (아군 정지)",
+        "cmd": "(none)",
+        "assign": "All reserve (stopped) — waiting for command",
+        "rationale": "Allies do not move before receiving a command (pure LLM control).\n"
+                     "Enter a command in the input box below and press Enter.\n"
+                     "e.g.) Block the frontal dense swarm first\n"
+                     "e.g.) Send 2 ships to the large cluster, 1 in reserve",
+        "status": "Standby (allies stopped)",
         "last_cmd": DEFAULT_CMD,
         "auto": replan > 0,                       # LLM 자동 재계획 ON/OFF
         "replan_period": replan if replan > 0 else 50,
@@ -190,16 +203,16 @@ def main() -> None:
         ax_info.axis("off")
         ax_info.set_facecolor("#0d1b2a")
         lines = [
-            f"■ 지휘관: {model}",
-            f"■ 상태: {info['status']}",
+            f"■ Commander: {model}",
+            f"■ Status: {info['status']}",
             "",
-            "■ 명령(프롬프트)",
+            "■ Command (prompt)",
             textwrap.fill(info["cmd"], width=32),
             "",
-            "■ 투입 배분 (아군→클러스터)",
+            "■ Deployment (allies→clusters)",
             info["assign"],
             "",
-            "■ 판단 근거 (rationale)",
+            "■ Rationale",
             textwrap.fill(info["rationale"], width=32),
         ]
         ax_info.text(0.0, 1.0, "\n".join(lines), va="top", ha="left",
@@ -233,7 +246,7 @@ def main() -> None:
         info["busy"] = True
         info["last_cmd"] = cmd                    # 자동 재계획이 이 명령을 반복 사용
         info["last_replan_t"] = _scalar_t()       # 재계획 타이머 리셋
-        info["cmd"], info["status"] = cmd, "지휘관 호출 중… (시뮬 계속 진행)"
+        info["cmd"], info["status"] = cmd, "Calling commander... (simulation continues)"
         draw_info(); fig.canvas.draw_idle()
         bf = _build_bf(sim, command=cmd)          # 전장 스냅샷(메인 스레드) → 스레드로 전달
         gen = info.get("gen", 0)
@@ -256,17 +269,17 @@ def main() -> None:
             held = set(getattr(plan, "hold_ships", None) or [])
             committed = int((assign >= 0).sum())
             reserve = sim.cfg.n_allies - committed - len(held & {i for i in range(sim.cfg.n_allies) if assign[i] < 0})
-            alloc = "  ".join(f"C{d.cluster_id}:{d.ally_ids or '자동'}" for d in plan.deployments) or "(없음)"
+            alloc = "  ".join(f"C{d.cluster_id}:{d.ally_ids or 'auto'}" for d in plan.deployments) or "(none)"
 
             def _tag(i, a):
                 if i in held:
-                    return f"#{i}→정지(HOLD)"
-                return f"#{i}→C{a}" if a >= 0 else f"#{i}→예비"
-            info["assign"] = (f"투입 {committed}척 / 예비 {reserve}척"
-                              + (f" / 정지 {len(held)}척" if held else "") + f"\n{alloc}\n"
+                    return f"#{i}→HOLD"
+                return f"#{i}→C{a}" if a >= 0 else f"#{i}→reserve"
+            info["assign"] = (f"Deployed {committed} / Reserve {reserve}"
+                              + (f" / HOLD {len(held)}" if held else "") + f"\n{alloc}\n"
                               + "  ".join(_tag(i, a) for i, a in enumerate(assign.tolist())))
             info["rationale"] = plan.rationale
-            info["status"] = "배정 적용됨"
+            info["status"] = "Assignment applied"
             print(f"[명령 적용] deployments={[(d.cluster_id, d.ally_ids) for d in plan.deployments]}  "
                   f"hold={sorted(held)}  assign={assign.tolist()}")
         except Exception as e:
@@ -280,12 +293,12 @@ def main() -> None:
     text_box.on_submit(on_submit)
 
     def apply_formation(mode, label):
-        print(f"\n[대형] {label}({mode}) 리셋+재시작 (콜백 발화)")
+        print(f"\n[Formation] {label}({mode}) reset+restart (callback triggered)")
         sim.enemy_mode = mode
         sim.reset(seed=random.randint(0, 2_000_000_000))   # 매번 다른 시드 → 변형
         sim.set_command(None); sim.running = True
         _reset_llm()                                       # 진행 중 LLM 무효화
-        info["status"] = f"[{label}] 대형 리셋 — 지휘관 호출 중…"
+        info["status"] = f"[{label}] Formation reset — calling commander..."
         draw_info(); fig.canvas.draw_idle()
         on_submit(DEFAULT_CMD)
 
@@ -294,27 +307,27 @@ def main() -> None:
         if k == " ":
             sim.running = not sim.running
         elif k == "1":
-            apply_formation("concentrated", "집중")
+            apply_formation("concentrated", "Concentrated")
         elif k == "2":
-            apply_formation("wave", "파상")
+            apply_formation("wave", "Wave")
         elif k == "3":
-            apply_formation("diversionary", "양동")
+            apply_formation("diversionary", "Diversionary")
         elif k == "v":                              # APF(충돌회피 안전층) 토글 — RL 모드에서 유효
             sim.cfg.avoid_steer = not getattr(sim.cfg, "avoid_steer", False)
-            info["status"] = f"APF(충돌회피) {'ON' if sim.cfg.avoid_steer else 'OFF'}"
+            info["status"] = f"APF (collision avoidance) {'ON' if sim.cfg.avoid_steer else 'OFF'}"
             draw_info()
         elif k == "c" and hasattr(sim, "resolve_conflicts"):   # 경로 겹침 해소(중복 HOLD) 토글 — RL
             sim.resolve_conflicts = not sim.resolve_conflicts
-            info["status"] = f"경로중복 해소 {'ON' if sim.resolve_conflicts else 'OFF'}"
+            info["status"] = f"Path conflict resolution {'ON' if sim.resolve_conflicts else 'OFF'}"
             draw_info()
         elif k == "z" and cell:                     # 후보셀 오버레이 토글 (셀 모드)
             info["show_cells"] = not info.get("show_cells", True)
-            info["status"] = f"후보셀 표시 {'ON' if info['show_cells'] else 'OFF'}"
+            info["status"] = f"Cell overlay {'ON' if info['show_cells'] else 'OFF'}"
             draw_info()
         elif k == "a":
             info["auto"] = not info.get("auto")
-            info["status"] = (f"자동 재계획 {'ON' if info['auto'] else 'OFF'} "
-                              f"(주기 {info['replan_period']} step)")
+            info["status"] = (f"Auto replan {'ON' if info['auto'] else 'OFF'} "
+                              f"(period {info['replan_period']} step)")
             draw_info()
         elif k == "r":
             sim.reset(seed=random.randint(0, 2_000_000_000)); sim.set_command(None); sim.running = True
@@ -331,13 +344,17 @@ def main() -> None:
             plt.close(fig)
     fig.canvas.mpl_connect("key_press_event", on_key)
 
-    btn_conc.on_clicked(lambda e: apply_formation("concentrated", "집중"))
-    btn_wave.on_clicked(lambda e: apply_formation("wave", "파상"))
-    btn_div.on_clicked(lambda e: apply_formation("diversionary", "양동"))
+    btn_conc.on_clicked(lambda e: apply_formation("concentrated", "Concentrated"))
+    btn_wave.on_clicked(lambda e: apply_formation("wave", "Wave"))
+    btn_div.on_clicked(lambda e: apply_formation("diversionary", "Diversionary"))
 
     def update(_):
         if sim.running and not _is_done():
-            sim.step()                                  # LLM 추론 중에도 계속 진행(WP 추종·적 전진)
+            # ROS2 모드: 센서 주입 + 정책 추론만 (시뮬레이션 물리 없음)
+            if ros2_bridge is not None:
+                ros2_bridge.step_policy_only(sim)
+            else:
+                sim.step()                              # 시뮬레이션 모드: 물리 포함
             if info.get("_pending") is not None:        # LLM 결과 도착 → 이번 프레임에 적용
                 _apply_result()
             # 유동적 재계획: 주기마다 LLM 재호출(논블로킹). busy면 스킵(한 번에 하나).
@@ -349,17 +366,22 @@ def main() -> None:
         if cell and info.get("show_cells", True) and hasattr(sim, "cell_viz"):
             _overlay_cells_cmd(ax, sim.cell_viz())          # 후보셀/그물배제/선택 오버레이 (z 토글)
         if specialized_root and getattr(sim, "_formation", None):   # 특화 라우팅: 현재 대형 표시
-            _KMODE = {"concentrated": "집중", "diversionary": "양동", "wave": "파상"}
-            ax.text(0.99, 0.99, f"공격양상: {_KMODE.get(sim._formation, sim._formation)}  → 특화모델",
+            _KMODE = {"concentrated": "Concentrated", "diversionary": "Diversionary", "wave": "Wave"}
+            ax.text(0.99, 0.99, f"Attack pattern: {_KMODE.get(sim._formation, sim._formation)}  → Specialized model",
                     transform=ax.transAxes, color="#FFD54F", fontsize=11, va="top", ha="right",
                     weight="bold")
         return []
 
     draw_info()
     anim = FuncAnimation(fig, update, interval=40, blit=False, cache_frame_data=False)
-    print(f"뷰어 실행: model={model}, enemy={enemy}. 기본 명령 '{DEFAULT_CMD}' 자동 적용.")
+    _mode = "ros2" if ros2_bridge else enemy
+    print(f"Viewer started: model={model}, mode={_mode}. Default command '{DEFAULT_CMD}' auto-applied.")
     on_submit(DEFAULT_CMD)     # 시작 시 기본 명령 자동 실행 (모델 이미 로드됨)
-    plt.show()
+    try:
+        plt.show()
+    finally:
+        if ros2_bridge:
+            ros2_bridge.shutdown()
     _ = (anim, text_box, btn_conc, btn_wave, btn_div)   # 참조 유지(GC 방지)
 
 

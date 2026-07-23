@@ -29,7 +29,7 @@ class OllamaCommander:
         model: str = "qwen2.5:7b",   # 벤치 결과 14b 대비 품질 동등 이상 + 추론 6배 빠름(구조적 배정엔 7b 충분)
         host: str | None = None,          # 예: "http://localhost:11434" / 원격 함정 서버
         keep_alive: str | float = "10m",  # 모델 상주 → 매 호출 콜드로드 방지
-        num_ctx: int = 16384,  # system+few-shot(예시 3개)+STATE+출력 ~9k 토큰 여유(32k 지원)
+        num_ctx: int = 32768,  # 컨텍스트 버퍼 오류 방지 위해 충분히 큰 값 (qwen2.5 32k 지원)
         num_predict: int = 800,
         verbose: bool = True,
     ):
@@ -83,10 +83,10 @@ class OllamaCommander:
             self.client.chat(
                 model=self.model,
                 messages=[{"role": "user", "content": "ready"}],
-                options={"num_predict": 1},
+                options={"num_predict": 1, "num_ctx": self.num_ctx},
                 keep_alive=self.keep_alive,
             )
-            self._log(f"모델 로드 완료: {self.model}")
+            self._log(f"모델 로드 완료: {self.model} (num_ctx={self.num_ctx})")
         except Exception as e:
             self._log(f"워밍업 실패({e}) — 첫 명령이 느릴 수 있음")
 
