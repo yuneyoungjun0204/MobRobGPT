@@ -444,6 +444,8 @@ class ROS2SensorBridge:
             # RL 결정 직후 웨이포인트 발행 (고빈도)
             routes, masks = self.extract_waypoints(env)
             self.publish_waypoints(routes, masks)
+            # ★ 발행한 net_mask 기반으로 doing_net/net_installed 업데이트 (ROS2 모드용)
+            self._update_net_state(env, masks)
 
         # 3. 시간 증가
         env.t[0] += 1
@@ -460,6 +462,64 @@ class ROS2SensorBridge:
         Returns: (routes, net_mask)
         """
         return env.route[0].copy(), env.net_mask[0].copy()
+
+    def _update_net_state(self, env, masks: np.ndarray):
+        """발행한 net_mask 기반으로 env의 그물 상태 업데이트.
+
+        ROS2 모드에서는 _advance()가 실행되지 않아 doing_net/net_installed가
+        업데이트되지 않음. 발행한 명령을 기반으로 자체 추적.
+
+        Args:
+            env: CommandedCellEnv
+            masks: 발행한 net_mask [P, Kw]
+        """
+        P = masks.shape[0]
+        routes = env.route[0]  # [P, Kw, 2]
+
+        for p in range(P):
+            # net_mask에 True가 있으면 → doing_net=True (그물 전개 중)
+            if masks[p].any():
+                env.doing_net[0, p] = True
+                # 경로 구간을 net_installed 격자에 마킹
+                self._mark_net_installed(env, routes[p], masks[p])
+            else:
+                env.doing_net[0, p] = False
+
+    def _mark_net_installed(self, env, route: np.ndarray, mask: np.ndarray):
+        """경로의 net_mask=True 구간을 net_installed 격자에 마킹.
+
+        Args:
+            env: CommandedCellEnv
+            route: [Kw, 2] 웨이포인트 좌표
+            mask: [Kw] 그물 마스크
+        """
+        if not hasattr(env, 'net_installed') or not hasattr(env, 'cfg'):
+            return
+
+        G = env.net_installed.shape[1]  # 격자 크기
+        world_size = env.cfg.world_size
+        cell_size = world_size / G
+
+        Kw = route.shape[0]
+        for k in range(Kw - 1):
+            if not mask[k + 1]:  # net_mask[k+1]=True면 WP[k]→WP[k+1] 구간
+                continue
+
+            # WP[k] → WP[k+1] 구간을 따라 격자 마킹
+            x0, y0 = route[k]
+            x1, y1 = route[k + 1]
+            dist = np.hypot(x1 - x0, y1 - y0)
+            if dist < 0.01:
+                continue
+
+            steps = max(1, int(dist / (cell_size * 0.5)))
+            for s in range(steps + 1):
+                t = s / steps
+                x = x0 + (x1 - x0) * t
+                y = y0 + (y1 - y0) * t
+                gi = int(np.clip(x / cell_size, 0, G - 1))
+                gj = int(np.clip(y / cell_size, 0, G - 1))
+                env.net_installed[0, gi, gj] = True
 
     def _heading_to_quaternion(self, hdg_deg: float) -> 'Quaternion':
         """NAV heading (0=North, CW+) → ROS2 Quaternion.
