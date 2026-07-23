@@ -63,6 +63,7 @@ class CommandedCellEnv(CommandedDefenseEnv):
         #   LLM 정합을 위해서만 최소 오버라이드.
         cfg.n_clusters = 3                     # LLM 이 최대 3그룹으로 다룸(셀 정책은 클러스터수 불변)
         cfg.spawn_phase_lo = 1.0               # 웨이브 텀 설계대로(스폰 랜덤 당김 끄기)
+        cfg.transit_wp = cfg.cell_nets         # ★ WP 개수를 cell_nets와 일치시킴 (6→2)
         cfg.nets_per_ship = 3                  # ★ 그물 1개만 깔고 멈추던 문제 → 최대 3번 재전개.
         #   a_nets=3 으로 시작 → 그물 완성 후에도 a_nets>0 이라 동결(done) 안 됨 → 매 결정마다
         #   재배정·새 셀 선택·재전개(fresh route 로 leg_netted/paint_dist 리셋 = '기억 리셋').

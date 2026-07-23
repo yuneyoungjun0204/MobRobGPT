@@ -291,7 +291,7 @@ class SimConfig:
     #   (cap_rate≥0.86) 보장 → GRPO 가 그 위를 개선. (정책이 부채꼴을 재현하는 취약성 회피.)
     #   그물 leg(net_mask)는 휴리스틱이 결정(견고). False 면 순수 정책(잔차/baseline OFF).
     heuristic_baseline: bool = True
-    transit_wp:      int = 6      # 경로 WP 개수 (start→WP0..WP5). 정책이 4~6개 중 몇 개 따라갈지 결정
+    transit_wp:      int = 2      # 경로 WP 개수 (cell_nets=2와 일치). 정책이 따라갈 WP 수
                                   #   (n_follow 액션) → 비효율/충돌 시 짧게 끊어 배회↓. 액션 변경 시 재학습 필수.
     route_step:      float = 360.0   # 초기 경로 WP 간격 (m). 240→360 (×1.5: 직선 구간 길게)
     # ★ WP 잔차 방식:

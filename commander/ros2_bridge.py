@@ -117,6 +117,17 @@ class ROS2SensorBridge:
         half = self.world_size / 2
         return np.array([east + half, north + half])
 
+    def _sim_to_gps(self, x: float, y: float) -> tuple:
+        """SIM 좌표 (meters) → GPS (lat, lon)."""
+        half = self.world_size / 2
+        east = x - half   # world 중심 기준 동쪽 오프셋 (meters)
+        north = y - half  # world 중심 기준 북쪽 오프셋 (meters)
+        d_lat = north / DEG_TO_M_LAT
+        d_lon = east / (DEG_TO_M_LAT * np.cos(np.radians(self.origin_lat)))
+        lat = self.origin_lat + d_lat
+        lon = self.origin_lon + d_lon
+        return lat, lon
+
     def _imu_to_heading(self, qx, qy, qz, qw) -> float:
         """IMU quaternion → 항법 방위각 (0=North, CW+)."""
         _, _, yaw = euler_from_quaternion([qx, qy, qz, qw])
@@ -324,21 +335,24 @@ class ROS2SensorBridge:
             )
 
     def publish_waypoints(self, routes: np.ndarray, net_mask: np.ndarray):
-        """웨이포인트 발행. routes: [P, K, 2], net_mask: [P, K]."""
+        """웨이포인트 발행 (GPS 좌표). routes: [P, K, 2], net_mask: [P, K]."""
         if not self._node or not self._running:
             return
 
         for i, pub in enumerate(self._wp_pubs):
             path = Path()
-            path.header.frame_id = 'world'
+            path.header.frame_id = 'wgs84'  # GPS 좌표계
             path.header.stamp = self._node.get_clock().now().to_msg()
 
             for k in range(routes.shape[1]):
                 pose = PoseStamped()
                 pose.header = path.header
-                # SIM → GPS 역변환 (간단히 상대 좌표만)
-                pose.pose.position.x = float(routes[i, k, 0])
-                pose.pose.position.y = float(routes[i, k, 1])
+                # SIM → GPS 변환
+                sim_x = float(routes[i, k, 0])
+                sim_y = float(routes[i, k, 1])
+                lat, lon = self._sim_to_gps(sim_x, sim_y)
+                pose.pose.position.x = lon  # x = longitude
+                pose.pose.position.y = lat  # y = latitude
                 pose.pose.position.z = 1.0 if net_mask[i, k] else 0.0  # z=1: 그물 전개
                 path.poses.append(pose)
 
