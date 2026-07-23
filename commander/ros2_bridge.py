@@ -106,6 +106,10 @@ class ROS2SensorBridge:
         self._running = False
         self._lock = threading.Lock()
 
+        # 웨이포인트 변경 감지용 (매 프레임 발행 방지)
+        self._last_routes: Optional[np.ndarray] = None
+        self._last_masks: Optional[np.ndarray] = None
+
     def _gps_to_sim(self, lat: float, lon: float) -> np.ndarray:
         """GPS (lat, lon) → SIM 좌표 (meters, 원점 기준)."""
         d_lat = lat - self.origin_lat
@@ -335,9 +339,23 @@ class ROS2SensorBridge:
             )
 
     def publish_waypoints(self, routes: np.ndarray, net_mask: np.ndarray):
-        """웨이포인트 발행 (GPS 좌표). routes: [P, K, 2], net_mask: [P, K]."""
+        """웨이포인트 발행 (GPS 좌표). routes: [P, K, 2], net_mask: [P, K].
+
+        변경된 경우에만 발행하여 UI 깜빡임 방지.
+        """
         if not self._node or not self._running:
             return
+
+        # 변경 감지: 경로가 같으면 발행하지 않음
+        if (self._last_routes is not None and
+            self._last_masks is not None and
+            np.allclose(routes, self._last_routes, atol=0.1) and
+            np.array_equal(net_mask, self._last_masks)):
+            return  # 변경 없음 - 발행 스킵
+
+        # 변경됨 - 저장 후 발행
+        self._last_routes = routes.copy()
+        self._last_masks = net_mask.copy()
 
         for i, pub in enumerate(self._wp_pubs):
             path = Path()
