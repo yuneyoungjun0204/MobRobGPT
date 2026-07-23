@@ -365,13 +365,17 @@ class ROS2SensorBridge:
             path.header.frame_id = 'world'  # world 좌표계 (GPS 변환 없음)
             path.header.stamp = self._node.get_clock().now().to_msg()
 
-            for k in range(routes.shape[1]):
+            Kw = routes.shape[1]
+            for k in range(Kw):
                 pose = PoseStamped()
                 pose.header = path.header
                 # world 좌표 직접 전송 (x=East, y=North)
                 pose.pose.position.x = float(routes[i, k, 0])
                 pose.pose.position.y = float(routes[i, k, 1])
-                pose.pose.position.z = 1.0 if net_mask[i, k] else 0.0  # z=1: 그물 전개
+                # ★ net_mask 인덱스 시프트: net_mask[k+1]=True면 WP[k]→WP[k+1] 구간에 그물 전개
+                #    usv-simulator는 "WP[k] 완료 시 paint=true면 다음 WP로 가며 그물 전개"
+                paint = net_mask[i, k + 1] if (k + 1 < Kw) else False
+                pose.pose.position.z = 1.0 if paint else 0.0
                 path.poses.append(pose)
 
             pub.publish(path)

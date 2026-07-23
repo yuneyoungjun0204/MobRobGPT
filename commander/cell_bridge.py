@@ -103,7 +103,7 @@ class CommandedCellEnv(CommandedDefenseEnv):
         self._last_cells = None                # 시각화용 최근 선택 셀 [P,K]
         self._formation = None                 # 라우터가 고른 현재 대형(시각화/로그용)
 
-    # ── LLM 계획 주입: 상위 _compute_assignment 재사용 + HOLD 집합 갱신 ──
+    # ── LLM 계획 주입: 상위 _compute_assignment 재사용 + HOLD 집합 + deploy_net 갱신 ──
     def _compute_assignment(self, assign_pref=None):
         super()._compute_assignment(assign_pref)            # _assign/_assignI 주입 + radius_adjust
         # HOLD 집합 = 계획의 hold_ships 중 '실제로 미배정(assign<0)'인 배만.
@@ -111,8 +111,17 @@ class CommandedCellEnv(CommandedDefenseEnv):
         if self._plan is not None:
             self._held = {int(i) for i in (self._plan.hold_ships or [])
                           if int(self._assign[0, int(i)]) < 0}
+            # ★ LLM의 deploy_net 설정을 _cmd_deploy에 반영 (그물 전개 여부)
+            if hasattr(self, '_cmd_deploy'):  # 초기화 전 호출 방지
+                deploy_by = {d.cluster_id: bool(getattr(d, "deploy_net", True))
+                             for d in self._plan.deployments}
+                for p in range(self.P):
+                    k = int(self._assign[0, p])
+                    self._cmd_deploy[p] = deploy_by.get(k, True) if k >= 0 else True
         else:
             self._held = set()
+            if hasattr(self, '_cmd_deploy'):  # 초기화 전 호출 방지
+                self._cmd_deploy[:] = True  # 계획 없으면 기본값(전원 그물 전개)
 
     # ── 후보셀에서 '이미 그물 깔린 곳' 제외 (행동공간에서 아예 배제) ──
     def _cell_valid_mask(self):
