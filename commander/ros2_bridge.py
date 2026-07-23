@@ -339,9 +339,10 @@ class ROS2SensorBridge:
             )
 
     def publish_waypoints(self, routes: np.ndarray, net_mask: np.ndarray):
-        """웨이포인트 발행 (GPS 좌표). routes: [P, K, 2], net_mask: [P, K].
+        """웨이포인트 발행 (world 좌표). routes: [P, K, 2], net_mask: [P, K].
 
         변경된 경우에만 발행하여 UI 깜빡임 방지.
+        GPS 변환 없이 world 좌표 직접 전송 (usv_bridge에서 y→z 변환).
         """
         if not self._node or not self._running:
             return
@@ -357,24 +358,25 @@ class ROS2SensorBridge:
         self._last_routes = routes.copy()
         self._last_masks = net_mask.copy()
 
+        print(f"[ROS2] 웨이포인트 발행: {routes.shape[1]}개 WP")
+
         for i, pub in enumerate(self._wp_pubs):
             path = Path()
-            path.header.frame_id = 'wgs84'  # GPS 좌표계
+            path.header.frame_id = 'world'  # world 좌표계 (GPS 변환 없음)
             path.header.stamp = self._node.get_clock().now().to_msg()
 
             for k in range(routes.shape[1]):
                 pose = PoseStamped()
                 pose.header = path.header
-                # SIM → GPS 변환
-                sim_x = float(routes[i, k, 0])
-                sim_y = float(routes[i, k, 1])
-                lat, lon = self._sim_to_gps(sim_x, sim_y)
-                pose.pose.position.x = lon  # x = longitude
-                pose.pose.position.y = lat  # y = latitude
+                # world 좌표 직접 전송 (x=East, y=North)
+                pose.pose.position.x = float(routes[i, k, 0])
+                pose.pose.position.y = float(routes[i, k, 1])
                 pose.pose.position.z = 1.0 if net_mask[i, k] else 0.0  # z=1: 그물 전개
                 path.poses.append(pose)
 
             pub.publish(path)
+            if i == 0:  # 첫 번째 아군만 로그
+                print(f"  Ally {i}: ({routes[i, 0, 0]:.2f}, {routes[i, 0, 1]:.2f})")
 
     def inject_to_env(self, env):
         """센서 데이터를 환경에 주입.
@@ -428,16 +430,15 @@ class ROS2SensorBridge:
         if micro_ct % env.cfg.decision_period == 0:
             if hasattr(env, '_rl_decide'):
                 env._rl_decide()
+            # 결정 시점에만 웨이포인트 발행 (매 프레임 X)
+            routes, masks = self.extract_waypoints(env)
+            self.publish_waypoints(routes, masks)
 
         # 3. 시간 증가
         env.t[0] += 1
         env._micro_ct = micro_ct + 1
 
-        # 4. 웨이포인트 발행
-        routes, masks = self.extract_waypoints(env)
-        self.publish_waypoints(routes, masks)
-
-        # 5. 선박 위치 발행
+        # 4. 선박 위치 발행
         self.publish_ship_states(env)
 
         return env.get_frame()
