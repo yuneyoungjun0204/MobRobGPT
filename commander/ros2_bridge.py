@@ -163,8 +163,8 @@ class ROS2SensorBridge:
         print(f"[ROS2Bridge] GPS origin auto-calibrated: lat={lat:.6f}, lon={lon:.6f}")
 
     def _on_ally_gps(self, idx: int, msg: 'NavSatFix'):
-        # GPS lat/lon → 로컬 미터 변환 (발행자가 lat/lon 스왑해서 보냄)
-        lat, lon = msg.longitude, msg.latitude  # 스왑!
+        # GPS lat/lon → 로컬 미터 변환
+        lat, lon = msg.latitude, msg.longitude  # 정상 순서
         if not self._is_valid_gps(lat, lon):
             print(f"[ROS2] ally_{idx} REJECTED: lat={lat:.2f}, lon={lon:.2f} (invalid range)")
             return
@@ -192,8 +192,8 @@ class ROS2SensorBridge:
             self._ally_hdg[idx] = hdg
 
     def _on_enemy_gps(self, idx: int, msg: 'NavSatFix'):
-        # GPS lat/lon → 로컬 미터 변환 (발행자가 lat/lon 스왑해서 보냄)
-        lat, lon = msg.longitude, msg.latitude  # 스왑!
+        # GPS lat/lon → 로컬 미터 변환
+        lat, lon = msg.latitude, msg.longitude  # 정상 순서
         if not self._is_valid_gps(lat, lon):
             return
         if not self._origin_calibrated:
@@ -214,9 +214,8 @@ class ROS2SensorBridge:
             self._enemy_hdg[idx] = (np.degrees(np.arctan2(dx, dy))) % 360
 
     def _on_mother_gps(self, msg: 'NavSatFix'):
-        # GPS lat/lon으로 원점 보정 (발행자가 lat/lon 스왑해서 보냄)
-        lat, lon = msg.longitude, msg.latitude  # 스왑!
-        print(f"[ROS2] mothership raw: msg.lat={msg.latitude:.2f}, msg.lon={msg.longitude:.2f} → swapped: lat={lat:.2f}, lon={lon:.2f}")
+        # GPS lat/lon으로 원점 보정
+        lat, lon = msg.latitude, msg.longitude  # 정상 순서
         if not self._is_valid_gps(lat, lon):
             print(f"[ROS2] mothership REJECTED: lat={lat:.2f} (valid: -90~90), lon={lon:.2f} (valid: -180~180)")
             return

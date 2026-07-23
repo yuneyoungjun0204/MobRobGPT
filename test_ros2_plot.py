@@ -310,8 +310,8 @@ def main():
         ax2.plot([0, W, W, 0, 0], [0, 0, W, W, 0], 'k--', lw=1, alpha=0.5)
 
         if data['mothership']:
-            # lat/lon 스왑 적용 (발행자가 뒤바꿔 보냄) — ros2_bridge.py와 동일
-            origin_lon, origin_lat = data['mothership']  # 스왑!
+            # GPS 좌표 (발행자가 이제 정상 순서로 보냄)
+            origin_lat, origin_lon = data['mothership']  # 정상 순서
 
             # 모선 위치 = 중심 (world_size/2, world_size/2)
             mx, my = half, half
@@ -324,7 +324,7 @@ def main():
             # 아군 — GPS → 절대 좌표 변환 (180도 회전)
             for i, pos in enumerate(data['allies']):
                 if pos:
-                    lon, lat = pos  # 스왑!
+                    lat, lon = pos  # 정상 순서
                     east, north = latlon_to_local_meters(lat, lon, origin_lat, origin_lon)
                     # X=North, Y=East (180도 회전: 부호 반전)
                     x, y = half - north, half - east
@@ -334,7 +334,7 @@ def main():
             # 적군 — GPS → 절대 좌표 변환 (180도 회전)
             for i, pos in enumerate(data['enemies']):
                 if pos:
-                    lon, lat = pos  # 스왑!
+                    lat, lon = pos  # 정상 순서
                     east, north = latlon_to_local_meters(lat, lon, origin_lat, origin_lon)
                     # X=North, Y=East (180도 회전: 부호 반전)
                     x, y = half - north, half - east
