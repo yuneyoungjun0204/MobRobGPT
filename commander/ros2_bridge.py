@@ -9,6 +9,16 @@ import threading
 from dataclasses import dataclass
 from typing import Optional, Callable
 
+# 공통 설정 로드 (config/defense_config.json)
+try:
+    from config import get_world_size, get_gps_origin, get_ship_counts
+    _CFG_WORLD = get_world_size()
+    _CFG_LAT, _CFG_LON = get_gps_origin()
+    _CFG_ALLIES, _CFG_ENEMIES = get_ship_counts()
+except ImportError:
+    _CFG_WORLD, _CFG_LAT, _CFG_LON = 33.0, 34.625, 128.52
+    _CFG_ALLIES, _CFG_ENEMIES = 3, 10
+
 # ROS2 imports (optional)
 try:
     import rclpy
@@ -67,14 +77,21 @@ class ROS2SensorBridge:
 
     def __init__(
         self,
-        world_size: float = 33.0,
-        origin_lat: float = 34.625,
-        origin_lon: float = 128.52,
-        n_allies: int = 3,
-        n_enemies: int = 10,
+        world_size: float = None,
+        origin_lat: float = None,
+        origin_lon: float = None,
+        n_allies: int = None,
+        n_enemies: int = None,
         on_update: Optional[Callable] = None,
         src_world_size: float = 6000.0,  # 발행자 좌표계의 world 크기 (스케일 변환용)
     ):
+        # config/defense_config.json에서 기본값 로드
+        world_size = world_size if world_size is not None else _CFG_WORLD
+        origin_lat = origin_lat if origin_lat is not None else _CFG_LAT
+        origin_lon = origin_lon if origin_lon is not None else _CFG_LON
+        n_allies = n_allies if n_allies is not None else _CFG_ALLIES
+        n_enemies = n_enemies if n_enemies is not None else _CFG_ENEMIES
+
         self.world_size = world_size
         self.src_world_size = src_world_size
         self.scale = world_size / src_world_size  # 좌표 스케일 팩터

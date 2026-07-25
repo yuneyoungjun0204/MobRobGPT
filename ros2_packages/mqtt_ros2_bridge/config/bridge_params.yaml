@@ -1,0 +1,36 @@
+# MQTT-ROS2 Bridge Configuration
+
+mqtt_ros2_bridge:
+  ros__parameters:
+    # MQTT Broker
+    mqtt_host: "localhost"
+    mqtt_port: 9001
+    mqtt_transport: "websockets"  # "tcp" or "websockets"
+
+    # Device Identity
+    device_token: "sim-usv-1"
+    device_id: "1"
+
+    # Multi-vessel mode
+    n_allies: 3
+    n_enemies: 10
+
+    # Publishing rates
+    telemetry_rate: 10.0  # Hz
+
+    # Topic prefixes
+    ros2_ally_prefix: "/ally_"
+    ros2_enemy_prefix: "/enemy_"
+
+usv_defense_bridge:
+  ros__parameters:
+    mqtt_host: "localhost"
+    mqtt_port: 9001
+    n_allies: 3
+    n_enemies: 10
+    telemetry_rate: 10.0
+
+    # Defense mode specific
+    mothership_lat: 36.47655
+    mothership_lon: 127.48375
+    world_size: 12600.0

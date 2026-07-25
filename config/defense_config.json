@@ -1,0 +1,24 @@
+{
+  "_comment": "MobRobGPT + usv-simulator + mqtt_ros2_bridge 공통 설정",
+
+  "world": {
+    "size": 33.0,
+    "_comment": "실험장 한 변 크기 (meters). --world 옵션과 동일"
+  },
+
+  "gps_origin": {
+    "lat": 34.625,
+    "lon": 128.52,
+    "_comment": "GPS 원점 (모선 위치). 남해 매물도 근해"
+  },
+
+  "ships": {
+    "n_allies": 3,
+    "n_enemies": 10
+  },
+
+  "mqtt": {
+    "broker": "localhost",
+    "port": 1883
+  }
+}
