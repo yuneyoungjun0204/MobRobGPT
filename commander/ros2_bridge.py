@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import json
 import numpy as np
 import threading
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ try:
     from sensor_msgs.msg import NavSatFix, Imu
     from nav_msgs.msg import Path
     from geometry_msgs.msg import PoseStamped, PoseArray, Pose, Quaternion
+    from std_msgs.msg import String
     ROS2_AVAILABLE = True
 except ImportError:
     ROS2_AVAILABLE = False
@@ -54,6 +56,9 @@ def euler_from_quaternion(q):
 
 # GPS → meters 변환 상수
 DEG_TO_M_LAT = 111320.0  # 위도 1도 ≈ 111.32km
+
+# 디버그 플래그: GPS 수신 로그 비활성화
+DEBUG_GPS = False
 
 
 @dataclass
@@ -83,6 +88,8 @@ class ROS2SensorBridge:
         n_allies: int = None,
         n_enemies: int = None,
         on_update: Optional[Callable] = None,
+        on_reset: Optional[Callable] = None,  # 리셋 이벤트 콜백
+        on_ally_killed: Optional[Callable[[list], None]] = None,  # 아군 무력화 콜백
         src_world_size: float = 6000.0,  # 발행자 좌표계의 world 크기 (스케일 변환용)
     ):
         # config/defense_config.json에서 기본값 로드
@@ -100,6 +107,8 @@ class ROS2SensorBridge:
         self.n_allies = n_allies
         self.n_enemies = n_enemies
         self._on_update = on_update
+        self._on_reset = on_reset
+        self._on_ally_killed = on_ally_killed
 
         # 상태 배열
         self._ally_pos = np.zeros((n_allies, 2))
@@ -198,10 +207,12 @@ class ROS2SensorBridge:
         # GPS lat/lon → 로컬 미터 변환
         lat, lon = msg.latitude, msg.longitude  # 정상 순서
         if not self._is_valid_gps(lat, lon):
-            print(f"[ROS2] ally_{idx} REJECTED: lat={lat:.2f}, lon={lon:.2f} (invalid range)")
+            if DEBUG_GPS:
+                print(f"[ROS2] ally_{idx} REJECTED: lat={lat:.2f}, lon={lon:.2f} (invalid range)")
             return
         if not self._origin_calibrated:
-            print(f"[ROS2] ally_{idx} waiting for origin calibration...")
+            if DEBUG_GPS:
+                print(f"[ROS2] ally_{idx} waiting for origin calibration...")
             return
 
         # 원점(모선) 기준 로컬 미터 변환
@@ -209,7 +220,7 @@ class ROS2SensorBridge:
         if not self._is_pos_in_world(pos):
             return
         with self._lock:
-            if not self._ally_gps_valid[idx]:  # 첫 수신만 로그
+            if DEBUG_GPS and not self._ally_gps_valid[idx]:  # 첫 수신만 로그
                 print(f"[ROS2] ally_{idx} GPS→m: lat={lat:.6f}, lon={lon:.6f} → ({pos[0]:.2f}, {pos[1]:.2f})")
             self._ally_pos[idx] = pos
             self._ally_gps_valid[idx] = True
@@ -236,7 +247,7 @@ class ROS2SensorBridge:
         if not self._is_pos_in_world(pos):
             return
         with self._lock:
-            if not self._enemy_alive[idx]:  # 첫 수신만 로그
+            if DEBUG_GPS and not self._enemy_alive[idx]:  # 첫 수신만 로그
                 print(f"[ROS2] enemy_{idx} GPS→m: lat={lat:.6f}, lon={lon:.6f} → ({pos[0]:.2f}, {pos[1]:.2f})")
             self._enemy_pos[idx] = pos
             self._enemy_alive[idx] = True
@@ -249,7 +260,8 @@ class ROS2SensorBridge:
         # GPS lat/lon으로 원점 보정
         lat, lon = msg.latitude, msg.longitude  # 정상 순서
         if not self._is_valid_gps(lat, lon):
-            print(f"[ROS2] mothership REJECTED: lat={lat:.2f} (valid: -90~90), lon={lon:.2f} (valid: -180~180)")
+            if DEBUG_GPS:
+                print(f"[ROS2] mothership REJECTED: lat={lat:.2f} (valid: -90~90), lon={lon:.2f} (valid: -180~180)")
             return
 
         # 모선 GPS로 원점 보정 (모선 = world 중심)
@@ -257,12 +269,61 @@ class ROS2SensorBridge:
             self.origin_lat = lat
             self.origin_lon = lon
             self._origin_calibrated = True
-            print(f"[ROS2Bridge] Origin calibrated: lat={lat:.6f}, lon={lon:.6f}")
+            print(f"[ROS2Bridge] Origin calibrated: lat={lat:.6f}, lon={lon:.6f}")  # 이건 중요하니 유지
 
         # 모선은 항상 world 중심에 위치
         with self._lock:
             self._center = np.array([self.world_size / 2, self.world_size / 2])
             self._mother_valid = True
+
+    def _on_reset_event(self, msg: 'String'):
+        """시뮬레이터 리셋 이벤트 수신."""
+        try:
+            data = json.loads(msg.data)
+            event = data.get("event", "")
+            if event == "reset":
+                print(f"[ROS2] ★ 리셋 이벤트 수신")
+                # 내부 상태 초기화
+                with self._lock:
+                    self._ally_pos.fill(0)
+                    self._ally_hdg.fill(0)
+                    self._ally_alive.fill(False)
+                    self._ally_gps_valid.fill(False)
+                    self._enemy_pos.fill(0)
+                    self._enemy_hdg.fill(0)
+                    self._enemy_alive.fill(False)
+                    self._origin_calibrated = False
+                    self._last_routes = None
+                    self._last_masks = None
+                # 콜백 호출
+                if self._on_reset:
+                    self._on_reset()
+        except Exception as e:
+            print(f"[ROS2] 리셋 이벤트 처리 오류: {e}")
+
+    def _on_allies_status_event(self, msg: 'String'):
+        """아군 상태 변경 이벤트 수신."""
+        try:
+            data = json.loads(msg.data)
+            event = data.get("event", "")
+            if event == "ally_killed":
+                killed_ids = data.get("killedIds", [])
+                alive_status = data.get("aliveStatus", [])
+                print(f"[ROS2] ★ 아군 무력화 이벤트: {killed_ids}")
+                # 내부 상태 업데이트
+                with self._lock:
+                    for kid in killed_ids:
+                        if 0 <= kid < self.n_allies:
+                            self._ally_alive[kid] = False
+                    # aliveStatus 전체 동기화
+                    for i, alive in enumerate(alive_status):
+                        if i < self.n_allies:
+                            self._ally_alive[i] = alive
+                # 콜백 호출
+                if self._on_ally_killed:
+                    self._on_ally_killed(killed_ids)
+        except Exception as e:
+            print(f"[ROS2] 아군 상태 이벤트 처리 오류: {e}")
 
     # ─────────────────────────────────────────────────────────────
     # 시작/종료
@@ -304,6 +365,14 @@ class ROS2SensorBridge:
         self._node.create_subscription(
             NavSatFix, '/mothership/fix',
             self._on_mother_gps, qos)
+
+        # ★ 시뮬레이터 이벤트 구독 (리셋, 아군 상태)
+        self._node.create_subscription(
+            String, '/defense/reset',
+            self._on_reset_event, 10)
+        self._node.create_subscription(
+            String, '/defense/allies_status',
+            self._on_allies_status_event, 10)
 
         # 웨이포인트 발행자
         self._wp_pubs = [
@@ -439,8 +508,8 @@ class ROS2SensorBridge:
         t = int(env.t[0]) if hasattr(env.t, '__getitem__') else int(env.t)
         micro_ct = getattr(env, '_micro_ct', 0)
 
-        # 디버그: 100 스텝마다 상태 출력
-        if t % 100 == 0:
+        # 디버그: 500 스텝마다 상태 출력 (너무 빈번하지 않게)
+        if DEBUG_GPS and t % 500 == 0:
             with self._lock:
                 print(f"[ROS2] t={t} ally_valid={self._ally_gps_valid.tolist()} "
                       f"enemy_alive={self._enemy_alive.sum()} rl_hz={rl_hz}")

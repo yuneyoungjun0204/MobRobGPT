@@ -371,6 +371,10 @@ if ROS2_AVAILABLE:
             # 모선 발행자
             self.mothership_fix_pub = self.create_publisher(NavSatFix, "/mothership/fix", 10)
 
+            # ★ 시뮬레이터 이벤트 발행자 (리셋, 아군 상태)
+            self.reset_event_pub = self.create_publisher(String, "/defense/reset", 10)
+            self.allies_status_pub = self.create_publisher(String, "/defense/allies_status", 10)
+
             # ROS2 구독자 (oneway_ros2에서 웨이포인트 수신)
             self.wp_subs = []
             for i in range(self.config.n_allies):
@@ -407,12 +411,33 @@ if ROS2_AVAILABLE:
                 self.mqtt.subscribe("usv/ally/+/telemetry")
                 self.mqtt.subscribe("usv/enemy/+/telemetry")
                 self.mqtt.subscribe("usv/mothership/state")
+                # ★ 시뮬레이터 이벤트 구독 (리셋, 아군 상태)
+                self.mqtt.subscribe("usv/system/events")
+                self.mqtt.subscribe("usv/allies/status")
                 self.get_logger().info("방어 시뮬레이터 브릿지 시작")
             else:
                 self.get_logger().error("MQTT 연결 실패")
 
         def _on_mqtt_message(self, topic: str, payload: Dict[str, Any]):
             """MQTT 메시지 수신."""
+            # ★ 시뮬레이터 이벤트 처리 (리셋, 아군 상태)
+            if topic == "usv/system/events":
+                # 리셋 이벤트 → ROS2로 발행
+                msg = String()
+                msg.data = json.dumps(payload)
+                self.reset_event_pub.publish(msg)
+                self.get_logger().info(f"★ 리셋 이벤트 ROS2 발행: {payload.get('event', 'unknown')}")
+                return
+
+            if topic == "usv/allies/status":
+                # 아군 상태 이벤트 → ROS2로 발행
+                msg = String()
+                msg.data = json.dumps(payload)
+                self.allies_status_pub.publish(msg)
+                killed_ids = payload.get("killedIds", [])
+                self.get_logger().info(f"★ 아군 상태 이벤트 ROS2 발행: killed={killed_ids}")
+                return
+
             # 토픽 파싱: usv/ally/{id}/telemetry 또는 usv/enemy/{id}/telemetry
             parts = topic.split("/")
             if len(parts) >= 4 and parts[0] == "usv":
