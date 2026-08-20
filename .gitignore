@@ -14,9 +14,11 @@ dist/
 htmlcov/
 
 # ── 가상환경 (주의: boatattack_sim/env 는 패키지이므로 'env/' 는 무시하지 않음) ──
+#   ★ Windows 는 대소문자를 구분하지 않아 'ENV/' 가 'boatattack_sim/env/' 까지 잡는다.
+#     루트 한정('/ENV/')으로 좁혀야 env 패키지가 추적된다.
 .venv/
 venv/
-ENV/
+/ENV/
 
 # ── OS / 에디터 ─────────────────────────────────────────
 .DS_Store
@@ -40,3 +42,7 @@ font_test.png
 # ── 비밀키 (커밋 방지) ──────────────────────────────────
 .env
 *.key
+
+# ── 육지 마스크 캐시 (OSM 생성물이나 오프라인 운용에 필요한 앵커만 추적) ──
+boatattack_sim/env/_terrain_cache/*
+!boatattack_sim/env/_terrain_cache/land_*_34.62500_128.52000_*.npy
