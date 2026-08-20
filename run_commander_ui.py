@@ -15,14 +15,21 @@ LLM 전체 재계획은 주기(기본 100 step)마다. 아군끼리 충돌하면
     python run_commander_ui.py qwen2.5:7b
     python run_commander_ui.py --enemy wave
     python run_commander_ui.py --cell           # 셀선택 정책 (시뮬레이션)
+    python run_commander_ui.py --unet           # CNN 점수맵(U-Net) 정책 (시뮬레이션)
     python run_commander_ui.py --ros2           # ROS2 실시간 센서 연동 (LLM 배정만)
     python run_commander_ui.py --cell --ros2    # ROS2 센서 + 셀 정책 (실제 USV 제어)
+    python run_commander_ui.py --unet --ros2    # ROS2 센서 + U-Net 점수맵 정책
 조작키: [space] 재생/일시정지  [r] 랜덤 리셋  [q] 종료  [a] 자동 재계획 토글
        [1] 집중  [2] 파상  [3] 양동  (상단 버튼과 동일 — 그 대형으로 리셋·재시작)
 옵션: --replan N  (N step 마다 LLM 자동 재계획, 전장 변화 적응. 0=끄기, 기본 100)
      --rl          (경로 기동을 강화학습 잔차 정책으로 — 배정은 여전히 LLM. DefenseVecEnv 백엔드)
      --cell        (경로/그물을 '셀선택' 정책(CellPointerActor)으로 — 배정은 여전히 LLM. --rl 함의.
                     LLM 배정→_assign 주입→셀 정책이 obs+후보셀 pruning 으로 존중. 기본 ckpt=best_mixed_far.pt)
+     --unet        (경로/그물을 'CNN 점수맵' 정책(CnnScoreActor/U-Net lite)으로 — 배정은 여전히 LLM.
+                    50×50×15채널 래스터 → 픽셀 2점 = 이동 WP + 그물 벽 끝점. --cell 과 배타.
+                    기본 ckpt=u-net_map.pt. 모델 계약서: docs/unet_model_deploy.md)
+     --nets N      (--unet 전용: 배당 그물 장수, 기본 3. 학습 config 는 1이라 한 장 깔면 배가
+                    정지한다 — 여러 장을 실어야 완성 후 다음 결정에서 재전개한다)
      --gain K      (--rl 시 RL 잔차 배율, 기본 1. 크게 하면 휴리스틱 이탈 과장. 셀 모델은 무의미)
      --ckpt PATH   (RL 정책 체크포인트. 기본: --cell=best_mixed_far.pt, 그 외=rl_latest.pt)
      --ros2        (ROS2 실시간 센서 연동: /enemy_X/fix, /ally_X/fix,imu 구독 + /ally_X/waypoints 발행)
@@ -103,17 +110,41 @@ def _overlay_cells_cmd(ax, viz):
                        edgecolors=col, linewidths=1.4, alpha=0.8, zorder=5.8)
 
 
+def _overlay_score_cmd(ax, viz):
+    """CNN 점수맵 오버레이: 배별 유효마스크(옅게) + 점수맵 heatmap + 선택 픽셀 2점 + 그물 벽.
+
+    축 규약은 boatattack_sim/env/cnn_map.py 단일 소스를 따른다 — imshow 는 전치+origin='lower'
+    ([ix,iy]=[x,y] 이므로 numpy 이미지 관례가 아니다). eval.cnn_overlay 가 이를 캡슐화한다.
+    """
+    from boatattack_sim.eval import cnn_overlay as CO
+    cfg = viz["cfg"]
+    valid, prob, pix, off = viz["valid"], viz["prob"], viz["pix"], viz["offset"]
+    for p in range(len(valid)):
+        if int(viz["assign"][p]) < 0:          # 미배정 배는 점수맵이 무의미(균등분포) → 안 그림
+            continue
+        CO.draw_valid(ax, cfg, valid[p], p, alpha=0.14, z=2.0)
+        if prob is not None:                   # 자기회귀 마지막 단계의 점수맵
+            CO.draw_score(ax, cfg, prob[-1, p], p, alpha=0.55, z=2.2)
+        if pix is not None:
+            CO.draw_picks(ax, cfg, pix[p], None if off is None else off[p], p=p, z=7.0)
+
+
 def main() -> None:
     enemy = _arg("--enemy", "random")
     backend = "openai" if "--openai" in sys.argv else "ollama"
     replan = int(_arg("--replan", "100"))   # LLM 자동 재계획 주기(step). 0=끄기
     rl = "--rl" in sys.argv                  # 경로 기동을 RL 정책으로 (배정은 여전히 LLM)
     cell = "--cell" in sys.argv              # RL 을 '셀선택' 정책(CellPointerActor)으로 (--rl 함의)
-    if cell:
+    unet = "--unet" in sys.argv              # RL 을 'CNN 점수맵' 정책(CnnScoreActor)으로 (--rl 함의)
+    if cell and unet:
+        raise SystemExit("[오류] --cell 과 --unet 은 함께 쓸 수 없습니다 (서로 다른 정책 계열).")
+    nets_per_ship = int(_arg("--nets", "3"))   # --unet: 배당 그물 장수(기본 3, 소진 시 그 배 정지)
+    if cell or unet:
         rl = True
     gain = float(_arg("--gain", "1"))        # RL 잔차 배율(시각화용; 셀 모델은 무의미)
-    _ckpt_default = "boatattack_sim/models/best_mixed_far.pt" if cell \
-        else "boatattack_sim/models/rl_latest.pt"
+    _ckpt_default = ("boatattack_sim/models/u-net_map.pt" if unet else
+                     "boatattack_sim/models/best_mixed_far.pt" if cell else
+                     "boatattack_sim/models/rl_latest.pt")
     ckpt = _arg("--ckpt", _ckpt_default)
     # --specialized [경로]: 공격양상 기하분류 → 집중/양동/파상 특화 셀 정책 라우팅(--cell 전용)
     specialized_root = (_arg("--specialized", "30_model")
@@ -149,10 +180,27 @@ def main() -> None:
     warnings.filterwarnings("ignore", message="Glyph .* missing from font")
 
     # --ros2 모드: ROS2 실시간 센서 데이터 사용
-    ros2_sensor_mode = ros2_viz and not cell and not rl  # --ros2만 단독 사용 시
+    ros2_sensor_mode = ros2_viz and not cell and not unet and not rl  # --ros2만 단독 사용 시
     ros2_cell_mode = ros2_viz and cell  # --ros2 + --cell: ROS2 센서 + 셀 정책
+    ros2_unet_mode = ros2_viz and unet  # --ros2 + --unet: ROS2 센서 + CNN 점수맵 정책
 
-    if ros2_cell_mode:
+    if ros2_unet_mode:
+        # ROS2 센서 + CNN 점수맵 정책 모드 (실센서 → env 상태 주입 → 픽셀 2점 → WP 발행)
+        from commander.ros2_unet_env import ROS2CnnEnv
+        from commander.rl_bridge import build_battlefield_defense
+        from commander.ros2_sensor_bridge import shutdown_ros2_bridge
+        print("ROS2 + U-Net 점수맵 정책 모드 시작…")
+        print("  구독: /enemy_0~9/fix, /ally_0~2/fix, /ally_0~2/imu, /mothership/fix")
+        print("  발행: /ally_0~2/waypoints + MQTT usv/ally/{id}/route")
+        print(f"  점수맵 정책: {ckpt}  (배당 그물 {nets_per_ship}장)")
+        sim = ROS2CnnEnv(ckpt=ckpt, enemy_mode=enemy, apf=apf, nets_per_ship=nets_per_ship)
+        sim.start_ros2()
+        #   ★ ROS2CnnEnv 는 DefenseVecEnv 를 상속하므로 시뮬과 같은 전장 빌더를 쓴다
+        #     (ros2_env 판보다 클러스터링이 정확 — cluster_by_gaps_vec 사용).
+        _build_bf = build_battlefield_defense
+        _cleanup_resources.append(("ROS2 Bridge",
+                                   lambda: shutdown_ros2_bridge(sim._bridge) if sim._bridge else None))
+    elif ros2_cell_mode:
         # ROS2 센서 + 셀 정책 모드
         from commander.ros2_cell_env import ROS2CellEnv
         from commander.ros2_env import build_battlefield_ros2
@@ -178,6 +226,13 @@ def main() -> None:
         _build_bf = build_battlefield_ros2
         # 정리 콜백 등록
         _cleanup_resources.append(("ROS2 Bridge", lambda: shutdown_ros2_bridge(sim._bridge) if sim._bridge else None))
+    elif unet:  # CNN 점수맵 정책 (시뮬레이션, 배정=LLM, 경로/그물=픽셀 2점)
+        from commander.unet_bridge import CommandedCnnEnv
+        from commander.rl_bridge import build_battlefield_defense
+        print(f"U-Net 점수맵 정책 로딩 중… ({ckpt}, 배당 그물 {nets_per_ship}장)")
+        sim = CommandedCnnEnv(ckpt, enemy_mode=enemy, avoid_steer=apf,
+                              nets_per_ship=nets_per_ship)
+        _build_bf = build_battlefield_defense
     elif cell:  # 셀선택 RL 정책 (시뮬레이션, 배정=LLM, 경로/그물=셀 정책)
         from commander.cell_bridge import CommandedCellEnv, build_battlefield_defense
         if specialized_root:
@@ -198,7 +253,7 @@ def main() -> None:
 
     # MQTT 시각화 연동 (시뮬레이션 + 3D 뷰어) - ROS2 센서 모드에서는 사용 안 함
     viz_bridge = None
-    if ros2_viz and not ros2_sensor_mode and not ros2_cell_mode:
+    if ros2_viz and not ros2_sensor_mode and not ros2_cell_mode and not ros2_unet_mode:
         try:
             from commander.ros2_viz_bridge import Ros2VizBridge
             print(f"usv-simulator 연동 중… (MQTT {mqtt_host}:{mqtt_port})")
@@ -401,9 +456,10 @@ def main() -> None:
             sim.resolve_conflicts = not sim.resolve_conflicts
             info["status"] = f"Route conflict resolution {'ON' if sim.resolve_conflicts else 'OFF'}"
             draw_info()
-        elif k == "z" and cell:                     # Candidate cell overlay toggle (cell mode)
+        elif k == "z" and (cell or unet):           # Overlay toggle (cell candidates / score map)
             info["show_cells"] = not info.get("show_cells", True)
-            info["status"] = f"Candidate cells {'ON' if info['show_cells'] else 'OFF'}"
+            _what = "Score map" if unet else "Candidate cells"
+            info["status"] = f"{_what} {'ON' if info['show_cells'] else 'OFF'}"
             draw_info()
         elif k == "a":
             info["auto"] = not info.get("auto")
@@ -485,6 +541,8 @@ def main() -> None:
         renderer.draw_scene(ax, sim.get_frame(), bg_img=bg_img, bg_extent=bg_extent)
         if cell and info.get("show_cells", True) and hasattr(sim, "cell_viz"):
             _overlay_cells_cmd(ax, sim.cell_viz())          # 후보셀/그물배제/선택 오버레이 (z 토글)
+        if unet and info.get("show_cells", True) and hasattr(sim, "cnn_viz"):
+            _overlay_score_cmd(ax, sim.cnn_viz())           # 점수맵/유효마스크/선택픽셀 (z 토글)
         if specialized_root and getattr(sim, "_formation", None):   # Specialized routing: show current formation
             _KMODE = {"concentrated": "Conc.", "diversionary": "Diver.", "wave": "Wave"}
             ax.text(0.99, 0.99, f"Formation: {_KMODE.get(sim._formation, sim._formation)} → specialized",
