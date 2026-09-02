@@ -17,6 +17,7 @@ from boatattack_sim.env.simulator import Simulator
 from boatattack_sim.env.config import DEFAULT_CONFIG, DEFAULT_REWARD
 from boatattack_sim.env import clustering
 
+from . import geometry as GEO
 from .schema import (
     BattlefieldState, Mothership, EnemyCluster, AllyShip, Constraints, Point,
 )
@@ -350,42 +351,14 @@ def build_battlefield(sim: Simulator, command: str | None = None) -> Battlefield
     )
 
 
-def _intercept_point(cx, cy, mx, my, v_a, v_e, r_cap):
-    """모선-클러스터 선상의 요격 지점. 반경 = v_a·d/(v_a+v_e), max_intercept 로 캡."""
-    dx, dy = cx - mx, cy - my
-    d = math.hypot(dx, dy)
-    if d < 1e-6:
-        return (mx, my)
-    r = min(v_a * d / (v_a + v_e), r_cap)
-    return (mx + dx / d * r, my + dy / d * r)
+# ── 배정 기하는 commander/geometry.py 단일 소스 (fallback 지휘관과 공유) ──
+#    폴백이 boatattack_sim 을 끌어오지 않도록 순수 기하만 그쪽에 뒀다. 아래는 하위호환 별칭.
+_intercept_point = GEO.intercept_point
+_segments_cross = GEO.segments_cross
+_ship_cost = GEO.ship_cost
 
 
-def _segments_cross(a, b, c, d):
-    """선분 ab, cd 가 교차하면 True (두 배의 직선 경로 충돌 위험 판정)."""
-    def ccw(p, q, r):
-        return (r[1] - p[1]) * (q[0] - p[0]) - (q[1] - p[1]) * (r[0] - p[0])
-    return (ccw(a, b, c) * ccw(a, b, d) < 0) and (ccw(c, d, a) * ccw(c, d, b) < 0)
-
-
-def _ship_cost(a, ipt, assigned_pairs, W):
-    """아군 a 를 요격점 ipt 로 보낼 때의 '효율+안전' 비용(작을수록 좋음).
-
-    효율: 요격점까지 이동거리(≈도착시간) + 선회량 + 그물 보유.
-    안전: 이미 배정된 배들의 경로와 교차하면(충돌 위험) 큰 페널티.
-    """
-    px, py = a.pos.x, a.pos.y
-    ix, iy = ipt
-    travel = math.hypot(ix - px, iy - py)                       # 효율: 이동거리
-    desired = math.degrees(math.atan2(ix - px, iy - py)) % 360.0
-    turn = abs(((desired - a.heading + 180.0) % 360.0) - 180.0)  # 효율: 선회량[deg]
-    turn_pen = (turn / 180.0) * (W * 0.06)
-    nets_pen = 0.0 if a.nets_remaining > 0 else (W * 2.0)         # 그물 없으면 사실상 배제
-    cross_pen = sum(W * 0.7 for (p, q) in assigned_pairs
-                    if _segments_cross((px, py), (ix, iy), p, q))  # 안전: 경로 교차
-    return travel + turn_pen + nets_pen + cross_pen
-
-
-def plan_to_assign(plan, state: BattlefieldState) -> np.ndarray:
+def plan_to_assign(plan, state: BattlefieldState, mode: str = "llm") -> np.ndarray:
     """CommanderPlan → sim.assign 배열[P] (아군별 담당 클러스터 idx, -1=예비).
 
     배정 주체는 LLM: 각 deployment 의 ally_ids(어느 USV) 를 그대로 존중한다. LLM 이 비워
@@ -393,7 +366,32 @@ def plan_to_assign(plan, state: BattlefieldState) -> np.ndarray:
     교차 회피)' 복합점수(_ship_cost)로 대신 골라 채운다(폴백).
 
     HOLD: plan.hold_ships 의 아군은 배정과 무관하게 assign=-1(제자리 정지)로 덮어쓴다.
+
+    mode — ★배정 권한 (기본 "llm")
+    ──────────────────────────────
+    "llm"    : **순수 LLM 배정.** LLM 이 `ally_ids` 로 명시한 배만 배정된다. 코드는 아무것도
+               보완하지 않는다 — 헝가리안 자동배정도, 2-opt 효율보정도, 전원HOLD 방지도 없다.
+               LLM 이 비워 둔 클러스터는 담당 없이 남고, 지목 안 된 배는 예비(정지)로 남는다.
+               비효율·교차·모선 관통 배정도 그대로 나간다. 결과의 책임이 전부 지휘관에게 있다.
+    "hybrid" : LLM 명시분은 잠그되(2-opt 면제), 빈 클러스터는 헝가리안으로 채우고 자동배정된
+               배들끼리만 2-opt. 전원HOLD 방지도 동작. LLM 판단 + 코드 보완의 절충.
+    "code"   : 종래 동작 — 모든 배정 배가 2-opt 대상. 효율은 최적이지만 LLM 판단이 뒤집힌다.
+
+    ※ 왜 이 스위치가 생겼나 (2026-08-20 실측):
+      "code" 시절, 실제 전장 76개 배정안 중 **64.5%가 코드에 의해 변경**됐고(배 단위 53.3%),
+      14개 상황 중 **57%는 LLM 이 무엇을 내든 최종 배정이 동일**했다. 2-opt 는 임계 W*0.1 로
+      최대 20회 반복하는 사실상 완전탐색이라, 초기값(LLM 배정)이 무엇이든 같은 국소최적으로
+      수렴한다. 즉 LLM 호출이 결과에 영향을 주지 못했다. 화면의 rationale 만 LLM 것이라
+      '지휘관이 결정한다'는 착시가 있었다.
+
+      ※ 참고: 모선 관통 경로는 코드 보완이 막아주던 것이 아니다. heuristic_plan 으로 잰
+        배정 감사 59회에서 관통 8건이 나왔다(경로 교차는 0건) — 휴리스틱도 똑같이 낸다.
     """
+    mode = str(mode).lower()
+    if mode not in ("llm", "hybrid", "code"):
+        raise ValueError(f"알 수 없는 배정 mode: {mode!r} (llm|hybrid|code)")
+    pure = (mode == "llm")          # 코드 보완 일절 없음
+    respect_llm = (mode != "code")  # LLM 명시분 2-opt 면제
     P = len(state.allies)
     assign = np.full(P, -1, np.int64)
     clusters = {c.id: c for c in state.enemy_clusters}
@@ -410,35 +408,41 @@ def plan_to_assign(plan, state: BattlefieldState) -> np.ndarray:
 
     available = {a.id for a in state.allies if a.alive}          # 격침된 배는 배정 제외
     assigned_pairs: list = []                                    # 교차검사용 (배pos, 요격점)
+    llm_locked: set = set()          # ★ LLM 이 ally_ids 로 직접 지목한 배 (2-opt 면제 대상)
 
-    def commit(aid, cid):
+    def commit(aid, cid, by_llm=False):
         assign[aid] = cid
         available.discard(aid)
         assigned_pairs.append(((allies[aid].pos.x, allies[aid].pos.y), icept[cid]))
+        if by_llm:
+            llm_locked.add(aid)
 
     # 위협 큰 클러스터 먼저 (아군 부족 시 우선 커버 + 교차검사 순서 안정)
     deps = sorted((d for d in plan.deployments if d.cluster_id in clusters),
                   key=lambda d: -threat.get(d.cluster_id, 0))
 
     # 1) LLM 이 지정한 ally_ids 존중 (배정 주체 = LLM)
+    #    ★ by_llm=True → respect_llm 이면 아래 2-opt 가 이 배들을 건드리지 않는다.
     for d in deps:
         for aid in d.ally_ids:
             if aid in available:
-                commit(aid, d.cluster_id)
+                commit(aid, d.cluster_id, by_llm=True)
 
     # 2) 담당 배가 0인 클러스터 → 전역 최소비용 매칭(헝가리안)으로 효율 최적 배정.
     #    탐욕(클러스터별 최근접)은 한 배가 먼저 가져가면 다른 배가 더 나은 매칭을 놓쳐 총
     #    이동거리·선회가 커짐. 전 아군×미담당클러스터 비용행렬을 한 번에 최소화 → 전역 최적.
-    uncovered = [d.cluster_id for d in deps
-                 if not any(assign[j] == d.cluster_id for j in range(P))]
+    #    ★ mode="llm" 이면 통째로 건너뛴다 — 빈 클러스터는 담당 없이 남는다(LLM 뜻 그대로).
+    uncovered = [] if pure else [d.cluster_id for d in deps
+                                 if not any(assign[j] == d.cluster_id for j in range(P))]
     avail = sorted(available)
     if uncovered and avail:
         slots = uncovered[:len(avail)]          # 아군 부족 시 위협 큰 클러스터 우선(deps=threat desc)
         # ★ 연속성(sticky): 현재 담당 클러스터면 비용 차감 → 타겟이 매 스텝 뒤바뀌는 것 억제
         #   (이만큼 더 싸야 전환). 담당 클러스터가 사라지면 매칭 안 돼 자연히 재배정됨.
-        STICKY = W * 0.45   # 연속성 최우선 — 현재 담당을 크게 선호(확실히 더 나을 때만 전환)
+        #   ★ id 뿐 아니라 방위로도 같은 무리를 인정한다 — 클러스터 id 는 매 결정 재부여되므로
+        #     id 만 보면 무리가 그대로인데도 연속성이 끊긴 것으로 오판한다(GEO.sticky_bonus).
         cost = np.array([[_ship_cost(allies[aid], icept[cid], assigned_pairs, W)
-                          - (STICKY if allies[aid].assigned_cluster == cid else 0.0)
+                          - GEO.sticky_bonus(allies[aid], clusters[cid], W)
                           for cid in slots] for aid in avail], dtype=float)
         try:
             from scipy.optimize import linear_sum_assignment
@@ -454,31 +458,25 @@ def plan_to_assign(plan, state: BattlefieldState) -> np.ndarray:
             commit(avail[ri], slots[ci])
 
     # 2.5) 효율 보정(2-opt): 배정된 배 쌍의 담당 클러스터를 맞바꿔 총 (이동거리+선회+경로교차)
-    #   이 뚜렷이 줄면 스왑한다. LLM 이 낸 '왼쪽 클러스터를 오른쪽 배가' 식 교차/비효율 배정을
-    #   제거(같은 배·클러스터 집합에서 '짝'만 최적화 → 최근접·최소선회·비교차). 근소차는 연속성
-    #   위해 유지(임계 W*0.1) → 교차(큰 페널티)나 명백한 비효율만 고침.
-    idxs = [aid for aid in range(P) if assign[aid] >= 0]
-    EPS = W * 0.1
-    improved = True
-    guard = 0
-    while improved and guard < 20:
-        improved = False
-        guard += 1
-        for xi in range(len(idxs)):
-            for yi in range(xi + 1, len(idxs)):
-                a1, a2 = idxs[xi], idxs[yi]
-                c1, c2 = int(assign[a1]), int(assign[a2])
-                if c1 == c2 or c1 not in icept or c2 not in icept:
-                    continue
-                s1 = (allies[a1].pos.x, allies[a1].pos.y)
-                s2 = (allies[a2].pos.x, allies[a2].pos.y)
-                cur = (_ship_cost(allies[a1], icept[c1], [(s2, icept[c2])], W)
-                       + _ship_cost(allies[a2], icept[c2], [(s1, icept[c1])], W))
-                swp = (_ship_cost(allies[a1], icept[c2], [(s2, icept[c1])], W)
-                       + _ship_cost(allies[a2], icept[c1], [(s1, icept[c2])], W))
-                if swp < cur - EPS:
-                    assign[a1], assign[a2] = c2, c1
-                    improved = True
+    #   이 뚜렷이 줄면 스왑한다. 같은 배·클러스터 집합에서 '짝'만 최적화(최근접·최소선회·비교차).
+    #   근소차는 연속성 위해 유지(임계 W*0.1) → 교차(큰 페널티)나 명백한 비효율만 고침.
+    #
+    #   ★ respect_llm=True (기본): LLM 이 직접 지목한 배(llm_locked)는 **대상에서 제외**한다.
+    #     시스템이 자동으로 채운 배들끼리만 스왑한다. 이 잠금이 없으면 2-opt 가 사실상
+    #     완전탐색이라 LLM 배정을 전부 같은 국소최적으로 되돌려 버린다(위 docstring 실측 참조).
+    #     대신 LLM 이 비효율·교차 배정을 내면 그대로 나간다 — 그게 '권한을 준다'는 뜻이다.
+    #     mode="llm" 이면 대상이 비어 2-opt 자체가 돌지 않는다.
+    idxs = [] if pure else [aid for aid in range(P)
+                            if assign[aid] >= 0 and not (respect_llm and aid in llm_locked)]
+    if len(idxs) > 1:
+        # ★ fallback._pick 과 **같은 함수**를 쓴다(geometry.refine_pairs, 배 id 순 정규화).
+        #   예전엔 여기와 폴백이 각자 2-opt 를 돌려 순회 순서가 달라 서로 다른 국소최적에
+        #   수렴했다(diversionary 결정 8%가 갈렸다).
+        pool = [aid for aid in idxs if int(assign[aid]) in icept]
+        if len(pool) > 1:
+            for a, c in GEO.refine_pairs([(allies[aid], int(assign[aid])) for aid in pool],
+                                         icept, W, clusters=clusters):
+                assign[a.id] = c
 
     # 3) HOLD: 지정 아군은 제자리 정지(assign=-1). 전개중이면 그물은 마저 설치됨.
     for i in getattr(plan, "hold_ships", None) or []:
@@ -487,7 +485,8 @@ def plan_to_assign(plan, state: BattlefieldState) -> np.ndarray:
 
     # 4) ★ 최소 1대 활성 보장(전원 HOLD/예비 금지): 살아있는 배가 전부 assign<0 이면,
     #    가장 위협 큰 활성 클러스터에 가장 싸게 갈 수 있는 1대를 강제 배정(HOLD 해제).
-    alive_ids = [a.id for a in state.allies if a.alive]
+    #    ★ mode="llm" 이면 이 보정도 하지 않는다 — 전원 정지도 LLM 의 결정으로 존중한다.
+    alive_ids = [] if pure else [a.id for a in state.allies if a.alive]
     active_cl = [c for c in state.enemy_clusters]
     if alive_ids and active_cl and not any(assign[i] >= 0 for i in alive_ids):
         tgt = max(active_cl, key=lambda c: threat.get(c.id, 0))     # 가장 위협 큰 클러스터

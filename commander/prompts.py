@@ -84,12 +84,38 @@ Each ally carries ONLY the nets in `nets_remaining` (usually 1). A net, once lai
     · On each re-plan, as the next rank closes in, flip one pre-positioned ship to deploy its net to meet it. Aim for one fresh net per rank.
     · Never let every ship deploy at once, and never leave a still-inbound rank with no net left to answer it.
 
+[YOUR AUTHORITY — YOU ARE THE ONLY DECIDER. READ THIS TWICE]
+★ There is NO fallback. NO auto-assignment. NO efficiency post-processing. NO safety net.
+  Whatever you put in `ally_ids` goes straight to the fleet, exactly as written.
+★ ★★A cluster whose `ally_ids` is EMPTY gets NO SHIP AT ALL.★★ Nobody fills it in for you.
+  The enemies in that cluster will sail through completely unopposed and breach the mothership.
+  → NEVER leave `ally_ids` empty as a way of saying "system, you pick". That is not what it
+    means anymore. It means "send nobody". You MUST name a ship for every cluster you intend
+    to defend.
+★ A ship you do not name anywhere simply STOPS and does nothing this cycle.
+★ If you put every ship in `hold_ships`, the entire fleet freezes. Nobody overrides it.
+★ You are FULLY responsible for principles 8 and 9 (nearest / least-turn / non-crossing /
+  left-right side order). A ship routed across the CENTER grazes the mothership and IS SUNK —
+  permanently, that ship is gone for the rest of the battle. Two ships on crossing paths ram
+  each other and BOTH sink. Nothing in the system will correct either mistake.
+  → Before you write each pairing, CHECK IT: read that ally's `to_clusters` entry for that
+    cluster (`dist`, `turn`), compare `bearing_from_center` with the cluster's `bearing`, and
+    confirm the straight line from the ally to its intercept point does NOT pass near the
+    mothership at the center. If it does, pick the ship on that side instead (principle 9).
+
 [OUTPUT RULES]  (the JSON has rationale FIRST, then deployments, then hold_ships)
 - ★rationale — ★★MUST BE WRITTEN IN KOREAN (반드시 한국어로 작성). English rationale is NOT allowed.★★
   Write this FIRST (think before you decide). 판단 근거를 한국어 2~4문장으로: 각 클러스터에 대해 어느 배가
   가장 가깝고·선회 적고·같은 쪽인지(원칙 8) 따진 뒤, 배정과 HOLD/예비 결정과 그 이유를 한국어로 서술.
   충돌 HOLD면 어느 배를 계속 움직였고(적에 가장 가까움) 어느 배를 멈췄는지(연속 HOLD 금지) 한국어로 밝힐 것.
-- deployments: list, each element STRICTLY {cluster_id, ally_ids} ONLY. Leave ally_ids empty to let the system auto-assign by efficiency.
+  ★ 배를 명시 지정할 때는 `to_clusters` 의 dist·turn 과 `bearing_from_center` 를 근거로 대라
+    (예: "배2가 클러스터1에 dist 1820·turn 12로 가장 싸고 같은 우측이라 지정"). 그 지정은
+    시스템이 고쳐주지 않고 그대로 나간다 — 중앙 관통이면 배가 영구 격침되고, 두 배의 경로가
+    교차하면 양쪽 다 침몰한다. **비워두면 위임이 아니라 '아무도 안 보냄'이니 절대 비우지 마라.**
+    막을 클러스터에는 반드시 배를 지목하고, 그 지목이 원칙 9(좌우 순서)에 맞는지 확인해 밝혀라.
+- deployments: list, each element STRICTLY {cluster_id, ally_ids} ONLY. Ships you name are the ONLY
+  ships that move (see [YOUR AUTHORITY]). An empty ally_ids means that cluster is left UNDEFENDED —
+  never use it to delegate; there is nothing to delegate to.
 - hold_ships: list of ally IDs to pause in place this cycle (default []).
 - 규칙: rationale 값만 한국어(문장). 나머지 JSON 키/구조/숫자는 그대로 유지.
 

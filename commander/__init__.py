@@ -13,6 +13,7 @@ from .schema import (
     BattlefieldState, ClusterDeployment, CommanderPlan,
 )
 from .fallback import heuristic_plan
+from .gemini_commander import GeminiCommander
 from .ollama_commander import OllamaCommander
 from .openai_commander import OpenAICommander
 
@@ -20,7 +21,9 @@ from .openai_commander import OpenAICommander
 def make_commander(backend: str = "ollama", model: str | None = None, **kwargs):
     """백엔드 팩토리 — 같은 plan(state)->CommanderPlan 인터페이스.
 
-    backend="ollama" (기본, 로컬/오프라인) | "openai" (GPT API, OPENAI_API_KEY 필요)
+    backend="ollama" (기본, 로컬/오프라인)
+          | "openai" (GPT API, OPENAI_API_KEY)
+          | "gemini" (Google Gemini, GEMINI_API_KEY)
     model 미지정 시 백엔드별 기본값 사용.
     """
     b = backend.lower()
@@ -28,11 +31,14 @@ def make_commander(backend: str = "ollama", model: str | None = None, **kwargs):
         return OpenAICommander(model=model or "gpt-4o-mini", **kwargs)
     if b == "ollama":
         return OllamaCommander(model=model or "qwen2.5:7b", **kwargs)
-    raise ValueError(f"알 수 없는 backend: {backend} (ollama|openai)")
+    if b in ("gemini", "google"):
+        return GeminiCommander(model=model or "gemini-2.5-flash", **kwargs)
+    raise ValueError(f"알 수 없는 backend: {backend} (ollama|openai|gemini)")
 
 
 __all__ = [
     "Point", "Mothership", "EnemyCluster", "AllyShip", "Constraints",
     "BattlefieldState", "ClusterDeployment", "CommanderPlan",
-    "heuristic_plan", "OllamaCommander", "OpenAICommander", "make_commander",
+    "heuristic_plan", "OllamaCommander", "OpenAICommander", "GeminiCommander",
+    "make_commander",
 ]

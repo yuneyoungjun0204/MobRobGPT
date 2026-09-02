@@ -30,6 +30,13 @@ LLM 전체 재계획은 주기(기본 100 step)마다. 아군끼리 충돌하면
                     기본 ckpt=u-net_map.pt. 모델 계약서: docs/unet_model_deploy.md)
      --nets N      (--unet 전용: 배당 그물 장수, 기본 3. 학습 config 는 1이라 한 장 깔면 배가
                     정지한다 — 여러 장을 실어야 완성 후 다음 결정에서 재전개한다)
+     --assign MODE (배정 권한. llm(기본)|hybrid|code
+                    llm    = 순수 LLM. LLM 이 ally_ids 로 지목한 배만 배정되고 코드는 아무것도
+                             보완하지 않는다(자동배정·2opt·전원HOLD방지 전부 없음). 비효율·교차·
+                             모선 관통도 그대로 나간다.
+                    hybrid = LLM 명시분은 잠그고, 빈 클러스터만 코드가 효율 배정.
+                    code   = 종래. 코드가 모든 배정을 재최적화(LLM 판단이 뒤집힘).
+                    --no-llm-authority 는 --assign code 의 별칭)
      --gain K      (--rl 시 RL 잔차 배율, 기본 1. 크게 하면 휴리스틱 이탈 과장. 셀 모델은 무의미)
      --ckpt PATH   (RL 정책 체크포인트. 기본: --cell=best_mixed_far.pt, 그 외=rl_latest.pt)
      --ros2        (ROS2 실시간 센서 연동: /enemy_X/fix, /ally_X/fix,imu 구독 + /ally_X/waypoints 발행)
@@ -139,6 +146,9 @@ def main() -> None:
     if cell and unet:
         raise SystemExit("[오류] --cell 과 --unet 은 함께 쓸 수 없습니다 (서로 다른 정책 계열).")
     nets_per_ship = int(_arg("--nets", "3"))   # --unet: 배당 그물 장수(기본 3, 소진 시 그 배 정지)
+    # ★ 배정 권한 모드. 기본 llm = 순수 LLM 배정(코드 보완 일절 없음).
+    #   llm|hybrid|code — 자세한 차이는 commander/sim_bridge.plan_to_assign docstring 참조.
+    assign_mode = _arg("--assign", "code" if "--no-llm-authority" in sys.argv else "llm")
     if cell or unet:
         rl = True
     gain = float(_arg("--gain", "1"))        # RL 잔차 배율(시각화용; 셀 모델은 무의미)
@@ -287,6 +297,12 @@ def main() -> None:
         d = sim.done
         return bool(d.flat[0]) if hasattr(d, "flat") else bool(d)
 
+    _AM = {"llm":   "순수 LLM — 코드 보완 없음. LLM 이 지목한 배만 움직입니다(빈 클러스터는 담당 없음).",
+           "hybrid": "LLM 명시분 잠금 + 빈 클러스터만 코드가 효율 배정.",
+           "code":  "종래 — 코드(2-opt)가 모든 배정을 재최적화합니다."}
+    if assign_mode not in _AM:
+        raise SystemExit(f"[오류] --assign 은 llm|hybrid|code 중 하나여야 합니다 (받음: {assign_mode!r})")
+    print(f"[배정] mode={assign_mode} — {_AM[assign_mode]}")
     commander = make_commander(backend, model)
     model = commander.model   # 실제 사용 모델명(라벨용)
     print(f"모델 로딩 중… ({model}) — 로드 후 창이 뜹니다.")
@@ -400,12 +416,15 @@ def main() -> None:
                 raise payload
             plan = payload
             bf = _build_bf(sim, command=cmd)               # 결과 도착 시점의 현재 전장으로 매핑
-            assign = plan_to_assign(plan, bf)
+            assign = plan_to_assign(plan, bf, mode=assign_mode)
             sim.set_plan(plan, cmd)                        # 매 스텝 재매핑(죽은 배·위치 적응)
             held = set(getattr(plan, "hold_ships", None) or [])
             committed = int((assign >= 0).sum())
             reserve = sim.cfg.n_allies - committed - len(held & {i for i in range(sim.cfg.n_allies) if assign[i] < 0})
-            alloc = "  ".join(f"C{d.cluster_id}:{d.ally_ids or 'auto'}" for d in plan.deployments) or "(none)"
+            # ★ mode=llm 에선 빈 ally_ids = '아무도 안 보냄'(위임 아님) → 라벨도 그렇게.
+            _noship = "none" if assign_mode == "llm" else "auto"
+            alloc = "  ".join(f"C{d.cluster_id}:{d.ally_ids or _noship}"
+                              for d in plan.deployments) or "(none)"
 
             def _tag(i, a):
                 if i in held:
