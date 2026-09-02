@@ -67,3 +67,12 @@ tools/PlotNeuralNet/
 
 # ── 이미지 생성 중간 산출물 ──
 *.quality_attempt_*.png
+
+# ── LaTeX 빌드 부산물 (본문 .tex 와 결과 .pdf 만 추적) ──
+#   ★ 전역 '*.log' 는 쓰지 않는다 — 30_model/*/train.log 등 추적 중인 학습 로그가 걸린다.
+논문초안/*.aux
+논문초안/*.log
+논문초안/*.out
+논문초안/*.synctex.gz
+논문초안/*.fls
+논문초안/*.fdb_latexmk
