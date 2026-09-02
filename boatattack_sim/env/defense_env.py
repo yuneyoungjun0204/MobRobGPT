@@ -576,6 +576,17 @@ class DefenseVecEnv:
             self.a_nets -= start_net.astype(np.int64)
             ev["nets_used"] += start_net.sum(axis=1)
             ev["deployed"] |= start_net
+            if "net_edist_sum" in ev:
+                # ★ 전개 개시 근접도: 이 순간 배에서 가장 가까운 **살아있는** 적까지의 거리.
+                #   그물은 부유물이라 시간이 지나면 표류·확산한다 → 적에 붙여 뿌릴수록 유리.
+                #   전개 '위치'가 아니라 '개시 시점'에 재는 이유: 벽은 여기서부터 그려진다.
+                d = np.hypot(self.a_pos[:, :, None, 0] - self.e_pos[:, None, :, 0],
+                             self.a_pos[:, :, None, 1] - self.e_pos[:, None, :, 1])
+                d = np.where(self.e_alive[:, None, :], d, np.inf)        # [N,P,M]
+                dmin = d.min(axis=2)                                     # [N,P]
+                ok = start_net & np.isfinite(dmin)   # 적이 전멸한 뒤 전개면 잴 대상이 없다
+                ev["net_edist_sum"] += np.where(ok, dmin, 0.0).sum(axis=1)
+                ev["net_edist_n"] += ok.sum(axis=1)
 
         moving = self.a_alive & (self._assign >= 0)      # 비활성/미배정(예비) 아군은 완전 정지
         painting = self.doing_net & (self.paint_dist < cfg.net_max_len) & self.a_alive
@@ -684,6 +695,11 @@ class DefenseVecEnv:
                           self.e_pos[..., 1] - self.center[1])          # [N,M]
             ev["cap_dist_sum"] += np.where(cap, cd, 0.0).sum(axis=1)
             ev["cap_dist_n"] += cap.sum(axis=1)
+            if "cap_t_sum" in ev:
+                # ★ 조기 제압(시간축): 포획이 일어난 시각 t 의 합. 나중에 포획 수로 나누면
+                #   '평균 몇 스텝 만에 잡았나'가 된다. 거리축(cap_dist)과 짝을 이루는 지표다 —
+                #   멀리서 잡아도 늦게 잡으면 다음 파를 못 막는다.
+                ev["cap_t_sum"] += cap.sum(axis=1) * self.t.astype(np.float64)
             self.e_alive &= ~cap
             ev["captures"] += cap.sum(axis=1)
 
@@ -758,7 +774,13 @@ class DefenseVecEnv:
         ev = {k: np.zeros(self.N) for k in
               ("captures", "breaches", "ally_collisions", "obstacle_collisions",
                "nets_used", "path_dist", "net_touches", "land_collisions",
-               "cap_dist_sum", "cap_dist_n")}
+               "cap_dist_sum", "cap_dist_n",
+               # ── 평가 전용 누적기 (보상에는 안 쓴다. eval/harness.py 가 읽는다) ──
+               #   cap_t_sum : 포획 시각 t 의 합 → /cap_dist_n = 평균 포획 시각(조기 제압)
+               #   net_edist_sum/_n : **그물 전개를 시작한 순간** 그 배와 가장 가까운
+               #     살아있는 적 사이의 거리. 그물은 물에 고정되지 않으므로 적에 최대한
+               #     붙여서 뿌려야 유리하다 → **작을수록 좋은** 지표다.
+               "cap_t_sum", "net_edist_sum", "net_edist_n")}
         # ★ 윈도우 내 **최소 거리**(배별). inf = 한 번도 안 잼.
         #   기존 dense 척력은 pos_end(윈도우 끝 1점) × a_alive 로 계산되는데,
         #   **충돌한 배는 a_alive 가 꺼져 기여가 정확히 0** 이 된다 — "충돌 전에 떨어지게"
