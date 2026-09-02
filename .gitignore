@@ -46,3 +46,24 @@ font_test.png
 # ── 육지 마스크 캐시 (OSM 생성물이나 오프라인 운용에 필요한 앵커만 추적) ──
 boatattack_sim/env/_terrain_cache/*
 !boatattack_sim/env/_terrain_cache/land_*_34.62500_128.52000_*.npy
+
+# ── 평가 산출물 ────────────────────────────────────────
+#   원자료 CSV·표는 재생성 가능하므로 추적하지 않는다(run_eval.py).
+#   단 논문에 실제로 들어가는 그림(논문_그래프/)은 추적한다 — 재현 환경 없이도 논문이 서야 한다.
+results/
+
+# ── OMC 런타임 상태 (세션·체크포인트·리플레이 — 워크트리마다 다르고 충돌만 낸다) ──
+#   .omc/skills/** 만 예외: 프로젝트 스코프 스킬은 공유 자산이다.
+.omc/
+!.omc/skills/
+!.omc/skills/**
+
+# ── 측정 스크립트의 출력물 (docs/measure_reward_breakdown.py, diagrams/*.py 로 재생성) ──
+/frames.json
+/reward_breakdown.json
+
+# ── 벤더 도구 (자체 .git 을 가진 외부 저장소 — 서브모듈로 만들지 않는다) ──
+tools/PlotNeuralNet/
+
+# ── 이미지 생성 중간 산출물 ──
+*.quality_attempt_*.png
