@@ -109,6 +109,10 @@ def build_battlefield_defense(env: "DefenseVecEnv", command: str | None = None) 
             heading=float(env.a_hdg[w, i]), nets_remaining=int(env.a_nets[w, i]),
             alive=alive,
             assigned_cluster=int(env._assign[w, i]) if int(env._assign[w, i]) >= 0 else None,
+            # ★ 직전 담당의 '방위'. id 는 매 결정 재부여되므로 연속성 판정은 이 값으로 한다.
+            assigned_bearing=(float(np.degrees(np.arctan2(
+                env._assign_cent[w, i, 0] - c[0], env._assign_cent[w, i, 1] - c[1])) % 360.0)
+                if int(env._assign[w, i]) >= 0 else None),
             route=([Point(x=x, y=y) for x, y in pts] if alive else []),
             deploying=bool(env.doing_net[w, i]),
             route_hits_net=hits_net,
@@ -140,6 +144,12 @@ def build_battlefield_defense(env: "DefenseVecEnv", command: str | None = None) 
 
 class CommandedDefenseEnv(DefenseVecEnv):
     """LLM 배정을 존중하는 RL 실행 환경(1월드). 경로는 RL 정책이 기동."""
+
+    # ── 평가용 계층 스위치 (boatattack_sim/eval/harness.py 가 2×2 조건행렬로 쓴다) ──
+    #   클래스 속성으로 두는 이유: super().__init__ 이 _compute_assignment / _rl_decide 를
+    #   부를 수 있어 인스턴스 속성이면 초기화 순서에 따라 AttributeError 가 난다.
+    assign_source: str = "llm"        # "llm"(계획 주입) | "heuristic"(시뮬 내장 배정)
+    maneuver_source: str = "policy"   # "policy"(학습 정책) | "heuristic"(휴리스틱 기동)
 
     def __init__(self, ckpt: str, enemy_mode: str = "rotate", device: str = "cpu",
                  gain: float = 1.0, avoid_steer: bool = False):
@@ -183,6 +193,11 @@ class CommandedDefenseEnv(DefenseVecEnv):
     def _compute_assignment(self, assign_pref=None):
         prev = self._assign[0].copy() if getattr(self, "_assign", None) is not None else None
         super()._compute_assignment(assign_pref)             # 기본 배정 + 교점/중심(_assign 덮어씀)
+        if self.assign_source == "heuristic":
+            # ★ 평가 baseline: LLM 을 빼고 시뮬 내장 휴리스틱 배정(위협 상위 클러스터 → 최근접 배
+            #   그리디 1:1 + sticky)을 그대로 쓴다. super() 가 이미 채웠으므로 덮지 않고 반환한다.
+            #   보고 지표를 LLM 조건과 같게 만들려는 것이므로 여기서 다른 손질을 하면 안 된다.
+            return
         if self._plan is None:
             self._assign[0] = -1                             # 명령 전엔 전원 예비(정지)
             self._assignI[0] = 0.0
@@ -220,8 +235,53 @@ class CommandedDefenseEnv(DefenseVecEnv):
         a[~self.a_alive[0]] = -1
         self._assign[0] = a
         ci = np.clip(a, 0, K - 1)
-        I = cent + t * (c[None, :] - cent)                   # [K,2] 교점
-        self._assignI[0] = np.where((a >= 0)[:, None], I[ci], 0.0)
+        I = cent + t * (c[None, :] - cent)                   # [K,2] 기본 교점
+        Ip = I[ci].astype(np.float64)                        # [P,2]
+
+        # ── ★ 다층 요격점: 한 클러스터에 배가 2척 이상이면 층을 벌린다 ──
+        #   같은 요격점에 겹쳐 붙이면 벽이 중복돼 오히려 나빠지고(실측), 두 배가 같은 방위선
+        #   위를 앞뒤로 달려 아군끼리 충돌한다. DefenseVecEnv._compute_assignment 의 잉여배정이
+        #   쓰는 것과 **같은 규칙**을 여기서도 적용한다:
+        #     · 반경: n 번째 배는 모선 쪽으로 t += assign_layer_dt (종심 방어)
+        #     · 방위: 층마다 ±assign_layer_dbear 로 번갈아 틀어 옆으로 분리
+        #   층 순서는 기본 교점에 가까운 배부터(0층) — 가장 가까운 배가 최전방을 맡는다.
+        #   · 반경 클램프: 층을 깊게 넣다 보면 요격점이 모선 코앞까지 들어온다(실측 최소 130 m).
+        #     요격점은 정책 유효마스크의 요격환형 [cell_r_min, cell_r_max] 안에 있어야 방위·반경
+        #     게이트가 성립한다 — 밖이면 후보가 붕괴해 폴백 사다리로 떨어진다. 게다가 모선
+        #     격침반경(ally_mother_radius) 근처면 배가 스쳐 침몰한다. 둘 중 큰 값을 하한으로 쓴다.
+        cfg = self.cfg
+        dt_l = float(getattr(cfg, "assign_layer_dt", 0.18))
+        dbear = float(getattr(cfg, "assign_layer_dbear", 0.0))
+        r_lo = max(float(getattr(cfg, "cell_r_min", 400.0)),
+                   float(getattr(cfg, "ally_mother_radius", 300.0))
+                   + float(getattr(cfg, "arrive_radius", 200.0)))
+        r_hi = float(getattr(cfg, "cell_r_max", 4500.0))
+        for k in range(K):
+            ships = np.where(a == k)[0]
+            if len(ships) < 2:
+                continue
+            d0 = np.hypot(self.a_pos[0, ships, 0] - I[k, 0],
+                          self.a_pos[0, ships, 1] - I[k, 1])
+            for j, p_i in enumerate(ships[np.argsort(d0)]):
+                if j == 0:
+                    continue                                  # 0층 = 기본 교점 유지
+                tl = float(np.clip(t + dt_l * j, 0.05, 0.95))
+                pt = cent[k] + tl * (c - cent[k])              # 반경 층
+                if dbear != 0.0:                               # 방위 층(±, 번갈아)
+                    sgn = 1.0 - 2.0 * (j % 2)
+                    ang = np.deg2rad(dbear * sgn * ((j + 1) // 2))
+                    rel = pt - c
+                    ca, sa = np.cos(ang), np.sin(ang)
+                    pt = c + np.array([rel[0] * ca - rel[1] * sa,
+                                       rel[0] * sa + rel[1] * ca])
+                rel = pt - c                                   # 반경을 환형 안으로 클램프
+                rr = float(np.hypot(rel[0], rel[1]))
+                if rr < 1e-6:
+                    continue
+                rc = min(max(rr, r_lo), r_hi)
+                Ip[p_i] = c + rel * (rc / rr)
+
+        self._assignI[0] = np.where((a >= 0)[:, None], Ip, 0.0)
         self._assign_cent[0] = np.where((a >= 0)[:, None], cent[ci], c[None, :])
 
     # ── RL 결정 + micro-step (run_rl_play 결정루프의 클래스판) ──

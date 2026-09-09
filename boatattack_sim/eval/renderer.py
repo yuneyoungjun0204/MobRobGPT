@@ -84,6 +84,17 @@ def _local_rect(cxl, cyl, half_l, half_w, ang_deg):
 _CV = {"deck": "#6B7480", "deck2": "#565E68", "island": "#262C34",
        "edge": "#AEB6C2", "mark": "#F4D03F", "hull": "#3E454E"}
 
+# 항공모함 외접원 반지름 ÷ size (= 1.02932). draw_carrier 의 최대 폴리곤인 선체 그림자(hull)
+# 의 뒷모서리 (±hw·1.12, −hl·1.02) 가 원점에서 가장 멀다 — 함수 뱃머리 (0, hl·1.06)=1.007·size
+# 보다 크다. 리터럴로 반올림해 두면 내접 검사가 mm 단위로 빗나가므로 도형 상수에서 직접 만든다.
+# (hl=0.95·size, hw=0.31·size 는 draw_carrier 와 같은 값 — 거기를 고치면 여기도 고칠 것.)
+CARRIER_EXTENT = float(np.hypot(0.31 * 1.12, 0.95 * 1.02))
+
+
+def carrier_fit_size(radius: float) -> float:
+    """반지름 `radius` 인 원에 항공모함이 정확히 내접하는 draw_carrier 의 size."""
+    return float(radius) / CARRIER_EXTENT
+
 
 def draw_carrier(ax, cx, cy, hdg, size, z=6):
     """웅장한 항공모함 모선 렌더 (뾰족 함수 + 비행갑판 + 각진 착함갑판 + 아일랜드)."""
@@ -366,11 +377,16 @@ def draw_scene(ax, fd: dict, bg_img=None, bg_extent=None, show_help: bool = True
                   interpolation="nearest", aspect="auto")
 
     # 모선 = 웅장한 항공모함 + breach 반경
+    #   ★ 함체를 breach 원 안에 내접시킨다. moback_size(380)는 순수 시각 상수라 외접반경이
+    #     391 m — mothership_radius(260) 를 50% 넘겨, 원 밖으로 뱃머리·선미가 튀어나왔다.
+    #     원이 곧 '적이 닿으면 breach·아군이 닿으면 격침'인 경계이므로 함체가 그 밖에 있으면
+    #     그림이 판정을 거짓말한다. 원 반경에서 size 를 되돌려 맞춘다(축소만; 확대는 안 함).
     mx, my = fd["mothership"]
-    ax.add_patch(Circle((mx, my), fd["mothership_radius"], facecolor="none",
+    mr = float(fd["mothership_radius"])
+    ax.add_patch(Circle((mx, my), mr, facecolor="none",
                         edgecolor=C["mother"], lw=1.0, ls="--", alpha=0.6, zorder=2))
     draw_carrier(ax, mx, my, fd.get("moback_heading", 0.0),
-                 fd["moback_size"], z=6)
+                 min(float(fd["moback_size"]), carrier_fit_size(mr)), z=6)
 
     # 적 — 아군과 동일한 7-포인트 선박 디자인 (heading 방향), 색만 빨강
     epos = fd["enemy_pos"]; ealive = fd["enemy_alive"]; ehdg = fd["enemy_hdg"]

@@ -6,6 +6,12 @@ title: LLM 지휘관 — 배정 판단 로직
 ---
 
 <!-- Marp 슬라이드. VS Code "Marp for VS Code" 확장 또는 `marp llm_commander_ppt.md --pdf` 로 렌더 -->
+<!--
+  범위: 이 파일은 **지휘관 계층의 배정 로직 심화편**이다 (전술 원칙 9개·HOLD·포메이션).
+        프로젝트 전체(문제 → 2계층 구조 → U-Net 점수맵 정책 → GRPO 학습 → 실행·이식)는
+        `docs/project_ppt.md` 에 있다. 발표 순서는 project_ppt → 이 파일.
+-->
+
 
 # LLM 지휘관 — 배정 판단 로직
 

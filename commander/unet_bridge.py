@@ -111,6 +111,17 @@ class CommandedCnnEnv(CommandedDefenseEnv):
     # ── 결정: 관측 → 정책 → 픽셀 → route/net_mask ──
     def _rl_decide(self):
         """CommandedDefenseEnv.step 이 decision_period 마다 부른다(이름 계약 유지)."""
+        if self.maneuver_source == "heuristic":
+            # ★ 평가 baseline: 정책을 빼고 휴리스틱 기동만. heuristic_pix() 는 배정 요격점서
+            #   코리도 가로로 K점을 잡아 **정책과 동일한 유효마스크·dup/reach 규칙**으로 스냅한다
+            #   (그래서 두 조건이 같은 행동공간을 쓴다 — 이게 공정 비교의 전제다).
+            #   내부에서 _compute_assignment 를 부르므로 배정 축은 그대로 존중된다.
+            pix = self.heuristic_pix()           # [N,P,K]
+            self._last_pix, self._last_off, self._last_prob = pix[0], None, None
+            self._apply_cnn_actions(pix)
+            self._apply_net_decision()
+            self._ev = self.fresh_ev()
+            return
         obs = self.build_cnn_obs()               # 내부에서 _compute_assignment(LLM 배정 주입)
         with torch.no_grad():
             p, _ = self._actor(cnn_obs_to_torch(obs, self._device))

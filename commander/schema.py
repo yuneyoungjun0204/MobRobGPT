@@ -47,6 +47,11 @@ class AllyShip(BaseModel):
     nets_remaining: int = Field(..., ge=0)
     alive: bool = Field(True, description="생존 여부. false면 격침(충돌/그물접촉) — 배정 불가.")
     assigned_cluster: Optional[int] = Field(None, description="직전 배정(연속성 힌트)")
+    assigned_bearing: Optional[float] = Field(
+        None, description="직전 담당 클러스터의 방위[deg] (모선 기준). 클러스터 id 는 매 결정 "
+                          "방위 정렬 순서로 새로 매겨지므로, 같은 무리인지 판정하려면 id 가 아니라 "
+                          "이 방위를 봐야 한다 — id 만 보면 무리가 그대로인데도 담당이 사라진 것처럼 "
+                          "보여 타겟을 불필요하게 갈아탄다.")
     route: List[Point] = Field(default_factory=list,
                                description="현재 자동조종 경로 WP (경로 중복·충돌 판단용)")
     deploying: bool = Field(False, description="현재 그물 전개 중 여부")
