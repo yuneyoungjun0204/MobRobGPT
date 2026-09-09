@@ -110,14 +110,31 @@ class CommandedCellEnv(CommandedDefenseEnv):
         else:
             self._held = set()
 
+    # ── 관측: own[4]/ally[4] 를 학습분포 안으로 유지 ──
+    def build_cell_obs(self):
+        """`own[4]`(및 팀원 슬롯 `ally[4]`) = `a_nets / nets_per_ship` 을 0/1 이진으로 되돌린 관측.
+
+        이 체크포인트들은 `nets_per_ship=1` 로 학습돼 그 값이 0 아니면 1이었다(unet_bridge.py의
+        동일 문제와 같은 이유, docs/unet_model_deploy.md §3.3 참고). 여기서는 운용상
+        `nets_per_ship=3`(:60)으로 올려 재전개를 여러 번 허용하므로, 정규화 분모만 되돌려
+        의미를 보존한다: 그물이 1장 이상 남았으면 1, 다 쓰면 0."""
+        obs = super().build_cell_obs()
+        obs["own"][..., 4] = np.minimum(obs["own"][..., 4] * self.cfg.nets_per_ship, 1.0)
+        obs["ally"][..., 4] = np.minimum(obs["ally"][..., 4] * self.cfg.nets_per_ship, 1.0)
+        return obs
+
     # ── 후보셀에서 '이미 그물 깔린 곳' 제외 (행동공간에서 아예 배제) ──
     def _cell_valid_mask(self):
-        """베이스 pruning 위에, net_installed(설치된 그물) 격자에 걸리는 후보셀을 무효화한다.
+        """학습된 배정-조건부 pruning(각도게이트+Voronoi disjoint, `DefenseVecEnv._cell_valid_mask`)
+        위에, net_installed(설치된 그물) 격자에 걸리는 후보셀을 추가로 무효화한다.
         → 재전개(최대 3회) 배가 기존/팀원 그물 위에 중복으로 다시 깔지 않고 새 위치로 커버 확대.
-        전부 무효로 굶는 배는 원복(그물 위 아니면 어차피 안 굶음; 크래시 방지)."""
-        # 베이스 마스크: 모든 셀 유효(False=valid). [N,P,C]
-        C = len(self.cell_world)
-        base = np.zeros((self.N, self.P, C), dtype=bool)    # [N,P,C] True=무효
+        전부 무효로 굶는 배는 net 배제 이전(= 학습 pruning 그대로)으로 원복(크래시 방지).
+
+        ★ 이전에는 `base`가 `np.zeros(...)`(전 셀 유효)였다 — 학습된 pruning을 아예 안 쓰고
+        그 자리를 net 배제로만 대체한 것. Voronoi disjoint(배별 섹터 분리)가 사라져 배들이
+        서로의 셀을 침범 → 충돌사(ally_collisions)로 이어졌다(실측: 로스백 재생 시 1.1초 만에
+        아군 2척 충돌사). 반드시 부모 pruning을 베이스로 삼아야 한다."""
+        base = super()._cell_valid_mask()                   # [N,P,C] True=무효 — 학습 pruning
         ni = self.net_installed[0]
         if not ni.any():
             return base
