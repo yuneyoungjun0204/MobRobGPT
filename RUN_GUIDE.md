@@ -270,3 +270,56 @@ concentrated 에서 전부 잡는 쪽으로 바뀐다.
 > 맞춰 속도·`net_max_len`·`decision_period` 도 같이 스케일해야 학습과 같은 동역학이 된다.
 > 현재 구현은 배율만 로그로 남기고 시계 보정은 하지 않는다 — 실기 튜닝 시
 > `boatattack_sim/env/scaling.py::SimScale` 로 정식 처리할 것.
+
+## 10. GCS(`/home/yune/gcs`) 연동으로 기동 (`run_gcs_bridge.py`)
+
+`run_replay_infer.py`는 적(로스백)만 실데이터이고 아군은 시뮬 물리로 가상 기동시키는
+**오프라인 분석/시각화 도구**다. `run_gcs_bridge.py`는 그 자매 스크립트로, 아군도
+실제(GCS가 실시간으로 보는 실보트/SITL)로 만든다 — ROS2(rclpy)가 아니라 GCS가 이미
+제공하는 평범한 HTTP API(`docs/contracts.md` §4, `server/api.py`)로 붙는다.
+
+```bash
+# GCS 서버가 이미 떠 있어야 한다(별도 터미널, gcs 저장소에서). --mode 는 필수,
+# --command(또는 그걸 내포하는 --scenario)가 있어야 /api/command/*/goto 가 열린다
+# (기본은 꺼져 있다 -- server/run_server.py):
+#   python3 -m server.run_server --mode udp --command
+# vehicles.yaml 에 usv1~usv3 이 role: defender 로 등록돼 있어야 한다
+# (command/authority.py -- 아니면 매 goto가 role_mismatch로 거부된다).
+
+python run_gcs_bridge.py \
+    --bag /home/yune/Downloads/ros_data/S03-gcs --span 8 \
+    --ckpt boatattack_sim/models/u-net_map.pt --llm openai \
+    --gcs-url http://127.0.0.1:8080 --ally-ids usv1,usv2,usv3
+```
+
+### 동작
+
+| 방향 | 무엇 | GCS 쪽 계약 |
+|---|---|---|
+| GCS → 이 프로세스 (관측) | 아군 위치(`ned.x/y`)·헤딩 | `GET /api/state` (`docs/contracts.md` §2와 동일 필드, HTTP로 폴링) |
+| 이 프로세스 → GCS (지령) | 아군의 "현재 활성 경유점"(wp1 또는 wp2) | `POST /api/command/{id}/goto`, `source="rl"` (`docs/contracts.md` §4) |
+| 이 프로세스 → 그 외 (그물) | 그물 전개 시작/종료 신호만(`--net-log`) | **GCS로는 전혀 가지 않는다** |
+
+핵심 좌표 사실: GCS의 `ned`/`goto`는 이미 `vehicles.yaml`의 `gcs.datum`에 고정된
+로컬 ENU **미터** 좌표라, `run_replay_infer.py`의 `_decode_route()`가 쓰는
+`SimScale.sim_to_enu()`/`enu_to_sim()`과 **완전히 같은 프레임·단위**다. 위경도나
+`GeoBridge`(`ros2_sensor_bridge.py`가 쓰는 것)는 필요 없다 -- `commander/gcs_bridge.py`,
+`commander/gcs_cnn_env.py`를 볼 것.
+
+"그물 뿌리기"는 이 통합에서도 액추에이터 명령이 된 적이 없다 -- GCS의
+`command/gate.py`는 이 저장소가 보낼 수 있는 유일한 MAVLink 동작 명령이고
+`tests/basic/test_coverage.py`가 서보/릴레이 토큰을 전부 금지한다. 그물을 실제로
+전개하는 시스템은 `--net-log`(JSON-lines) 또는 stdout의 `[net-deploy]` 줄을 구독해야
+한다.
+
+### 제약
+
+- **CNN 점수맵(U-Net) 정책 전용.** 셀선택 정책(`--specialized`)은 지원하지 않는다
+  (`run_replay_infer.py`를 오프라인 분석용으로 계속 쓸 것).
+- `--ally-ids`는 체크포인트의 P(아군 수)와 개수가 반드시 같아야 하며, 순서가
+  `env.a_pos[0, p]`의 p 인덱스와 그대로 대응한다.
+- 기본적으로 micro-step 사이를 `SimScale.dt_real`만큼 실시간 대기한다(`--realtime`,
+  기본 켜짐) -- `run_replay_infer.py`와 달리 실보트를 상대하므로 CPU 속도로 폭주하면
+  안 된다. 테스트용 스텁 GCS를 상대할 때만 `--no-realtime`을 쓴다.
+- 단위테스트: `python3.10 -m unittest commander.test_gcs_bridge -v`
+  (torch/numpy만 필요, rclpy 불필요 -- 실 GCS 서버도 띄우지 않는다).

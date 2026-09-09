@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1787211926708,
-  "projectRoot": "C:\\Users\\ANSL\\orca\\workspaces\\MobRobGPT\\U-net",
+  "lastScanned": 1788834014727,
+  "projectRoot": "/home/yune/MobRobGPT",
   "techStack": {
     "languages": [
       {
@@ -36,7 +36,10 @@
     "mainDirectories": [
       "docs"
     ],
-    "gitBranches": null
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
   },
   "customNotes": [],
   "directoryMap": {
@@ -44,54 +47,63 @@
       "path": "30_model",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1787211926589,
+      "lastAccessed": 1788834014711,
       "keyFiles": []
+    },
+    "__pycache__": {
+      "path": "__pycache__",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1788834014718,
+      "keyFiles": [
+        "run_replay_infer.cpython-310.pyc"
+      ]
     },
     "boatattack_sim": {
       "path": "boatattack_sim",
       "purpose": null,
-      "fileCount": 2,
-      "lastAccessed": 1787211926589,
+      "fileCount": 1,
+      "lastAccessed": 1788834014721,
       "keyFiles": [
-        "env",
         "__init__.py"
       ]
     },
     "commander": {
       "path": "commander",
       "purpose": null,
-      "fileCount": 18,
-      "lastAccessed": 1787211926590,
+      "fileCount": 23,
+      "lastAccessed": 1788834014722,
       "keyFiles": [
+        "__init__.py",
+        "_validate.py",
+        "bag_replay.py",
         "cell_bridge.py",
-        "demo.py",
-        "fallback.py",
-        "formation_router.py",
-        "geo_bridge.py"
+        "demo.py"
       ]
     },
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
-      "fileCount": 2,
-      "lastAccessed": 1787211926600,
+      "fileCount": 3,
+      "lastAccessed": 1788834014723,
       "keyFiles": [
         "llm_commander_ppt.md",
-        "llm_commander_roadmap.md"
+        "llm_commander_roadmap.md",
+        "unet_model_deploy.md"
       ]
     },
     "specialized_cos6k_model": {
       "path": "specialized_cos6k_model",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1787211926622,
+      "lastAccessed": 1788834014723,
       "keyFiles": []
     },
-    "boatattack_sim\\models": {
-      "path": "boatattack_sim\\models",
+    "boatattack_sim/models": {
+      "path": "boatattack_sim/models",
       "purpose": "Data models",
-      "fileCount": 5,
-      "lastAccessed": 1787211926648,
+      "fileCount": 6,
+      "lastAccessed": 1788834014724,
       "keyFiles": [
         "best_mixed_far.pt",
         "cell_latest.pt",
@@ -99,6 +111,79 @@
       ]
     }
   },
-  "hotPaths": [],
+  "hotPaths": [
+    {
+      "path": "run_gcs_bridge.py",
+      "accessCount": 16,
+      "lastAccessed": 1788884654377,
+      "type": "file"
+    },
+    {
+      "path": "commander/gcs_bridge.py",
+      "accessCount": 5,
+      "lastAccessed": 1788884631087,
+      "type": "file"
+    },
+    {
+      "path": "commander/gcs_cnn_env.py",
+      "accessCount": 3,
+      "lastAccessed": 1788880134221,
+      "type": "file"
+    },
+    {
+      "path": "commander/live_mothership_ros2.py",
+      "accessCount": 3,
+      "lastAccessed": 1788883898494,
+      "type": "file"
+    },
+    {
+      "path": "run_replay_infer.py",
+      "accessCount": 3,
+      "lastAccessed": 1788884551151,
+      "type": "file"
+    },
+    {
+      "path": "commander/bag_replay.py",
+      "accessCount": 2,
+      "lastAccessed": 1788847152997,
+      "type": "file"
+    },
+    {
+      "path": "commander/replay_cnn_env.py",
+      "accessCount": 2,
+      "lastAccessed": 1788881180829,
+      "type": "file"
+    },
+    {
+      "path": "commander/live_enemy_ros2.py",
+      "accessCount": 2,
+      "lastAccessed": 1788881360214,
+      "type": "file"
+    },
+    {
+      "path": "GCS_QUICKSTART.md",
+      "accessCount": 1,
+      "lastAccessed": 1788879885196,
+      "type": "file"
+    },
+    {
+      "path": "boatattack_sim/env/scaling.py",
+      "accessCount": 1,
+      "lastAccessed": 1788880770286,
+      "type": "file"
+    },
+    {
+      "path": "commander/ros2_sensor_bridge.py",
+      "accessCount": 1,
+      "lastAccessed": 1788880854901,
+      "type": "file"
+    },
+    {
+      "path": "commander/ros2_unet_env.py",
+      "accessCount": 1,
+      "lastAccessed": 1788880855067,
+      "type": "file"
+    }
+  ],
   "userDirectives": []
 }
