@@ -5,9 +5,8 @@
 \subsection{판단 지연이 다른 2계층 비동기 구조}
 \label{sec:arch}
 
-\S\ref{sec:intro}에서 밝혔듯 이 문제는 성격이 다른 두 판단을 요구한다. 제안 체계는 이를 두
-계층으로 분리한다(Fig.~\ref{fig:architecture}). \textbf{두 계층은 같은 주기로 갱신되지만
-응답 지연이 크게 다르며}, 느린 쪽을 비동기로 분리한 것이 구조의 핵심이다.
+제안 체계는 방어를 위한 판단을 전략 계층과 기동 계층, 두 계층으로 분리한다(Fig.~\ref{fig:architecture}). 
+\textbf{두 계층은 같은 주기로 갱신되지만 응답 지연이 크게 다르며}, 느린 쪽을 비동기로 분리한 것이 구조의 핵심이다.
 
 %-------------------------------------------------- 그림 2
 \begin{figure*}[t]
@@ -61,11 +60,14 @@ $\Delta t = 1\unit{s}$ 이고 결정 주기가 25\,step 이므로, 한 결정은
 $R_w$는 교전 해역 반폭이다. 즉 \emph{수가 많고 가까울수록} 위협이 크다.
 
 위협 상위 $P$개 무리를 방어 대상으로 삼고(방어정 수와 같게 하여 1:1), 각 무리의 요격점
-$\mathbf{I}_j$를 무리 중심과 모선을 잇는 선분 위에 둔다. 방어정 $p$를 무리 $j$에 보내는
-비용은 요격점까지의 거리로 정의한다.
+$\mathbf{I}_j$를 무리 중심과 모선을 잇는 선분 위에 둔다.
 \begin{equation}
-d_{pj} = \lVert \mathbf{a}_p - \mathbf{I}_j \rVert
+\mathbf{I}_j = \mathbf{c}_j + \lambda_{\mathrm{I}}\,(\mathbf{m} - \mathbf{c}_j), \qquad \lambda_{\mathrm{I}} = 0.55
+\label{eq:intercept}
 \end{equation}
+즉 요격점은 무리와 모선 사이를 $0.55 : 0.45$ 로 내분하는 점이며, 모선 쪽으로 약간 치우쳐
+방어정이 적보다 느려도 먼저 도달할 수 있게 한다. 방어정 $p$를 무리 $j$에 보내는 비용은
+요격점까지의 거리 $d_{pj} = \lVert \mathbf{a}_p - \mathbf{I}_j \rVert$ 로 정의한다.
 이 비용으로 탐욕적 1:1 배정을 수행하되, \textbf{직전 배정에 보너스를 준다}. 직전 무리가
 아직 방어 대상이면 그 쌍의 비용에서 상수 $\beta$를 뺀다.
 \begin{equation}
@@ -76,7 +78,7 @@ d_{pj} = \lVert \mathbf{a}_p - \mathbf{I}_j \rVert
 \textbf{남는 방어정의 처리.} 활성 무리 수가 방어정 수보다 적으면 1:1 매칭 뒤 배가
 남는다. 이 배들을 놀리지 않고 \emph{가장 과부하인} 무리(부하 $=$ 적 수 $/(1+$배정 수$)$)에
 덧붙이되, 같은 자리에 겹쳐 세우지 않는다. $n$번째로 덧붙는 배는 요격점을 모선 쪽으로
-$\Delta t = 0.18$ 만큼 밀어 \emph{한 층 안쪽}에 세우고, 방위로도 $\pm 40^\circ$씩 번갈아
+$\lambda_{\mathrm{L}} = 0.18$ 만큼 밀어 \emph{한 층 안쪽}에 세우고, 방위로도 $\pm 40^\circ$씩 번갈아
 틀어 옆으로 뗀다. 층만 나누고 방위를 두면 두 배가 같은 방위선 위를 앞뒤로 달려 경로가
 겹치기 때문이다. 이 규칙이 실제로 담당하는 몫은 작지 않다 --- 활성 무리가 하나뿐인 집중
 포메이션에서는 배정의 과반이 이 경로로 결정된다.
@@ -93,8 +95,8 @@ $\Delta t = 0.18$ 만큼 밀어 \emph{한 층 안쪽}에 세우고, 방위로도
 %  ★ 이 표에 기호를 추가하려면 본문에 실제로 그 기호가 있는지 먼저 확인할 것.
 %    표에만 있고 본문에 없는 기호는 독자를 찾아 헤매게 만든다.
 \begin{table*}[t]
-\caption{주요 기호. 본 논문은 같은 문자를 두 뜻으로 쓰지 않는다 --- 특히 무리 수 $C$,
-         경유점 수 $K$, 학습의 그룹 후보 수 $G$ 는 서로 다른 문자를 쓴다.}
+\caption{주요 기호. 혼동되기 쉬운 수량은 서로 다른 문자를 쓴다 --- 특히 무리 수 $C$,
+         경유점 수 $K$, 학습의 그룹 후보 수 $G$ 는 구분한다.}
 \label{tab:nomenclature}
 % 다른 표와 같은 \footnotesize 로 둔다. \small(10.95pt)로 두면 자연 폭이 커져
 % \resizebox 가 발동하고, 그러면 글자가 오히려 더 작아진다(측정: 10.95 -> 9.53).
@@ -114,12 +116,16 @@ $G$            & 학습의 그룹 후보 수 (8)              & $(\boldsymbol{\g
 $\tau_j$       & 무리 $j$ 의 위협도                   & $R_k$          & 후보 $k$ 의 팀 보상 \\
 $d_{pj}$       & 방어정 $p$ $\to$ 무리 $j$ 요격점 거리 & $A_k$         & 후보 $k$ 의 그룹 상대 이득 \\
 $\beta$        & 배정 유지 보너스 (식~\ref{eq:sticky}) & $\Phi$        & 위협 근접도 퍼텐셜 \\
-$\Delta t$     & 층 분리 증분 (0.18)                  & $\gamma$       & 할인 계수 (0.99) \\
+$\lambda_{\mathrm{L}}$ & 층 분리 증분 (0.18)                  & $\gamma$       & 할인 계수 (0.99) \\
 \addlinespace[2pt]
-$\mathbf{I}$   & 요격점                               & $\mathcal{V}_k$ & $k$ 번째 선택 시점의 후보 픽셀 집합 \\
+$\mathbf{I}$   & 요격점                               & $\mathcal{V}^{(k)}_p$ & $k$ 번째 선택 시점의 후보 픽셀 집합 \\
 $\mathbf{t}_k$ & $k$ 번째 목표점 (연속 좌표)          & $r_{\mathrm{dup}}$ & 중복 배제 반경 (200\,m) \\
 $\hat{\mathbf{r}}$ & 모선 $\to$ 요격점 단위 벡터      & $L_{\mathrm{net}}$ & 그물벽 최대 길이 (450\,m) \\
 $\mathbf{a}_p$ & 방어정 $p$ 의 위치                   & $\dz$          & 대응표본 효과크기 \\
+\addlinespace[2pt]
+$E$, $\ell$    & 관측 반폭 (6300\,m), 픽셀 크기 (252\,m) & $H$           & 후보 평가 창 (180\,step) \\
+$\iota(\cdot)$ & 월드 $\to$ 픽셀 인덱스 사상 (식~\ref{eq:world2pix}) & $\eta_t$, $\lambda_{\mathrm{H}}(t)$ & 학습률·엔트로피 계수 스케줄 \\
+$\mathbf{u}_k$, $\boldsymbol{\sigma}_o$ & 부화소 오프셋과 그 표준편차 & $w_n$ & 유효 월드 마스크 \\
 \bottomrule
 \end{tabular}
 }
@@ -153,9 +159,9 @@ $K=2$, $L_{\mathrm{net}} = 450\unit{m}$ 이므로 두 점은 요격점을 가운
 $\mathbf{t}_k$는 연속 좌표이므로 그대로 쓸 수 없다. \textbf{유효 픽셀 중 가장 가까운 칸으로
 스냅}한다.
 \begin{equation}
-i_k = \arg\min_{i \in \mathcal{V}_k} \lVert \mathbf{x}_i - \mathbf{t}_k \rVert^2
+i_k = \arg\min_{i \in \mathcal{V}^{(k)}_p} \lVert \mathbf{x}_i - \mathbf{t}_k \rVert^2
 \end{equation}
-여기서 $\mathcal{V}_k$는 $k$번째 선택 시점의 후보 집합이고, $\mathbf{x}_i$는 픽셀 $i$의 중심
+여기서 $\mathcal{V}^{(k)}_p$는 방어정 $p$ 의 $k$번째 선택 시점의 후보 집합이고, $\mathbf{x}_i$는 픽셀 $i$의 중심
 좌표다. 한 점을 고를 때마다 후보 집합이 갱신된다 --- 반경 $r_{\mathrm{dup}} = 200\unit{m}$
 이내를 배제하고(두 점이 겹치면 벽이 서지 않는다), 직전 선택으로부터 $1.5 L_{\mathrm{net}}$
 밖도 배제한다(칠 수 없는 길이의 벽을 막는다). 이 배제로 후보가 모두 사라지면 제약을
@@ -223,6 +229,53 @@ i_k = \arg\min_{i \in \mathcal{V}_k} \lVert \mathbf{x}_i - \mathbf{t}_k \rVert^2
 \item \textbf{좌표 3채널}: CoordConv~\citep{liu2018coordconv} 의 $x$, $y$, $r$.
 \end{itemize}
 
+\textbf{래스터화와 정규화.} 격자 한 변을 $n_{\mathrm{g}}=50$, 관측 반폭을 $E = 6300\unit{m}$ 라 하면
+픽셀 크기는 $\ell = 2E/n_{\mathrm{g}} = 252\unit{m}$ 이고, 월드 좌표 $\mathbf{x}$ 는 모선 위치
+$\mathbf{m}$ 을 중심으로 다음 픽셀 인덱스로 사상된다.
+\begin{equation}
+\iota(\mathbf{x}) = \mathrm{clip}\!\left(\left\lfloor \frac{\mathbf{x} - \mathbf{m} + E\mathbf{1}}{\ell} \right\rfloor,\, 0,\, n_{\mathrm{g}}-1\right)
+\label{eq:world2pix}
+\end{equation}
+적 관련 채널은 개체를 픽셀에 ``칠하는'' 방식으로 만들며, 값 범위가 $[0,1]$ 또는 $[-1,1]$
+에 놓이도록 정규화한다. 생존 적선 집합을 $\mathcal{A}$, 적선 $m$ 의 위치·헤딩을
+$\mathbf{e}_m$, $\psi_m$ 이라 하면 픽셀 $i$ 의 적 밀도·진행 방향·위협도 채널은
+\begin{equation}
+c^{\mathrm{den}}_i = \frac{N_i}{M}, \quad
+c^{\mathrm{vel}}_i = \frac{1}{\max(N_i, 1)} \sum_{m \in \mathcal{A}_i} (\sin\psi_m, \cos\psi_m)
+\label{eq:ch_enemy}
+\end{equation}
+\begin{equation}
+c^{\mathrm{thr}}_i = \max_{m \in \mathcal{A}_i}
+   \left(1 - \mathrm{clip}\!\left(\frac{\lVert \mathbf{e}_m - \mathbf{m} \rVert}{v_e T_{\max}},\, 0,\, 1\right)\right)
+\label{eq:ch_threat}
+\end{equation}
+이다. 여기서 $\mathcal{A}_i = \{m \in \mathcal{A} : \iota(\mathbf{e}_m) = i\}$ 는 픽셀 $i$ 에
+놓인 생존 적선의 집합이고 $N_i = |\mathcal{A}_i|$ 이다. 밀도는 적 총수 $M$ 으로, 진행 방향은 픽셀 안의 적 수로 나누어 평균 단위벡터가 되게
+하고, 위협도는 모선까지 거리를 적이 에피소드 상한 안에 달릴 수 있는 최대 거리
+$v_e T_{\max}$ ($9\unit{m/s} \times 2000\unit{s}$)로 정규화하여 가까울수록 1에 가깝게 한다.
+아군 위치 채널은 같은 방식으로 $P$ 로 나누고, 설치된 그물 채널은 고해상도 물리 격자의
+최대값 풀링, 육지 채널은 면적비 다운샘플(Fig.~\ref{fig:landpipe})이다. 좌표 채널은
+픽셀 중심 $\mathbf{x}_i = (x_i, y_i)$ 에 대해
+\begin{equation}
+(c^{x}_i,\, c^{y}_i) = \frac{\mathbf{x}_i - \mathbf{m}}{E}, \qquad
+c^{r}_i = \mathrm{clip}\!\left(\frac{\lVert \mathbf{x}_i - \mathbf{m} \rVert}{E},\, 0,\, 1\right)
+\label{eq:ch_coord}
+\end{equation}
+로 두어 $[-1,1]$ 과 $[0,1]$ 에 놓는다. 격자에 담지 않는 방어정 $p$ 의 자체 상태 벡터는
+같은 반폭 $E$ 로 정규화한 위치와 요격점, 헤딩 단위벡터, 그물 잔량 비율, 전개 여부이다.
+\begin{equation}
+\begin{aligned}
+\mathbf{o}_p = \Big[&\tfrac{1}{E}(\mathbf{a}_p - \mathbf{m});\; (\sin\psi_p, \cos\psi_p);\;
+  \tfrac{n_p}{n_{\max}};\; \delta_p;\\
+  &\mathbb{1}[\text{배정}]\,\tfrac{1}{E}(\mathbf{I}_p - \mathbf{m})\Big] \in \mathbb{R}^{8}
+\end{aligned}
+\label{eq:own}
+\end{equation}
+여기서 $n_p$ 는 잔여 그물 수, $n_{\max}$ 는 척당 보유량, $\delta_p \in \{0,1\}$ 은 전개 중
+여부이며, 배정이 없으면 요격점 성분은 0이다. 이렇게 모든 입력이 $[-1,1]$ 안에 들어오므로
+별도의 통계 기반 정규화 층이 필요 없고, 학습 분포와 배치 분포의 정규화 불일치가 생기지
+않는다.
+
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.96\textwidth]{fig_tensor_stack.png}
@@ -289,20 +342,29 @@ Fig.~\ref{fig:observation}은 이 15채널 관측을 한 장면에 대해 채널
 
 병목에서는 전역 평균 풀링으로 압축한 전황 벡터로부터 FiLM~\citep{perez2018film} 의
 채널별 배율·이동 계수 $(\boldsymbol{\gamma}_{\mathrm{F}}, \boldsymbol{\beta}_{\mathrm{F}})$ 를
-만들어 디코더 특징을 변조한다(아래첨자 F 는 FiLM 을 뜻하며, 식~\eqref{eq:sticky}의 $\beta$ 나
-할인 계수 $\gamma$ 와는 무관하다). 국소 합성곱만으로는 ``지금
-전황이 급박한가''와 같은 전역 정보가 모든 위치에 고르게 전달되지 않기 때문이다.
-
-각 방어정 $p$ 는 자신의 상태 벡터 $\mathbf{o}_p \in \mathbb{R}^8$(위치·헤딩·그물 잔량·전개
-여부·요격점)로부터 질의 벡터를 만든다.
+만들어 병목 특징을 변조한 뒤 디코더에 넘긴다(아래첨자 F 는 FiLM 을 뜻하며, 식~\eqref{eq:sticky}의 $\beta$ 나
+할인 계수 $\gamma$ 와는 무관하다). 병목 특징 지도를 $\mathbf{H}_b \in \mathbb{R}^{2w \times h \times h}$
+($w = 32$, $h = 13$)라 하면
 \begin{equation}
-\mathbf{q}_p = \mathrm{MLP}_{8 \to 128 \to 32}(\mathbf{o}_p) \in \mathbb{R}^{32}
+\begin{aligned}
+(\boldsymbol{\gamma}_{\mathrm{F}}, \boldsymbol{\beta}_{\mathrm{F}})
+  &= \mathbf{W}_{\mathrm{F}}\, \mathrm{GAP}(\mathbf{H}_b) + \mathbf{b}_{\mathrm{F}},\\
+\tilde{\mathbf{H}}_b &= (1 + \boldsymbol{\gamma}_{\mathrm{F}}) \odot \mathbf{H}_b + \boldsymbol{\beta}_{\mathrm{F}}
+\end{aligned}
+\label{eq:film}
 \end{equation}
-픽셀 $i$ 의 특징 $\mathbf{f}_i \in \mathbb{R}^{32}$ 와의 내적으로 점수를 얻는다.
+이며, $\odot$ 은 채널별 곱이다. 배율을 $1 + \boldsymbol{\gamma}_{\mathrm{F}}$ 로 두어 초기에는
+항등 변조에서 출발한다. 국소 합성곱만으로는 ``지금 전황이 급박한가''와 같은 전역 정보가
+모든 위치에 고르게 전달되지 않기 때문에 이 경로를 둔다.
+
+각 방어정 $p$ 는 자신의 상태 벡터 $\mathbf{o}_p \in \mathbb{R}^8$(식~\eqref{eq:own})로부터
+질의 벡터 $\mathbf{q}_p = \mathrm{MLP}_{8 \to 128 \to 32}(\mathbf{o}_p) \in \mathbb{R}^{32}$ 를
+만들고, 픽셀 $i$ 의 특징 $\mathbf{f}_i \in \mathbb{R}^{32}$ 와의 내적으로 점수를 얻는다.
 \begin{equation}
-s_{p,i} = \frac{\langle \mathbf{q}_p, \mathbf{f}_i \rangle}{\sqrt{d}}, \qquad d = 32
+s_{p,i} = \frac{\langle \mathbf{W}_q \mathbf{q}_p + \mathbf{b}_q,\, \mathbf{f}_i \rangle}{\sqrt{d}}, \qquad d = 32
 \label{eq:score}
 \end{equation}
+여기서 $\mathbf{W}_q \in \mathbb{R}^{d \times d}$, $\mathbf{b}_q \in \mathbb{R}^{d}$ 는 질의를 특징 공간에 맞추는 아핀 사영이다.
 이는 어텐션~\citep{vaswani2017attention}의 점수 계산과 같은 형식이며, 포인터
 방식~\citep{vinyals2015pointer}으로 격자 위의 원소를 지목하는 구조에 해당한다. 특징 지도는
 방어정마다 다르므로(15채널 중 3채널이 방어정별이다), 관측 텐서는 방어정을 배치 축으로
@@ -311,9 +373,17 @@ s_{p,i} = \frac{\langle \mathbf{q}_p, \mathbf{f}_i \rangle}{\sqrt{d}}, \qquad d 
 방어정별로 달라지는 것은 질의 $\mathbf{q}_p$ 와 방어정별 3채널뿐이다.
 
 합성곱 블록은 $3\times3$ 합성곱 --- 그룹 정규화~\citep{wu2018groupnorm} --- SiLU 로 구성한다.
-그룹 정규화를 고른 이유는 성능이 아니라 배치 독립성이다. 표본 하나 안에서 채널을 묶어
-정규화하므로 통계가 배치 구성에 의존하지 않으며, 이것이 \S\ref{sec:deploy}에서 다루는 실시간
-추론의 전제가 된다.
+\begin{equation}
+\begin{aligned}
+\mathrm{Block}(\mathbf{H}) &= \mathrm{SiLU}\big(\mathrm{GN}_{8}(\mathrm{Conv}_{3\times3}(\mathbf{H}))\big),\\
+\mathrm{SiLU}(z) &= z / (1 + e^{-z})
+\end{aligned}
+\label{eq:block}
+\end{equation}
+그룹 정규화($\mathrm{GN}_8$, 8개 그룹)를 고른 이유는 성능이 아니라 배치 독립성이다. 표본
+하나 안에서 채널을 묶어 정규화하므로 통계가 배치 구성에 의존하지 않으며, 이것이
+\S\ref{sec:deploy}에서 다루는 배치 크기 1의 실시간 추론이 학습과 같은 연산을 수행한다는
+전제가 된다.
 
 %-------------------------------------------------- 그림 5 (양단)
 \begin{figure*}[t]
@@ -322,7 +392,7 @@ s_{p,i} = \frac{\langle \mathbf{q}_p, \mathbf{f}_i \rangle}{\sqrt{d}}, \qquad d 
 \caption{점수맵 정책의 구조. 각 방어정의 8차원 상태가 공유 MLP($8\to128\to32$)를
          지나 질의 $\mathbf{q}$가 되고, 15채널 관측은 Stem($32\times50\times50$) --
          인코더($32\times25\times25 \to 64\times13\times13$) -- FiLM 병목 --
-         디코더($64\times25\times25 \to 32\times50\times50$)를 지난다. skip 연결이
+         디코더($32\times25\times25 \to 32\times50\times50$)를 지난다. skip 연결이
          인코더의 위치 정보를 디코더로 전달한다. 질의와 픽셀 특징의 내적이
          $50\times50$ 점수맵을 이루고, 회귀 머리가 선택된 칸 안의 부화소 오프셋 2개를
          낸다. 방어정을 배치 축으로 쌓아 \textbf{결정당 한 번의 배치 호출}로 통과하며
@@ -342,8 +412,9 @@ Fig.~\ref{fig:policy}가 구조의 개념 일러스트라면, Fig.~\ref{fig:pipe
          \textbf{왼쪽}: 실제 관측 15채널 --- 전역 9채널(위)과 방어정별 3채널 $+$ CoordConv
          3채널(아래)의 학습된 체크포인트 출력 화면. \textbf{가운데}: stem $\to$ enc1 $\to$
          enc2(stride 2) $\to$ bottleneck $\to$ dec2 $\to$ dec1의 U-Net. 병목에서 전역 평균
-         풀링 $\to$ 선형층으로 FiLM 계수 $(\gamma,\beta)$를 만들어 방어정 자체 상태
-         $\mathbf{o}_p \in \mathbb{R}^8$(MLP $8\to128\to32$)로 조건화한다. 스킵 연결은
+         풀링 $\to$ 선형층으로 FiLM 계수 $(\gamma,\beta)$를 만들어 병목 특징을 변조하고,
+         방어정 자체 상태 $\mathbf{o}_p \in \mathbb{R}^8$ 은 MLP($8\to128\to32$)를 거쳐
+         질의 $q$ 가 된다. 스킵 연결은
          위쪽 파란 화살표. \textbf{오른쪽}: $1\times1$ 합성곱으로 픽셀 특징 $f$를 내고,
          질의 $q$와의 내적 $\langle q, f\rangle/\sqrt{d}$로 점수맵을 만든 뒤 유효 마스크를
          거쳐 argmax로 $K=2$ 픽셀을 고른다. 아래 점선은 자기회귀
@@ -364,7 +435,30 @@ Fig.~\ref{fig:policy}가 구조의 개념 일러스트라면, Fig.~\ref{fig:pipe
 \item 배정된 요격점으로부터 반경 게이트 이내
 \item 배정 무리의 방위 회랑 이내
 \end{enumerate}
-이 마스킹은 안전·임무 제약을 \emph{행동 분포에 직접} 부과한다는 점에서 중요하다. 연속 좌표를
+픽셀 $i$ 의 중심을 $\mathbf{x}_i$, 육지 픽셀 집합을 $\mathcal{L}_{\mathrm{land}}$, 방어정 $p$ 의 배정
+요격점을 $\mathbf{I}_p$, 모선에서 본 요격점 방위를 $\vartheta_p$, 픽셀 방위를 $\vartheta_i$ 라
+하면 방어정 $p$ 의 유효 픽셀 집합은 네 조건의 교집합이다.
+\begin{equation}
+\begin{aligned}
+\mathcal{V}_p = \big\{\, i :\; & r_{\min} \le \lVert \mathbf{x}_i - \mathbf{m} \rVert \le r_{\max},\;
+  i \notin \mathcal{L}_{\mathrm{land}},\\
+  & \lVert \mathbf{x}_i - \mathbf{I}_p \rVert \le r_{\mathrm{g}},\;
+  |\vartheta_i - \vartheta_p|_{\circ} \le \vartheta_{\mathrm{g}} \,\big\}
+\end{aligned}
+\label{eq:validset}
+\end{equation}
+여기서 $|\cdot|_{\circ}$ 는 $[0^\circ, 180^\circ]$ 로 접은 각도 차이이며 $r_{\min} = 400$,
+$r_{\max} = 4500$, $r_{\mathrm{g}} = 3000\unit{m}$, $\vartheta_{\mathrm{g}} = 60^\circ$ 이다.
+유효 픽셀이 하한 150개에 못 미치면 반경 게이트부터 푼다 --- 방위 회랑은 ``무엇을 막는
+그물인가''를 정하므로 마지막까지 유지한다. 마스크는 점수에 곱해지는 것이 아니라 로짓
+단계에서 적용된다.
+\begin{equation}
+\tilde{s}_{p,i} = \begin{cases} s_{p,i}, & i \in \mathcal{V}_p \\ -\infty, & i \notin \mathcal{V}_p, \end{cases}
+\quad
+\pi_\theta(i \mid \mathbf{s}, p) = \frac{e^{\tilde{s}_{p,i}}}{\sum_{j \in \mathcal{V}_p} e^{\tilde{s}_{p,j}}}
+\label{eq:masked_softmax}
+\end{equation}
+유효 집합 밖 픽셀의 확률은 정확히 0 이다. 이 마스킹은 안전·임무 제약을 \emph{행동 분포에 직접} 부과한다는 점에서 중요하다. 연속 좌표를
 회귀시키는 방식에서는 이런 제약을 손실 항으로 넣어 ``되도록 지키게'' 유도할 수밖에 없지만,
 지목 방식에서는 제약 위반이 애초에 표현 불가능하다.
 
@@ -405,15 +499,54 @@ $\pm126\,\mathrm{m}$ 의 양자화 오차를 갖는데, 이를 위해 선택된 
 \label{fig:validmask}
 \end{figure*}
 
-각 방어정은 유효 영역 안에서 점수 상위 픽셀 $K=2$ 개를 \emph{순차적으로} 고른다. 먼저 고른
-픽셀의 특징을 질의에 더해($\mathbf{q} \leftarrow \mathbf{q} + \mathbf{f}_0$) 두 번째를
-고르므로, 두 점이 서로를 알고 뽑힌다. 독립적으로 뽑으면 두 점을 잇는 벽의 방향이 우연에
-맡겨진다. 두 번째 선택에는 \emph{두 점 사이 간격}에 대한 상·하한이 붙는다. 200\,m 안쪽은
-두 점이 너무 가까워 벽이 서지 않고, 상한은 그물벽 최대 길이의 1.5배인 675\,m 로 두어 실제로
-칠 수 없는 길이의 벽이 선택되지 않게 한다. 상한을 두지 않았을 때 선택된 간격의 중앙값이
-504\,m 로 그물 길이 450\,m 를 초과했고 초과율이 66.7\,\% 였다. 이 제약으로 후보가 모두
-사라지면 제약을 완화하여 결정을 반환한다(최적성보다 결정 가능성을 우선한다). 특징 조회에서
-두 번째 점까지의 흐름을 Fig.~\ref{fig:picksteps}에 요약하였다.
+각 방어정은 유효 영역 안에서 점수 상위 픽셀 $K=2$ 개를 \emph{순차적으로} 고른다. $k$ 번째
+선택의 질의와 후보 집합을 $\mathbf{q}^{(k)}_p$, $\mathcal{V}^{(k)}_p$ 라 하면
+($\mathbf{q}^{(0)}_p = \mathbf{q}_p$, $\mathcal{V}^{(0)}_p = \mathcal{V}_p$)
+\begin{equation}
+i_k \sim \pi^{(k)}_p \equiv \pi_\theta(\cdot \mid \mathbf{q}^{(k)}_p, \mathcal{V}^{(k)}_p), \qquad
+\mathbf{q}^{(k+1)}_p = \mathbf{q}^{(k)}_p + \mathbf{f}_{i_k}
+\label{eq:autoreg}
+\end{equation}
+\begin{equation}
+\mathcal{V}^{(k+1)}_p = \big\{ i \in \mathcal{V}^{(k)}_p :
+  r_{\mathrm{dup}} \le \lVert \mathbf{x}_i - \mathbf{x}_{i_k} \rVert \le 1.5\, L_{\mathrm{net}} \big\}
+\label{eq:exclude}
+\end{equation}
+이다. 먼저 고른 픽셀의 특징을 질의에 더해 두 번째를 고르므로 두 점이 서로를 알고 뽑힌다.
+독립적으로 뽑으면 두 점을 잇는 벽의 방향이 우연에 맡겨진다. 식~\eqref{eq:exclude}는
+\emph{두 점 사이 간격}의 상·하한이다. $r_{\mathrm{dup}} = 200\unit{m}$ 안쪽은 두 점이 너무
+가까워 벽이 서지 않고, 상한은 그물벽 최대 길이의 1.5배인 675\,m 로 두어 실제로 칠 수 없는
+길이의 벽이 선택되지 않게 한다. 상한을 두지 않았을 때 휴리스틱 목표점을 유효 픽셀로 스냅한 간격의
+중앙값이 504\,m 로 그물 길이 450\,m 를 초과했고(초과율 66.7\,\%), 정책의 표본은 88.6\,\% 가
+초과했다. 이 제약으로 후보가 모두 사라지면 제약을
+완화하여 결정을 반환한다(최적성보다 결정 가능성을 우선한다).
+
+선택된 칸 안의 위치는 연속 오프셋으로 정한다. 질의와 선택 픽셀의 특징으로부터 평균을 내고,
+학습되는 로그표준편차 $\boldsymbol{\sigma}_o$ 를 가진 가우시안에서 표집한다.
+\begin{equation}
+\begin{aligned}
+\boldsymbol{\mu}_k &= \mathrm{MLP}_{2d \to d \to 2}\big([\mathbf{q}^{(0)}_p;\, \mathbf{f}_{i_k}]\big), \quad
+\mathbf{u}_k \sim \mathcal{N}(\boldsymbol{\mu}_k, \boldsymbol{\sigma}_o^2),\\
+\mathbf{t}_k &= \mathbf{x}_{i_k} + \tfrac{\ell}{2}\,\mathrm{clip}(\mathbf{u}_k, -1, 1)
+\end{aligned}
+\label{eq:offset}
+\end{equation}
+즉 \emph{어느 칸인가}는 범주형으로, \emph{칸 안 어디인가}는 가우시안으로 결정된다. 한
+방어정의 행동 $a_p = \{(i_k, \mathbf{u}_k)\}_{k=0}^{K-1}$ 의 로그확률과 엔트로피는 두 분포의
+합이다.
+\begin{equation}
+\log \pi_\theta(a_p) = \sum_{k=0}^{K-1} \Big[ \log \pi^{(k)}_p(i_k)
+  + \log \mathcal{N}(\mathbf{u}_k; \boldsymbol{\mu}_k, \boldsymbol{\sigma}_o^2) \Big]
+\label{eq:logp}
+\end{equation}
+\begin{equation}
+\mathcal{H}(a_p) = \sum_{k=0}^{K-1} \Big[ \mathcal{H}\big(\pi^{(k)}_p\big)
+  + \mathcal{H}\big(\mathcal{N}(\boldsymbol{\mu}_k, \boldsymbol{\sigma}_o^2)\big) \Big]
+\label{eq:entropy}
+\end{equation}
+식~\eqref{eq:logp}는 \S\ref{sec:training}의 정책경사에, 식~\eqref{eq:entropy}는 엔트로피
+정칙화에 그대로 쓰인다. 특징 조회에서 두 번째 점까지의 흐름을 Fig.~\ref{fig:picksteps}에
+요약하였다.
 
 %-------------------------------------------------- 픽셀 지목 4단계
 \begin{figure*}[t]
@@ -441,16 +574,49 @@ $0.5\sim0.7$), 이 무의미한 출력이 항해 명령으로 새어 나가는 �
 \subsubsection{그룹 상대 이득}
 
 학습은 가치함수를 따로 두지 않는 그룹 상대 정책 최적화~\citep{shao2024deepseekmath}를 다중
-방어정 상황에 맞게 변형하여 수행한다. 매 결정 시점에서 정책으로부터
-$G$개의 후보 행동을 표집하고, 각 후보를 시뮬레이터에서 공통 구간(180\,step)만큼 실제로
-진행시켜 팀 보상 $R_k$ 를 얻은 뒤, 후보들 사이의 상대 비교로 이득을 산정한다.
+방어정 상황에 맞게 변형하여 수행한다. 결정 시점의 상태를 $\mathbf{s}$, 방어정 $P$척의 결합
+행동을 $\mathbf{a} = (a_1, \dots, a_P)$ 라 하자. 매 결정 시점에서 정책으로부터 $G$개의 결합
+행동 후보를 표집하되, 후보 가운데 하나($k=0$)는 휴리스틱(\S\ref{sec:heuristic})이 내는
+행동으로 고정하여 기준선으로 삼는다.
 \begin{equation}
-A_k = \frac{R_k - R_\mathrm{heur}}{\sigma(\{R_j\})}
+\mathbf{a}^{(0)} = \mathbf{a}_{\mathrm{heur}}(\mathbf{s}), \qquad
+\mathbf{a}^{(k)} \sim \pi_\theta(\cdot \mid \mathbf{s}), \quad k = 1, \dots, G-1
+\label{eq:candidates}
+\end{equation}
+각 후보를 시뮬레이터에서 공통 구간 $H = 180\,\mathrm{step}$ 만큼 실제로 진행시켜 창 보상
+$R_k = R(\mathbf{s}, \mathbf{a}^{(k)}; H)$ 를 얻은 뒤(\S\ref{sec:reward}), 후보들 사이의
+상대 비교로 이득을 산정한다.
+\begin{equation}
+A_k = \frac{R_k - R_0}{\mathrm{std}(\{R_j\}_{j=0}^{G-1}) + \epsilon}, \qquad \epsilon = 10^{-6}
 \label{eq:adv}
 \end{equation}
-후보 가운데 하나($k=0$)는 휴리스틱이 내는 행동으로 고정하여 기준선으로 삼는다. 어떤 선택이
-더 나았는지를 실제 결과로 직접 비교하므로 별도의 가치망이 필요하지 않다. 이는 가치 추정
-편향과 비평가 학습의 불안정성을 원천적으로 제거한다. 시뮬레이터를 직접 전진시켜 후보를
+$R_0 = R_{\mathrm{heur}}$ 이므로 휴리스틱과 같은 성과를 내는 후보의 이득은 0 이고, 휴리스틱을
+넘어서는 후보만 양의 이득을 받는다. 그룹 표준편차로 나누므로 이득은 크기가 없는 양이며,
+그룹 안의 순위 정보만 남는다. 어떤 선택이 더 나았는지를 실제 결과로 직접 비교하므로 별도의
+가치망이 필요하지 않다. 이는 가치 추정 편향과 비평가 학습의 불안정성을 원천적으로 제거한다.
+
+한 갱신은 $N$개의 병렬 전장(월드)에서 동시에 수행된다. 월드 $n$ 의 후보 보상이 모두 같으면
+이득이 정의되지 않으므로, 유효 마스크 $w_n = \mathbb{1}[\mathrm{std}(\{R_{n,k}\}_k) > \epsilon_{\mathrm{var}}]$
+($\epsilon_{\mathrm{var}} = 10^{-6}$)로 그런 월드를 갱신에서 제외한다. 정책경사 손실은 유효 월드의 모든 후보·모든 방어정에 대해 이득으로 가중한 로그확률
+(식~\eqref{eq:logp})의 음수이다.
+\begin{equation}
+\mathcal{L}_{\mathrm{PG}}(\theta) = -\frac{\sum_{n} w_n \sum_{k=0}^{G-1} A_{n,k} \sum_{p=1}^{P} \log \pi_\theta\big(a^{(k)}_{n,p} \mid \mathbf{s}_n\big)}{G \sum_n w_n}
+\label{eq:lpg}
+\end{equation}
+여기에 엔트로피 정칙화(식~\eqref{eq:entropy})를 더한 총손실을 Adam 으로 최소화한다.
+\begin{equation}
+\mathcal{L}(\theta) = \mathcal{L}_{\mathrm{PG}}(\theta)
+  - \lambda_{\mathrm{H}}(t)\, \frac{1}{NP} \sum_{k=0}^{G-1} \sum_{n=1}^{N} \sum_{p=1}^{P} \mathcal{H}\big(a^{(k)}_{n,p}\big)
+\label{eq:loss}
+\end{equation}
+엔트로피는 $G$개 후보 모두에 대해 합하므로 유효 계수는 $G \lambda_{\mathrm{H}}(t)$ 이며,
+$\lambda_{\mathrm{H}}(t)$ 는 \S\ref{sec:schedule}의 감쇠 계수이다. 기울기는 노름
+$g_{\max} = 1.0$ 에서 자른다.
+\begin{equation}
+\mathbf{g} = \nabla_\theta \mathcal{L}(\theta), \qquad
+\theta \leftarrow \theta - \eta_t \cdot \mathrm{Adam}\!\left(\mathbf{g} \cdot \min\!\left(1, \frac{g_{\max}}{\lVert \mathbf{g} \rVert}\right)\right)
+\label{eq:update}
+\end{equation} 시뮬레이터를 직접 전진시켜 후보를
 평가하는 착상은 탐색 기반 의사결정~\citep{silver2016alphago}과 같은 계열이되, 본 연구는
 탐색 트리를 전개하지 않고 한 결정 시점의 후보 집합만 비교한다. 이 절차와 다음 소절의
 크레딧 배분을 Fig.~\ref{fig:grpocredit}에 한 장으로 정리하였다.
@@ -465,35 +631,129 @@ A_k = \frac{R_k - R_\mathrm{heur}}{\sigma(\{R_j\})}
          \textbf{아래 왼쪽·가운데}: 팀 보상을 후보 간 상대 비교로 이득으로 바꾼다
          (식~\eqref{eq:adv}). \textbf{아래 오른쪽}: 반사실적 크레딧 --- 한 척의 행동만 바꾸고
          나머지는 고정한 채 시뮬레이터를 다시 진행시켜, 그 차이를 그 배의 몫으로 돌린다
-         (\S\ref{sec:training}). 그림은 기전 전달을 위해 후보 수와 창을 $G=4$, $H=4$로
+         (\S\ref{sec:training}; 구현된 변형이며 채택 런은 팀 이득 손실을 썼다). 그림은 기전 전달을 위해 후보 수와 창을 $G=4$, $H=4$로
          줄여 그렸으며 실제 학습은 $G=8$, 평가 구간 180\,step이다.}
 \label{fig:grpocredit}
 \end{figure*}
 
 \subsubsection{반사실적 크레딧 배분}
 
-팀 보상을 모든 방어정이 그대로 나누어 가지면 개별 기여가 가려진다. 잘한 방어정과 못한
+식~\eqref{eq:lpg}는 팀 보상의 이득 $A_{n,k}$ 를 모든 방어정의 로그확률에 같은 값으로
+곱한다. 팀 보상을 모든 방어정이 그대로 나누어 가지면 개별 기여가 가려진다. 잘한 방어정과 못한
 방어정이 같은 신호를 받으면 학습이 진행되지 않는다. 따라서 한 척의 행동만 바꾸고 나머지는
-고정한 채 재평가하여, 그 차이를 해당 방어정의 몫으로 돌린다. 이는
+고정한 채 재평가하여, 그 차이를 해당 방어정의 몫으로 돌린다. 기준 표본
+$\mathbf{a}^{\mathrm{base}} \sim \pi_\theta(\cdot \mid \mathbf{s})$ 를 하나 두고, 방어정 $p$ 에
+대해 $p$ 의 행동만 바꾼 혼합 후보 $G$개를 만든다.
+\begin{equation}
+\begin{aligned}
+\mathbf{a}^{(k, p)} &= \big(\mathbf{a}^{\mathrm{base}}_{-p},\; \tilde{a}^{(k)}_p\big),\\
+\tilde{a}^{(0)}_p &= a_{\mathrm{heur},p}(\mathbf{s}), \qquad
+\tilde{a}^{(k)}_p \sim \pi_\theta(\cdot \mid \mathbf{s}, p)
+\end{aligned}
+\label{eq:cfmix}
+\end{equation}
+여기서 $\mathbf{a}_{-p}$ 는 $p$ 를 제외한 나머지 방어정의 행동이다. 각 혼합 후보를 같은 구간
+$H$ 만큼 재진행하여 얻은 창 보상 $R^{(p)}_k = R(\mathbf{s}, \mathbf{a}^{(k,p)}; H)$ 로 방어정
+$p$ 만의 이득을 산정한다.
+\begin{equation}
+A^{(p)}_k = \frac{R^{(p)}_k - R^{(p)}_0}{\mathrm{std}(\{R^{(p)}_j\}_{j=0}^{G-1}) + \epsilon}
+\label{eq:cfadv}
+\end{equation}
+나머지 방어정의 행동이 고정되어 있으므로 $R^{(p)}_k - R^{(p)}_0$ 는 방어정 $p$ 의 선택이
+바뀐 데서만 온 차이이다. 이 이득은 방어정 $p$ 의 로그확률에만 곱해진다.
+\begin{equation}
+\mathcal{L}_{\mathrm{CF}}(\theta) = -\frac{\sum_{p} \sum_{n} w^{(p)}_n \sum_{k} A^{(p)}_{n,k}\,
+  \log \pi_\theta\big(\tilde{a}^{(k)}_{n,p} \mid \mathbf{s}_n\big)}{G \sum_{p} \sum_n w^{(p)}_n}
+\label{eq:lcf}
+\end{equation}
+$w^{(p)}_n$ 은 유효 마스크 $w_n$ 을 방어정 $p$ 의 후보 집합에 적용한 것이며, 이 모드에서
+식~\eqref{eq:loss}의 엔트로피는 기준 표본 $\mathbf{a}^{\mathrm{base}}$ 에서만 계산한다.
+식~\eqref{eq:lcf}는 식~\eqref{eq:loss}에서 $\mathcal{L}_{\mathrm{PG}}$ 자리에 들어간다. 이는
 COMA~\citep{foerster2018coma}의 반사실적 기준선과 같은 착상이되, 학습된 비평가로 주변화하는
 대신 \emph{시뮬레이터를 실제로 재진행}하여 얻는다는 점이 다르다. 비평가 근사 오차가 개입하지
-않는다.
+않는 대신, 결정당 시뮬레이터 호출이 $G$ 회에서 $G P$ 회로 늘어난다.
+
+\textbf{채택 여부.} 두 손실을 같은 예산(800 업데이트)으로 비교한 스크리닝에서 반사실
+모드는 600 업데이트 시점 greedy 포획률 $0.801$ 로 팀 이득 모드의 $0.800$ 과 동률이었고,
+시뮬레이터 호출은 3배였다. 본 논문이 평가하는 체크포인트는 \emph{팀 이득
+손실}(식~\eqref{eq:lpg}--\eqref{eq:update})로 학습한 것이다.
 
 \subsubsection{보상 설계}
+\label{sec:reward}
 
-보상은 이벤트 항과 조밀 항으로 구성된다.
+한 후보의 창 보상 $R(\mathbf{s}, \mathbf{a}; H)$ 는 결정 시점부터 $H$\,step 동안 일어난
+일을 하나의 스칼라로 합산한 팀 공유 보상이며, 이벤트 항·퍼텐셜 차분·조밀 항으로 구성된다.
 \begin{equation}
-R = R_\mathrm{event} + \big[\gamma\Phi(s') - \Phi(s)\big] + R_\mathrm{dense}
+R = R_\mathrm{event} + \big[\gamma\,\Phi(\mathbf{s}_{t+H}) - \Phi(\mathbf{s}_t)\big] + R_\mathrm{dense}
+\label{eq:reward}
 \end{equation}
-$R_\mathrm{event}$ 는 포획($+13.5$), 돌파($-8.0$), 아군·모선·육지 충돌($-30$)을 지배항으로
-한다. $\Phi$ 는 적의 모선 근접도에 대한 퍼텐셜로, 차분 형태로 주어지므로 최적 정책을
+이벤트 항은 창 안의 사건 수에 고정 가중을 곱한 합이다.
+\begin{equation}
+\begin{aligned}
+R_\mathrm{event} = \;& r_{\mathrm{cap}} N_{\mathrm{cap}} + r_{\mathrm{brc}} N_{\mathrm{brc}}
+  + r_{\mathrm{col}} \big(N_{\mathrm{col}} + N_{\mathrm{land}}\big)\\
+  & + r_{\mathrm{tng}} N_{\mathrm{tng}}
+  + \mathbb{1}_{\mathrm{end}}\big(r_{\mathrm{wipe}}\,\mathbb{1}[\mathcal{A} = \varnothing] + r_{\mathrm{surv}}\,|\mathcal{A}|\big)
+\end{aligned}
+\label{eq:revent}
+\end{equation}
+계수는 포획 $r_{\mathrm{cap}} = +13.5$, 돌파 $r_{\mathrm{brc}} = -8.0$, 아군·모선·육지 충돌
+$r_{\mathrm{col}} = -30$, 설치 그물 접촉 $r_{\mathrm{tng}} = -13$, 창 안에서 에피소드가 끝날
+때($\mathbb{1}_{\mathrm{end}}$) 전멸 $r_{\mathrm{wipe}} = +8$, 잔존 적 1척당 $r_{\mathrm{surv}} = -5$ 이다. $\Phi$ 는 적의
+모선 근접도에 대한 퍼텐셜로, 차분 형태로 주어지므로 최적 정책을
 보존한다~\citep{ng1999shaping}.
 \begin{equation}
-\Phi(s) = -w_\mathrm{threat} \sum_{m \in \mathcal{A}}
-          \mathrm{clip}\!\left(1 - \frac{d_m}{R_0},\, 0,\, 1\right)
+\Phi(\mathbf{s}) = -w_\mathrm{threat} \sum_{m \in \mathcal{A}}
+          \mathrm{clip}\!\left(1 - \frac{\lVert \mathbf{e}_m - \mathbf{m} \rVert}{R_w},\, 0,\, 1\right)
+\label{eq:potential}
 \end{equation}
-여기서 $\mathcal{A}$ 는 생존 적선 집합, $d_m$ 은 모선까지 거리, $w_\mathrm{threat}=3.0$,
-$R_0 = 6300\unit{m}$, $\gamma = 0.99$ 이다.
+여기서 $\mathcal{A}$ 는 생존 적선 집합, $R_w = 6300\unit{m}$ 는 교전 해역 반폭,
+$w_\mathrm{threat}=3.0$, $\gamma = 0.99$ 이다. 적이 포획되어 $\mathcal{A}$ 에서 빠지거나
+멀어지면 $\Phi$ 가 오른다.
+
+조밀 항은 창 안의 기동 품질을 재는 비용·보너스의 합이다. 창 길이 $H$, 방어정 속력 $v_a$,
+최대 선회율 $\dot\psi_{\max}$, 창 안 총 이동거리 $D$, 소모 그물 수 $N_{\mathrm{net}}$ 에 대해
+\begin{equation}
+\begin{aligned}
+R_\mathrm{dense} = \;& -\,w_{\mathrm{path}} \frac{D}{H v_a P} - w_{\mathrm{net}} N_{\mathrm{net}}
+  - \frac{w_{\mathrm{turn}}}{P}\sum_{p=1}^{P} S_p\\
+  & - w_{\mathrm{prox}} \sum_{p=1}^{P}\big(\rho_{p}^{\mathrm{m}\,2} + \rho_{p}^{\mathrm{a}\,2}\big)
+  - \frac{w_{\mathrm{cons}}}{P}\sum_{p=1}^{P} \Xi_p\\
+  & + w_{\mathrm{cov}}\, \mathrm{Cov} + w_{\mathrm{ray}}\, \mathrm{Ray}
+\end{aligned}
+\label{eq:rdense}
+\end{equation}
+이다. $S_p = \sum_t |\Delta\psi_{p,t}| / (H \dot\psi_{\max}) \in [0,1]$ 은 창 안 누적 선회량을
+최대 가능 선회량으로 나눈 값이고, $\Xi_p = \lVert \mathbf{t}_p - \mathbf{t}^{\mathrm{prev}}_p \rVert / L_{\max}$
+는 직전 결정 대비 목표점 이동을 최대 경로 길이 $L_{\max} = L_{\mathrm{net}}$ 로 나눈 값이다(구현은
+경유점 6개와 생존 방어정에 대해 평균하며, 여기서는 목표점 단위로 단순화하여 적었다). 근접 페널티는 창 안에서
+방어정 $p$ 가 모선·타 방어정에 가장 가까웠던 거리
+$d^{\mathrm{m}}_p$, $d^{\mathrm{a}}_p$ 를 영향 반경으로 정규화한 뒤 제곱하여, 붙을수록
+급격히 커지게 한다.
+\begin{equation}
+\rho^{\mathrm{m}}_p = \mathrm{clip}\!\Big(\frac{R_{\mathrm{m}} - d^{\mathrm{m}}_p}{\varrho_{\mathrm{m}}}, 0, 1\Big), \quad
+\rho^{\mathrm{a}}_p = \mathrm{clip}\!\Big(\frac{\varrho_{\mathrm{a}} - d^{\mathrm{a}}_p}{\varrho_{\mathrm{a}}}, 0, 1\Big)
+\label{eq:prox}
+\end{equation}
+($R_{\mathrm{m}} = 800$, $\varrho_{\mathrm{m}} = 500$, $\varrho_{\mathrm{a}} = 600\unit{m}$).
+커버리지는 적에서 모선으로 향하는 직선(ray)이 설치된 그물에 막힌 생존 적의 비율이며,
+포획의 선행 지표로서 창 안에 포획이 없을 때도 변별력을 준다.
+\begin{equation}
+\mathrm{Cov} = \frac{1}{|\mathcal{A}|} \sum_{m \in \mathcal{A}}
+  \mathbb{1}\big[\exists\, \lambda \in \Lambda :\; \mathbf{e}_m + \lambda(\mathbf{m} - \mathbf{e}_m) \in \mathcal{W}\big]
+\label{eq:coverage}
+\end{equation}
+여기서 $\mathcal{W}$ 는 설치된 그물이 차지하는 영역이고, $\Lambda$ 는 $[0.05, 0.95]$ 를
+16등분한 표본점이다. $\mathrm{Ray}$ 는 같은 검사를 계획된 그물벽까지 포함하되, 두 방어정이 충돌 거리 안에서
+같은 ray 를 겹쳐 막으면 무효로 치고, 차단된 적마다 배율
+$b_{\mathrm{net}}\,(1 + g_{\mathrm{far}}(1 - \lambda_m))$ ($b_{\mathrm{net}} = 1.3$,
+$g_{\mathrm{far}} = 1.0$, $\lambda_m$ 은 차단점의 ray 상 위치로 적에 가까울수록 0)을 곱해
+적에 가까운 차단을 우대하는 단일 커버 판이다($\mathrm{Ray} \in [0, 2.6]$). 가중은 $w_{\mathrm{path}} = 0.5$,
+$w_{\mathrm{net}} = 0.3$, $w_{\mathrm{prox}} = 0.75$, $w_{\mathrm{turn}} = w_{\mathrm{cons}} = 0.3$,
+$w_{\mathrm{cov}} = 0.1$, $w_{\mathrm{ray}} = 1.6$ 이다. 레이 커버 항을 제외한 조밀 항은 이벤트
+계수의 수십분의 일 규모이고, 레이 커버 항은 최대 $4.2$ 로 포획 1건($13.5$)의 3분의 1을 넘지
+않게 두었다. 이 밖에 요격점 접근·예비 방어정 정지·인공 퍼텐셜
+척력 등 가중 $0.1\sim0.25$ 의 보조 항이 있으나 규모가 작아 생략한다.
 
 퍼텐셜 항을 둔 이유는 이벤트 항만으로는 학습 신호가 지나치게 희소하기 때문이다. 216개
 결정에 대한 실측에서 포획은 평가 창의 46.8\,\%에서만 발생하였다. 나머지 절반의 창에서는
@@ -572,18 +832,33 @@ greedy 평가(패널 (a)의 원 표식)로 하고, 최종 성능은 \S\ref{sec:e
 \end{figure*}
 
 \paragraph{수렴 진단}
+\label{sec:convergence}
 Fig.~\ref{fig:traincurve}는 채택 런의 기록이지만, 그 런은 보상·포획률·손실만 20 업데이트마다
 남겼으므로 \emph{정책이 정지점에 닿았는가}를 직접 보이는 지표가 없다. 이를 보완하기 위해
 같은 설정을 시드 3개로 다시 돌리며 표준적인 수렴 진단을 매 업데이트마다 기록하였다
 (Fig.~\ref{fig:convergence}). 재현 런의 가중치는 논문의 결과에 쓰지 않는다 --- 채택 런이
 \emph{전형적인} 학습 경과였는지, 그리고 그 경과가 수렴이라 부를 만한지를 확인하는 용도이다.
+갱신 전후 정책을 $\theta_{t}$, $\theta_{t+1}$ 라 하면 두 진단량은 다음과 같다.
+\begin{equation}
+\begin{aligned}
+\widehat{\mathrm{KL}}_t &= \frac{1}{NP(G-1)}\sum_{n,p}\sum_{k=1}^{G-1}
+  \big(\zeta_{n,p,k} - 1 - \log \zeta_{n,p,k}\big),\\
+\zeta_{n,p,k} &= \frac{\pi_{\theta_{t+1}}\big(a^{(k)}_{n,p} \mid \mathbf{s}_n\big)}{\pi_{\theta_t}\big(a^{(k)}_{n,p} \mid \mathbf{s}_n\big)}, \qquad
+\varsigma_t = \frac{\lVert \theta_t - \theta_{\mathrm{BC}} \rVert}{\lVert \theta_{\mathrm{BC}} \rVert}
+\end{aligned}
+\label{eq:diag}
+\end{equation}
+$\widehat{\mathrm{KL}}_t$ 는 같은 관측·같은 표본 후보(휴리스틱 후보 $k=0$ 은 정책의 표본이
+아니므로 제외)에 대한 확률비 $\zeta$ 의 $k_3$ 추정량으로,
+$\mathrm{KL}(\pi_{\theta_t} \,\|\, \pi_{\theta_{t+1}})$ 의 비음(非陰)·저분산 몬테카를로 추정이다.
+$\varsigma_t$ 는 행동복제 초기점 $\theta_{\mathrm{BC}}$ 로부터의 상대 파라미터 이동 거리이다.
 
-네 지표가 같은 방향을 가리킨다. (i) \textbf{업데이트 간 근사 KL}(패널 (c)) --- 같은 관측과
-같은 표본 후보에 대해 갱신 전후 정책의 KL 발산을 추정한 값 --- 은 처음 100 업데이트 평균
+네 지표가 같은 방향을 가리킨다. (i) \textbf{업데이트 간 근사 KL}(패널 (c)) --- 식~\eqref{eq:diag}의
+$\widehat{\mathrm{KL}}_t$ --- 은 처음 100 업데이트 평균
 $1.4\times10^{-2}$ 에서 마지막 100 업데이트 $1.5\times10^{-4}$ 로 두 자릿수 줄어든다. 같은
 구간에서 학습률은 16배 줄었으므로 이 감소의 일부는 스케줄의 몫이지만, 정책이 한 걸음에
 움직이는 양이 사실상 0 에 수렴한다는 사실 자체는 변하지 않는다. (ii) \textbf{파라미터 이동
-거리} $\|\theta_t-\theta_{\mathrm{BC}}\|/\|\theta_{\mathrm{BC}}\|$(패널 (f))는 400
+거리} $\varsigma_t$(패널 (f))는 400
 업데이트에 $0.031$, 800 업데이트에 $0.034$ 로 뒤 절반에서 포화한다 --- 정책이 행동복제
 초기점 근방의 한 지점에 정착했다는 뜻이다. (iii) \textbf{정책 엔트로피}(패널 (b); 1단계 픽셀
 분포, 균일분포 상한 $\ln 273 \approx 5.6$\,nat)는 $2.42$ 에서 $2.06$\,nat 로 내려가 400
@@ -624,13 +899,34 @@ greedy 평가 포획률(패널 (a))은 세 시드 모두 800 업데이트에서 
 \end{figure*}
 
 \subsubsection{초기 학습 안정화}
+\label{sec:bc}
 
-학습 초기에는 휴리스틱 행동을 목표로 하는 교차엔트로피 항을 부가하여 부팅한다. 목표 분포에
-가우시안 라벨 스무딩을 적용하는데, 격자 위의 인접 픽셀은 사실상 같은 행동이므로 단일 픽셀
-원-핫을 목표로 두면 불필요하게 뾰족한 분포를 강요하게 되기 때문이다. 이 항은 초기 300
-갱신 동안만 유지한다.
+그룹 상대 이득은 후보들이 실제로 갈릴 때만 신호를 주므로, 무작위 초기화된 정책에서 곧바로
+시작하면 초기 후보가 모두 무의미한 자리에 흩어져 갱신이 잡히지 않는다. 그래서 그룹 상대
+최적화에 앞서 휴리스틱 행동(\S\ref{sec:heuristic})을 목표로 하는 행동 복제를 300 step
+수행하여 정책을 부팅한다(Adam, 학습률 $3\times10^{-4}$). 목표 분포에는 가우시안 라벨
+스무딩을 적용한다. 휴리스틱이 지목한 픽셀 $i^{*}_k$ 주변에 유효 픽셀로 제한한 가우시안
+가중을 두고, 그 가중과 정책의 교차엔트로피를 최소화한다.
+\begin{equation}
+\omega_k(i) = \frac{\mathbb{1}[i \in \mathcal{V}^{(k)}_p]\,
+  \exp\!\big(-\lVert \mathbf{x}_i - \mathbf{x}_{i^{*}_k} \rVert^2 / 2\sigma_{\mathrm{BC}}^2\big)}
+  {\sum_{j \in \mathcal{V}^{(k)}_p} \exp\!\big(-\lVert \mathbf{x}_j - \mathbf{x}_{i^{*}_k} \rVert^2 / 2\sigma_{\mathrm{BC}}^2\big)}
+\label{eq:bcweight}
+\end{equation}
+\begin{equation}
+\mathcal{L}_{\mathrm{BC}}(\theta) = -\frac{1}{P}\sum_{p=1}^{P} \sum_{k=0}^{K-1} \sum_{i \in \mathcal{V}^{(k)}_p}
+  \omega_k(i)\, \log \pi^{(k)}_p(i)
+\label{eq:lbc}
+\end{equation}
+$\sigma_{\mathrm{BC}} = 0.8$\,px($\approx 202\unit{m}$)이며, 두 번째 픽셀의 질의는 휴리스틱의
+첫 픽셀로 갱신한다(teacher forcing). 격자 위의 인접 픽셀은 사실상 같은 행동이므로 단일
+픽셀 원-핫을 목표로 두면 불필요하게 뾰족한 분포를 강요하게 되고, 조밀한 점수맵에서
+원-핫 교차엔트로피의 기울기는 지나치게 희소하여 초기 학습이 붙지 않기 때문이다. 그룹 상대
+최적화 단계에서는 이 항을 쓰지 않으며, 대신 식~\eqref{eq:adv}의 휴리스틱 기준선이 정책을
+휴리스틱 근방에 붙잡는 신뢰 영역 구실을 한다.
 
 \subsubsection{학습률과 엔트로피 계수의 스케줄}
+\label{sec:schedule}
 
 옵티마이저는 Adam이고 학습률은 재시작 없는 단일 주기 코사인
 어닐링~\citep{loshchilov2017sgdr}으로 줄인다(Fig.~\ref{fig:lrsched}(a)):
@@ -643,8 +939,14 @@ greedy 평가 포획률(패널 (a))은 세 시드 모두 800 업데이트에서 
 \label{eq:cosine}
 \end{equation}
 주기 $T$를 총 업데이트 수에 묶었으므로 예산을 바꾸면 스케줄 전체가 함께 늘어난다 --- 비교
-실험은 같은 $T$로만 한다. 같은 축 위에서 엔트로피 계수는 $\lambda_{\mathrm{H}}(t) =
-0.01\,(1 - 0.9\,t/T)$ 로 선형 감쇠한다(Fig.~\ref{fig:lrsched}(b)). 기울기는 노름 1.0에서
+실험은 같은 $T$로만 한다. 같은 축 위에서 식~\eqref{eq:loss}의 엔트로피 계수는 선형으로
+감쇠한다(Fig.~\ref{fig:lrsched}(b)).
+\begin{equation}
+\lambda_{\mathrm{H}}(t) = \lambda_0 \Big(1 - (1 - \kappa)\frac{t}{T}\Big), \qquad
+\lambda_0 = 0.01,\quad \kappa = 0.1
+\label{eq:entsched}
+\end{equation}
+즉 $0.01$ 에서 $0.001$ 로 줄어든다. 기울기는 식~\eqref{eq:update}대로 노름 $g_{\max} = 1.0$ 에서
 자른다.
 
 코사인을 고른 이유는 이 학습 구조의 두 가지 성질 때문이다. 첫째, 그룹 상대 이득
@@ -742,7 +1044,7 @@ CommanderPlan \{\\
 
 그 기하는 두 경로에서 같은 규칙을 쓴다. 한 무리에 두 척 이상이 배정되면
 \S\ref{sec:heuristic}의 잉여 배정과 \emph{같은 두 손잡이}가 작동한다 --- 모선 쪽으로
-$\Delta t = 0.18$ 씩 미는 반경 층 분리와 $\pm 40^\circ$ 씩 번갈아 트는 방위 분리다. 완전히
+$\lambda_{\mathrm{L}} = 0.18$ 씩 미는 반경 층 분리와 $\pm 40^\circ$ 씩 번갈아 트는 방위 분리다. 완전히
 같지는 않아서, 언어모델 경로는 (i) 층 순서를 기본 요격점에 가까운 배부터 주고, (ii) 층을
 깊게 넣다 요격점이 모선 코앞으로 들어오는 것을 막기 위해 반경을 요격 환형 안으로 자른다.
 환형을 벗어난 요격점은 기동 계층의 유효 마스크를 붕괴시켜 폴백으로 떨어지기 때문이다.

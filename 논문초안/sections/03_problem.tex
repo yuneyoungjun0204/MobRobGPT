@@ -43,9 +43,9 @@ Table~\ref{tab:scenario}에 정리하였다.
 단위로 계산되며, 표의 정의에서 $N_\mathrm{cap}$·$N_\mathrm{brc}$ 는 포획된·모선까지 돌파한 적선
 수, $N_\mathrm{col}$ 은 아군 상호 및 모선 충돌 건수, $N_\mathrm{tng}$ 는 아군이 설치된
 그물에 얽힌 횟수, $N_\mathrm{net}$ 은 소모한 그물 수, $D_p$ 와 $\Delta\psi_{p,t}$ 는
-방어정 $p$ 의 총 이동거리와 step $t$ 의 방위 변화량, $\mathbf{c}$ 는 모선 위치,
-$\mathbf{e}_k$ 와 $t_k$ 는 $k$ 번째 포획 지점과 시각, $\mathbf{a}_d$ 는 $d$ 번째 그물
-전개를 시작한 방어정의 위치, $\mathcal{E}$ 는 그 순간 생존 적선의 위치 집합이다.
+방어정 $p$ 의 총 이동거리와 step $t$ 의 방위 변화량, $\mathbf{m}$ 은 모선 위치,
+$\mathbf{z}_k$ 와 $t_k$ 는 $k$ 번째 포획 지점과 시각, $\mathbf{a}_d$ 는 $d$ 번째 그물
+전개를 시작한 방어정의 위치, $\mathcal{A}$ 는 그 시점의 생존 적선 집합, $\mathbf{e}_m$ 은 적선 $m$ 의 위치이다.
 자원 효율 지표는 교전하지 않은 조건이 가장 효율적으로 평가되는 것을 막기 위해 총량이
 아니라 포획당 비율로 둔다. 조기 제압에 관한 수치는 거리축과 시간축으로 나누어 모선과 먼 곳에서 포획하는 것과, 조기에 포획하는 것 둘 다 고려하도록 한다.
 \begin{table*}[t]
@@ -74,9 +74,9 @@ $\mathbf{e}_k$ 와 $t_k$ 는 $k$ 번째 포획 지점과 시각, $\mathbf{a}_d$ 
  & 총 선회량        & $\downarrow$ & $\sum_{p=1}^{P} \sum_{t} \lvert \Delta\psi_{p,t} \rvert$ & 누적 방위 변화량(궤적 부드러움) \\
 \midrule
 \multirow{3}{*}{교전 품질}
- & 포획 이격거리    & $\uparrow$   & $\frac{1}{N_\mathrm{cap}} \sum_{k} \lVert \mathbf{e}_k - \mathbf{c} \rVert$ & 포획 지점의 모선 이격 --- 공간축 조기 제압 \\
+ & 포획 이격거리    & $\uparrow$   & $\frac{1}{N_\mathrm{cap}} \sum_{k} \lVert \mathbf{z}_k - \mathbf{m} \rVert$ & 포획 지점의 모선 이격 --- 공간축 조기 제압 \\
  & 평균 포획 시각   & $\downarrow$ & $\frac{1}{N_\mathrm{cap}} \sum_{k} t_k$ & 포획이 일어난 시각 --- 시간축 조기 제압 \\
- & 전개 시 적 거리  & $\downarrow$ & $\frac{1}{N_\mathrm{net}} \sum_{d} \min_{\mathbf{e} \in \mathcal{E}} \lVert \mathbf{a}_d - \mathbf{e} \rVert$ & 그물 전개를 시작한 순간 최근접 적까지 거리 \\
+ & 전개 시 적 거리  & $\downarrow$ & $\frac{1}{N_\mathrm{net}} \sum_{d} \min_{m \in \mathcal{A}} \lVert \mathbf{a}_d - \mathbf{e}_m \rVert$ & 그물 전개를 시작한 순간 최근접 적까지 거리 \\
 \bottomrule
 \end{tabular}
 \end{table*}
