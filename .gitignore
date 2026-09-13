@@ -84,3 +84,7 @@ tools/PlotNeuralNet/
 논문초안/*.blg
 # ralph 루프 상태
 /progress.txt
+
+# ── 대용량 산출물 (GitHub 100 MB 제한 초과 — 로컬에만 둔다) ──
+논문_그래프/6_영상/*.gif
+/*.pptx

@@ -89,6 +89,48 @@ $\Delta t = 0.18$ 만큼 밀어 \emph{한 층 안쪽}에 세우고, 방위로도
 
 \subsubsection{경유점 --- 해면 어디에 그물벽을 놓는가}
 
+%-------------------------------------------------- 기호표
+%  ★ 이 표에 기호를 추가하려면 본문에 실제로 그 기호가 있는지 먼저 확인할 것.
+%    표에만 있고 본문에 없는 기호는 독자를 찾아 헤매게 만든다.
+\begin{table*}[t]
+\caption{주요 기호. 본 논문은 같은 문자를 두 뜻으로 쓰지 않는다 --- 특히 무리 수 $C$,
+         경유점 수 $K$, 학습의 그룹 후보 수 $G$ 는 서로 다른 문자를 쓴다.}
+\label{tab:nomenclature}
+% 다른 표와 같은 \footnotesize 로 둔다. \small(10.95pt)로 두면 자연 폭이 커져
+% \resizebox 가 발동하고, 그러면 글자가 오히려 더 작아진다(측정: 10.95 -> 9.53).
+\centering\footnotesize
+% 판면보다 넓을 때만 줄인다(2단 양단걸침 ≈484pt vs elsarticle preprint 390pt).
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{%
+\begin{tabular}{@{}ll@{\hspace{1.2em}}ll@{}}
+\toprule
+\textbf{기호} & \textbf{뜻 (값)} & \textbf{기호} & \textbf{뜻 (값)} \\
+\midrule
+$M$            & 적 USV 수 (10)                       & $\mathbf{o}_p$ & 방어정 $p$ 의 자체 상태 ($\mathbb{R}^8$) \\
+$P$            & 방어정 수 (3)                        & $\mathbf{q}_p$ & 방어정 $p$ 의 질의 벡터 ($\mathbb{R}^{32}$) \\
+$C$            & 무리 수, 최대 (4)                    & $\mathbf{f}_i$ & 픽셀 $i$ 의 키 벡터 ($\mathbb{R}^{32}$) \\
+$K$            & 방어정 1척이 지목하는 경유점 수 (2)  & $s_{p,i}$      & 방어정 $p$ 가 픽셀 $i$ 에 준 점수 \\
+$G$            & 학습의 그룹 후보 수 (8)              & $(\boldsymbol{\gamma}_{\mathrm{F}},\boldsymbol{\beta}_{\mathrm{F}})$ & FiLM 배율·이동 계수 \\
+\addlinespace[2pt]
+$\tau_j$       & 무리 $j$ 의 위협도                   & $R_k$          & 후보 $k$ 의 팀 보상 \\
+$d_{pj}$       & 방어정 $p$ $\to$ 무리 $j$ 요격점 거리 & $A_k$         & 후보 $k$ 의 그룹 상대 이득 \\
+$\beta$        & 배정 유지 보너스 (식~\ref{eq:sticky}) & $\Phi$        & 위협 근접도 퍼텐셜 \\
+$\Delta t$     & 층 분리 증분 (0.18)                  & $\gamma$       & 할인 계수 (0.99) \\
+\addlinespace[2pt]
+$\mathbf{I}$   & 요격점                               & $\mathcal{V}_k$ & $k$ 번째 선택 시점의 후보 픽셀 집합 \\
+$\mathbf{t}_k$ & $k$ 번째 목표점 (연속 좌표)          & $r_{\mathrm{dup}}$ & 중복 배제 반경 (200\,m) \\
+$\hat{\mathbf{r}}$ & 모선 $\to$ 요격점 단위 벡터      & $L_{\mathrm{net}}$ & 그물벽 최대 길이 (450\,m) \\
+$\mathbf{a}_p$ & 방어정 $p$ 의 위치                   & $\dz$          & 대응표본 효과크기 \\
+\bottomrule
+\end{tabular}
+}
+\\[3pt]
+\begin{minipage}{\linewidth}\footnotesize
+격자는 $50\times50$ 이고 1\,px $=252\unit{m}$ 이다(관측 반폭 6300\,m). 결정 주기는
+25\,step $=25$초이며 저수준 제어는 1초마다 돈다. 설정값 전체는
+Table~\ref{tab:scenario}에 있다.
+\end{minipage}
+\end{table*}
+
 \textbf{선행 정의.} 이 절과 다음 절은 같은 이산 행동공간 위에서 동작한다 --- 모선을 중앙에
 둔 $50\times50$ 격자(1\,px $=252\unit{m}$)와, 그 격자에서 그물벽을 놓을 수 있는 칸만 남긴
 \emph{유효 마스크}이다. 두 대상의 구성 규칙은 \S\ref{sec:obs}과 \S\ref{sec:validmask}에서
@@ -238,6 +280,7 @@ Fig.~\ref{fig:observation}은 이 15채널 관측을 한 장면에 대해 채널
 %-------------------------------------------------- 그림 4
 
 \subsubsection{FiLM 조건화 U-Net과 점수맵}
+
 
 관측은 U-Net 구조~\citep{ronneberger2015unet}를 지나 입력과 같은 해상도의 특징 지도로
 변환된다(Fig.~\ref{fig:policy}). 인코더 2단($50\to25\to13$)으로 수용 영역을 넓히고, 디코더
@@ -687,8 +730,7 @@ CommanderPlan \{\\
 
 \textbf{조합 최적화 후처리를 두지 않는다.} 언어모델이 지목한 배가 그대로 배정되며, 최소비용
 매칭이나 2-opt 개선이 개입하지 않는다. 언어모델이 비워 둔 무리는 담당 없이 남고, 지목되지
-않은 방어정은 대기한다. \S\ref{sec:intro}에서 밝혔듯 후처리를 두면 최종 배정이 사실상
-비용 함수의 산물이 되어 언어모델의 기여를 측정할 수 없기 때문이다. 이 선택은 성능이 아니라
+않은 방어정은 대기한다. 후처리를 두면 최종 배정이 사실상 비용 함수의 산물이 되어 언어모델의 기여를 측정할 수 없기 때문이다. 이 선택은 성능이 아니라
 \emph{측정 가능성}을 위한 것이며, 그 대가는 \S\ref{sec:results}에서 정량적으로 드러난다.
 
 \textbf{후처리를 두지 않는다는 것이 기하 보정이 없다는 뜻은 아니다.} 언어모델이 정할 수
