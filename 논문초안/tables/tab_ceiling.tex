@@ -1,0 +1,22 @@
+% 자동 생성 — tools/make_paper_tables.py. 손으로 고치지 말 것.
+\begin{table}[t]
+\centering
+\caption{포메이션별 천장 효과. 집중 포메이션은 baseline 이 이미 0.997 이라 개선 여지가 0.003 뿐이다 --- 이 포메이션 단독으로 결론을 내면 안 된다.}
+\label{tab:ceiling}
+\footnotesize
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{%
+\begin{tabular}{lcccc}
+\toprule
+포메이션 & baseline & 남은 여유 & 제안 & $\Delta$ \\
+\midrule
+집중 & 0.997 & 0.003 & 0.990 & -0.007 \\
+양동 & 0.787 & 0.213 & 0.877 & +0.090$^{*}$ \\
+파상 & 0.750 & 0.250 & 0.853 & +0.103 \\
+\bottomrule
+\end{tabular}
+}
+\\[3pt]
+\begin{minipage}{\linewidth}\footnotesize
+$^{*}$ 신뢰구간이 0 을 포함하지 않음.
+\end{minipage}
+\end{table}

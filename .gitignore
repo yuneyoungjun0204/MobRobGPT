@@ -76,3 +76,11 @@ tools/PlotNeuralNet/
 논문초안/*.synctex.gz
 논문초안/*.fls
 논문초안/*.fdb_latexmk
+
+# ── LaTeX 빌드 부산물 추가 (tools/build_paper.sh 의 판별 임시 파일·BibTeX 부산물) ──
+논문초안/_build_*
+논문초안/*.spl
+논문초안/*.bbl
+논문초안/*.blg
+# ralph 루프 상태
+/progress.txt

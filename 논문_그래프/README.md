@@ -14,7 +14,92 @@ python run_eval.py --skip-llm --seeds 30
 python run_eval.py --from-csv results/eval/episodes.csv
 ```
 
-원자료·표는 `results/eval/` 에 남는다(git 미추적). 이 폴더의 그림만 추적한다.
+원자료·표는 `results/eval_merged/` 에 남는다(git 미추적). 이 폴더의 그림만 추적한다.
+
+> ## ⚠ 이 폴더는 `results/eval_merged` 하나만 바라본다
+>
+> `run_eval.py` 의 `--figdir` **기본값이 이 폴더**다. 그래서 다른 실험 원자료로 아무 생각 없이
+> 돌리면 **논문 도판 전체가 그 데이터로 조용히 덮인다.** 에러가 나지 않고 그림만 바뀌므로
+> PDF 를 눈으로 보기 전까지 아무도 모른다.
+>
+> 실제로 2026-09-07 에 배정모드 ablation 드라이버가 `--figdir 논문_그래프` 로 돌아,
+> 논문의 **표는 `eval_merged`(Gemini) 인데 그림은 `eval_hybrid`(qwen2.5-7b+hyb)** 를 가리키는
+> 상태가 되었다. `figJ` 제목이 `LLM +U-Net (qwen2.5-7b+hyb)` 로 바뀐 것을 PDF 검사에서 발견했다.
+>
+> 지금은 `run_eval.py` 가 배정모드 변형 조건(`+hyb`/`+code`)이 섞인 원자료로 이 폴더에
+> 그림을 쓰려 하면 **생성을 거부**한다. 그래도 규칙은 지킬 것:
+> **논문 도판은 `results/eval_merged` 에서만 만든다. 다른 실험은 `--figdir` 를 따로 준다.**
+
+## 폴더 구조
+
+그림은 **"어떤 질문에 답하는가"** 로 갈라 하위 폴더에 담는다. 분류표는
+`boatattack_sim/eval/plots.py` 의 `FIG_GROUPS` **한 곳**에만 있고 `save_all` 이 그 표를
+따라 저장하므로, 재생성해도 정리가 흐트러지지 않는다.
+
+```
+논문_그래프/
+├── 1_조건비교/   조건(2x2) x 포메이션 지표 막대       figA*, figE
+├── 2_요약패널/   여러 지표를 한 장에                  figI*, figJ
+├── 3_계층효과/   배정 x 기동 분해 · 시드별 대응비교    figB, figC*, figD*
+├── 4_모델비교/   지휘관 모델 축 (7B / 14B / Gemini)   figG, figH*, figK*, figM*
+├── 5_구조도/     아키텍처 도판                        unet_scoremap
+├── 6_영상/       GIF/MP4 데모                         commander_*.gif
+└── 7_메커니즘/   왜 그런가 · 배정권한 ablation         figN, figO
+```
+
+분류에 안 걸리는 새 그림은 `9_기타/` 로 간다 — 분류를 깜빡해도 사라지지 않는다.
+
+기존 파일을 이 구조로 옮기려면(1회성):
+```powershell
+python tools/organize_figures.py --dry-run   # 계획만 보기
+python tools/organize_figures.py
+```
+
+### 영상 만들기
+
+지휘관 UI(씬 + 적/아군 확대 캠 + LLM 명령 패널)를 그대로 굽는다.
+**기본이 U-Net 점수맵 기동 + 위성 배경**이다 — 이 프로젝트의 본 모델이므로 영상도
+그걸 보여야 한다. `--out` 을 생략하면 `6_영상/` 아래에 조건이 담긴 이름으로 저장된다.
+
+```powershell
+python tools/make_commander_gif.py --backend gemini --model gemini-3.5-flash-lite --zoom
+python tools/make_commander_gif.py --no-llm --enemy wave --seed 18 --zoom   # 오프라인
+python tools/make_commander_gif.py --site 신안_홍도북 --list-sites          # 해역 목록
+python tools/make_triptych_gif.py --seeds 33,1,18                           # 3대형 한 화면
+```
+
+| 옵션 | 기본 | 뜻 |
+|---|---|---|
+| `--maneuver` | `unet` | 기동 계층. `heuristic` 은 비교용 |
+| `--satellite` | 켜짐 | 위성 배경 (`--no-satellite` 로 끔) |
+| `--score-map` | 켜짐 | U-Net 유효마스크·점수 히트맵·선택 픽셀 |
+| `--zoom` | 꺼짐 | 교전 구역 자동 확대. 끄면 전역 12.6 km 라 교전이 화면의 30% |
+| `--residual` | 꺼짐 | WP 후보 범위 환형. 어지러워서 기본 숨김 |
+| `--clusters` | 켜짐 | 적 클러스터 환형 부채꼴 (`--no-clusters`) |
+| `--site` | config 기본 | 해역 6곳 중 선택 — 지형이 교전에 개입한다 |
+| `--colors` | 0 | 0=후처리 없음(화질 우선). 값을 주면 팔레트 축소로 약 45% 감량 |
+| `--dpi` | 100 | **용량 줄이려고 내리지 말 것** — 글자가 뭉개진다. `--step`/`--colors` 를 쓴다 |
+
+### 데모 시드는 어떻게 골랐나
+
+영상은 "정상 동작이 어떤 모습인가"를 보이는 용도다. **성능 주장은 논문의 30시드
+통계로 하고**, 영상은 사고 없는 에피소드를 고른다. 고른 근거를 남기기 위해
+시드는 파일명에 박고, 탐색은 스크립트로 재현 가능하게 한다.
+
+```powershell
+python tools/find_demo_seeds.py --seeds 40        # 전멸포획·돌파0·충돌0·아군손실0
+python tools/find_demo_seeds.py --site 신안_홍도북 --formations concentrated
+```
+
+현재 데모 시드(두 지휘관 모두 10/10 포획·돌파 0·충돌 0·아군손실 0):
+**집중 33 · 양동 1 · 파상 18**
+
+⚠ `ally_collisions=0` 이어도 아군이 비활성화되는 경로가 따로 있다. 그래서 스캐너는
+`a_alive` 를 직접 센다 — 충돌 통계만 믿으면 아군이 죽은 시드를 고르게 된다.
+
+**⚠ 영상의 `[FB]` 표시**: 지휘관 패널 로그에서 `[OK]` 는 진짜 LLM 출력, `[FB]` 는
+휴리스틱 폴백이다. 하단에 폴백 비율도 찍힌다. 이 표시가 있어야 "LLM 데모"라고
+내놓은 영상이 실은 전량 휴리스틱이었던 사고를 막을 수 있다.
 
 ## 파일
 
@@ -38,6 +123,57 @@ python run_eval.py --from-csv results/eval/episodes.csv
 | `figG_llm_metrics` | LLM 지휘관 계측 3패널: 지연 · 계획 품질 · 신뢰성 | **LLM 계층 § — 비동기 설계 근거** |
 | `figH_backend_compare` | 로컬 vs GPT 절대 성능 + 대응차이 | 고찰 § — "상용 API 가 꼭 필요한가" |
 | `figH2_llm_backend_metrics` | 백엔드별 지연·실패율·계획 품질 | 고찰 § |
+| `figI2_core_panels` | 핵심 5지표 (위 2 / 아래 3 대칭 배치) | 발표·본문 축약본 |
+| `figI3_core_barh_en` | 같은 5지표 영문 가로막대, 세로로 나열 | 발표용 |
+| `figI4_core4_en` | 4지표 2×2 (포획률·돌파·그물접촉·포획당 그물) | 발표용 |
+| `figI5_core4_barh_en` | 같은 4지표 가로막대 세로 나열 | 발표용 |
+| `figK_llm_contribution` | LLM 계층이 기여한 몫 분해 | LLM 계층 § |
+| `figK2_llm_quality_ci` | 지휘관별 계획 품질 CI | LLM 계층 § |
+| **`figM_model_compare`** | **모델 비교 4패널**: 포메이션별 · baseline 대비 · 지연 · 계획 품질 | **모델 비교 § 주력** |
+| **`figM2_model_ladder`** | **능력 사다리** — 모델 능력 축으로 성능이 오르고 휴리스틱 선을 어디서 교차하는지 | **모델 비교 § 대표 그림** |
+| **`figN_plan_quality`** | **계획 품질 → 성능.** 커버리지·churn·경로교차를 지휘관 축으로 놓고 포획률(붉은 선)을 겹친다 | **고찰 § — 메커니즘 (본문)** |
+| **`figO_assign_mode`** | **배정 권한 ablation.** 순수 LLM vs LLM+코드보완, 대응차이 CI | **고찰 § — 반론 방어 (본문)** |
+
+### 모델 축 그림(`figM*`)이 2×2 그림과 다른 점
+
+`figA`~`figD` 는 **"계층이 기여하는가"** 를 묻고, `figM*` 은 **"어느 지휘관을 쓸 것인가"** 를
+묻는다. 서로 다른 질문이라 그림도 따로 둔다.
+
+`figM*` 은 **기동 계층을 휴리스틱으로 고정**(`maneuver="heur"`)해서 그린다 — U-Net 기동과
+섞으면 두 계층의 효과가 뒤엉켜 모델 비교가 흐려진다. x 축은 능력 순(`MODEL_ORDER`)으로
+고정한다. 사다리가 축에서 바로 보여야 하기 때문이다.
+
+### `figN`·`figO` 가 답하는 것 — 순위가 아니라 메커니즘
+
+`figM*` 은 **"어느 지휘관을 쓸 것인가"**(순위)를 묻는다. 모델이 바뀌면 낡는 그림이다.
+`figN` 은 **"무엇이 성능을 만드는가"**를 묻는다 — 이쪽이 논문의 수명이 길다.
+
+핵심은 패널 간 대조다. 실측(`llm_quality.csv`):
+
+| 지휘관 | 커버리지 ↑ | churn ↓ | 경로교차 ↓ | → 포획률 |
+|---|---:|---:|---:|---:|
+| Qwen2.5 7B | **0.934** | **0.324** | 0.152 | **0.652** |
+| Qwen2.5 14B | 0.877 | 0.167 | 0.111 | 0.811 |
+| Gemini 3.5 Flash-Lite | 0.881 | **0.098** | **0.033** | **0.907** |
+
+**7B 는 커버리지가 가장 높은데 성능이 가장 나쁘다.** 막을 클러스터를 안 막아서 지는 게
+아니라, **재계획마다 배의 1/3이 타겟을 갈아타서**(churn 0.324) 반쯤 깐 그물을 버리기
+때문이다. 즉 **주기적 재계획 구조에서는 계획의 최적성보다 안정성이 중요하다.**
+
+⚠ `figN` 에 회귀선·상관계수를 넣지 말 것. 모델이 3종이라 n=3 이고, 거기에 상관계수를
+찍으면 없는 통계적 근거를 주장하는 셈이 된다. 이 그림은 기술통계다.
+
+`figO` 는 리뷰어의 필연적 반론(**"약한 LLM 을 일부러 불리하게 두지 않았나"** — 본 조건
+`mode="llm"` 은 코드 보완이 전혀 없다)에 답한다. 같은 30시드로 `hybrid` 를 돌려 비교한다.
+
+```powershell
+python run_eval.py --assign-mode hybrid --backends ollama --model qwen2.5:7b --seeds 30 --out results/eval_hybrid
+bash tools/run_hybrid_ablation.sh      # 7b -> gemini -> 14b 순차 (약 20시간, 재개 가능)
+```
+
+**구제하면** 코드 가드레일이 작은 로컬 모델을 실용 가능하게 만든다는 설계 기여가 되고,
+**구제 못 하면** 커버리지를 메워도 안 되므로 churn 이 진범임이 확정돼 `figN` 이 강해진다.
+어느 쪽이든 답이 된다.
 
 ## 지표 — 다섯 관점
 

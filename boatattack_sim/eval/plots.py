@@ -214,12 +214,44 @@ def model_label(tag: str) -> str:
     return MODEL_LABEL.get(tag, tag)
 
 
-def models_in(df) -> list[str]:
-    """CSV 에 있는 지휘관 모델 태그를 능력 순서로. 수집이 덜 끝난 것은 뺀다."""
+#: 조건 태그에 실리는 배정모드 접미사 → 모드 이름. harness.ASSIGN_MODE_TAG 의 역방향이다.
+#  (여기 하드코딩하는 이유: plots 는 harness 를 import 하지 않는다 — 그림만 그리는 층이
+#   시뮬 층에 의존하면 CSV 만 있으면 되는 --from-csv 경로가 깨진다.)
+MODE_SUFFIX = {"+hyb": "hybrid", "+code": "code"}
+MODE_LABEL = {"llm": "순수 LLM", "hybrid": "LLM+코드보완", "code": "코드 재최적화"}
+MODE_LABEL_EN = {"llm": "LLM only", "hybrid": "LLM + code fill", "code": "code re-opt"}
+
+
+def _mode_of(tag: str) -> str:
+    """모델 태그에서 배정모드를 읽는다. 접미사가 없으면 기본 "llm"."""
+    for suf, mode in MODE_SUFFIX.items():
+        if tag.endswith(suf):
+            return mode
+    return "llm"
+
+
+def _base_model(tag: str) -> str:
+    """모델 태그에서 배정모드 접미사를 뗀 순수 모델 이름."""
+    for suf in MODE_SUFFIX:
+        if tag.endswith(suf):
+            return tag[: -len(suf)]
+    return tag
+
+
+def models_in(df, *, mode: str | None = "llm") -> list[str]:
+    """CSV 에 있는 지휘관 모델 태그를 능력 순서로. 수집이 덜 끝난 것은 뺀다.
+
+    `mode="llm"`(기본) 이면 **배정모드 변형(`+hyb`/`+code`)을 뺀다.** 능력축 그림
+    (figM*)에 hybrid 변형이 섞이면 "능력이 오르면 성능이 오른다"는 축이 무너진다 —
+    같은 모델이 모드만 달리해 두 번 서기 때문이다. 모드 비교는 figO 가 따로 한다.
+    `mode=None` 이면 전부 돌려준다.
+    """
     d = S.drop_incomplete(df)
     tags = {_backend_of(c) for c in d["condition"].unique() if "@" in c}
+    if mode is not None:
+        tags = {t for t in tags if _mode_of(t) == mode}
     rank = {m: i for i, m in enumerate(MODEL_ORDER)}
-    return sorted(tags, key=lambda t: (rank.get(t, 99), t))
+    return sorted(tags, key=lambda t: (rank.get(_base_model(t), 99), t))
 
 
 def _base_key(cond: str) -> str:
@@ -261,7 +293,36 @@ def _conds(df, *, complete_only: bool = True):
     return sorted(have, key=lambda c: (rank.get(_base_key(c), 99), _backend_of(c)))
 
 
-def _save(fig, outdir: str, name: str, *, png: bool = True) -> list[str]:
+#: 그림 → 하위 폴더. "이 그림이 어떤 질문에 답하는가"로 가른다.
+#  save_all 이 이 표를 따라 outdir 아래에 나눠 저장하므로, 재생성해도 분류가 유지된다.
+#  접두사 매칭이라 figA 는 figA2..figA7 까지, figI 는 figI2..figI5 까지 함께 걸린다.
+FIG_GROUPS = (
+    ("1_조건비교",  ("figA", "figE")),          # 조건(2x2) x 포메이션 지표 막대
+    ("2_요약패널",  ("figI", "figJ")),          # 여러 지표를 한 장에
+    ("3_계층효과",  ("figB", "figC", "figD")),  # 배정 x 기동 분해 · 대응비교
+    ("4_모델비교",  ("figG", "figH", "figK", "figM")),   # 지휘관 모델 축
+    ("5_구조도",    ("unet_",)),                # 아키텍처 도판
+    ("7_메커니즘",  ("figN", "figO")),          # 왜 그런가 — 계획품질·배정권한 ablation
+)
+#: 어디에도 안 걸리는 그림이 가는 곳. 새 그림을 추가하고 분류를 깜빡해도 사라지지 않는다.
+FIG_GROUP_OTHER = "9_기타"
+#: 애니메이션(GIF/MP4). make_commander_gif.py 가 여기에 넣는다.
+FIG_GROUP_VIDEO = "6_영상"
+
+
+def fig_group(name: str) -> str:
+    """그림 이름 → 하위 폴더 이름."""
+    for grp, prefixes in FIG_GROUPS:
+        if any(name.startswith(pre) for pre in prefixes):
+            return grp
+    return FIG_GROUP_OTHER
+
+
+def _save(fig, outdir: str, name: str, *, png: bool = True,
+          group: bool = True) -> list[str]:
+    """그림 저장. `group=True`(기본) 면 fig_group(name) 하위 폴더에 넣는다."""
+    if group:
+        outdir = os.path.join(outdir, fig_group(name))
     os.makedirs(outdir, exist_ok=True)
     paths = []
     p = os.path.join(outdir, f"{name}.pdf")
@@ -306,14 +367,19 @@ def fig_condition_bars(df, metric: str = "capture_rate", *, seed: int = 0,
     ax.set_ylabel(METRIC_KO.get(metric, metric))
     ax.set_xlabel("적 포메이션")
     # 범례는 축 위로 뺀다 — 포획률은 1.0 근처에 몰려서 축 안에 두면 막대를 가린다.
-    ax.legend(fontsize=8, ncol=min(len(conds), 4), frameon=False,
+    # ★ 제목 pad 는 **범례 행 수에 따라** 벌린다. 고정 pad(26)는 1행 기준이라,
+    #   조건이 5개 이상이면 범례가 2행이 되면서 제목과 겹쳐 둘 다 못 읽게 된다
+    #   (8조건 수집에서 실제로 발생 — 논문 주력 그림이 판독 불가였다).
+    ncol = min(len(conds), 4)
+    nrow = int(np.ceil(len(conds) / max(ncol, 1)))
+    ax.legend(fontsize=8, ncol=ncol, frameon=False,
               loc="lower center", bbox_to_anchor=(0.5, 1.02))
     ax.grid(axis="y", alpha=0.25, linewidth=0.5)
     ax.set_axisbelow(True)
     for s in ("top", "right"):
         ax.spines[s].set_visible(False)
     ax.set_title(f"{METRIC_KO.get(metric, metric)} — 조건별 (오차막대: 부트스트랩 95% CI)",
-                 fontsize=9.5, loc="left", pad=26)
+                 fontsize=9.5, loc="left", pad=12 + 15 * nrow)
     fig.tight_layout()
     return fig
 
@@ -983,7 +1049,7 @@ def fig_model_compare(df, llm_df=None, *, metric: str = "capture_rate", seed: in
     w = 0.8 / max(len(forms), 1)
     for i, f in enumerate(forms):
         bars = ax.bar(xs + (i - (len(forms) - 1) / 2) * w, [_v(m, f) for m in ms],
-                      w * 0.9, label=safe_text(f), edgecolor="white", linewidth=0.6)
+                      w * 0.9, label=safe_text(FORM_KO.get(f, f)), edgecolor="white", linewidth=0.6)
         # 기준선은 **막대와 같은 색**으로 긋는다. 회색 하나로 그으면 어느 포메이션의
         # 기준인지 알 수 없어 "넘었나 못 넘었나"를 읽을 수 없다.
         b = np.nanmean([_v(m, f + "_base") for m in ms])
@@ -1084,7 +1150,7 @@ def fig_model_ladder(df, *, metric: str = "capture_rate", seed: int = 0,
             if b is not None:
                 base = float(np.mean(b))
         line, = ax.plot(xs, ys, marker=marks[i % len(marks)], lw=1.6, ms=5,
-                        label=safe_text(f))
+                        label=safe_text(FORM_KO.get(f, f)))
         if np.isfinite(base):
             ax.axhline(base, ls=":", lw=1.0, color=line.get_color(), alpha=0.7)
     ax.set_xticks(xs)
@@ -1097,6 +1163,169 @@ def fig_model_ladder(df, *, metric: str = "capture_rate", seed: int = 0,
     ax.grid(alpha=0.25, linewidth=0.5); ax.set_axisbelow(True)
     for sp in ("top", "right"):
         ax.spines[sp].set_visible(False)
+    fig.tight_layout()
+    return fig
+
+
+# -- figN: 계획 품질 -> 성능 (메커니즘) --------------------------------------
+#: 계획 품질 지표와 방향. (지표, 낮을수록 좋은가, 라벨)
+PLAN_QUALITY = (
+    ("coverage",  False, "커버리지\n(배정된 클러스터 비율)"),
+    ("churn",     True,  "churn\n(재계획마다 타겟 바꾼 배)"),
+    ("crossings", True,  "경로 교차\n(두 배의 요격경로 교차)"),
+)
+
+
+def fig_plan_quality(df, llm_df, *, metric: str = "capture_rate", seed: int = 0,
+                     maneuver: str = "heur", figsize=(7.6, 3.1)):
+    """계획 품질이 성능을 예측하는가 — 지휘관 축으로 나란히 본다.
+
+    왜 이 그림이 필요한가
+        모델 비교 그림(figM*)은 **순위**만 준다. "어느 모델이 낫다"는 모델이 바뀌면
+        낡는다. 이 그림은 **무엇이 성능을 만드는가**에 답한다.
+
+        핵심은 패널 간 대조다: coverage(막을 클러스터를 실제로 막았나)는 성능을
+        예측하지 못하고, churn(계획이 얼마나 흔들리나)·crossings 는 단조로 따라간다.
+        7B 는 커버리지가 가장 높은데 성능이 가장 나쁘다 — 안 막아서 지는 게 아니라
+        **반쯤 깐 그물을 버리고 타겟을 갈아타서** 진다.
+
+    ★ 회귀선·상관계수를 얹지 않는다. 모델이 3종뿐이라 n=3 이고, 거기에 상관계수를
+      찍으면 없는 통계적 근거를 주장하는 셈이 된다. 이 그림은 기술통계다.
+    """
+    if llm_df is None or len(llm_df) == 0:
+        raise ValueError("계획 품질 그림에는 llm_metrics 가 필요하다")
+    col = "model" if "model" in llm_df.columns else "backend"
+    have = set(llm_df[col].astype(str))
+    ms = [m for m in models_in(df) if m in have]
+    if len(ms) < 2:
+        raise ValueError("계획품질 그림에는 모델 2종 이상이 필요하다. 있는 것: %s" % ms)
+
+    # 성능은 기동 계층을 고정해 지휘관 축만 남긴다 — figM* 와 같은 규약.
+    perf = []
+    for m in ms:
+        x, _ = _model_capture(df, m, metric, None, maneuver=maneuver)
+        perf.append(float(np.mean(x)) if x is not None else np.nan)
+
+    fig, axes = plt.subplots(1, len(PLAN_QUALITY), figsize=figsize)
+    axes = np.atleast_1d(axes)
+    xs = np.arange(len(ms))
+    for ax, (q, lower_better, lab) in zip(axes, PLAN_QUALITY):
+        vals, los, his = [], [], []
+        for m in ms:
+            g = llm_df[llm_df[col].astype(str) == m]
+            v = g[q].astype(float).dropna().to_numpy() if q in g.columns else np.array([])
+            if v.size == 0:
+                vals.append(np.nan); los.append(0.0); his.append(0.0); continue
+            est = S.mean_ci(v, seed=seed)
+            vals.append(est.mean)
+            los.append(max(0.0, est.mean - est.lo))
+            his.append(max(0.0, est.hi - est.mean))
+        cols = [BACKEND_TINT.get(_base_model(m)) or "#777777" for m in ms]
+        ax.bar(xs, vals, 0.62, yerr=np.vstack([los, his]), color=cols,
+               edgecolor="white", linewidth=0.6, capsize=2.5,
+               error_kw={"elinewidth": 0.9, "ecolor": "#333333"})
+        arrow = " (낮을수록 좋음)" if lower_better else " (높을수록 좋음)"
+        ax.set_title(safe_text(lab + arrow), fontsize=7.8, loc="left")
+        ax.set_xticks(xs)
+        ax.set_xticklabels([safe_text(model_label(_base_model(m))) for m in ms],
+                           fontsize=6.8, rotation=20, ha="right")
+        ax.tick_params(axis="y", labelsize=7)
+        ax.grid(axis="y", alpha=0.25, linewidth=0.5)
+        ax.set_axisbelow(True)
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+        # 성능을 같은 패널에 겹친다 — 눈이 두 축을 따로 훑지 않아도 관계가 보인다.
+        ax2 = ax.twinx()
+        ax2.plot(xs, perf, marker="o", ms=5, lw=1.5, color="#C62828", zorder=5)
+        ax2.set_ylim(0.0, 1.05)
+        ax2.tick_params(axis="y", labelsize=6.5, colors="#C62828")
+        for sp in ("top", "left"):
+            ax2.spines[sp].set_visible(False)
+        ax2.spines["right"].set_color("#C62828")
+    fig.suptitle(safe_text("계획 품질 -> 성능 (붉은 선 = " + metric_label(metric)
+                           + "): 커버리지는 예측하지 못하고, 계획 안정성이 예측한다"),
+                 fontsize=9.2, x=0.01, ha="left")
+    fig.tight_layout(rect=(0, 0, 1, 0.90))
+    return fig
+
+
+# -- figO: 배정 권한(assign_mode) ablation ------------------------------------
+def fig_assign_mode(df, *, metric: str = "capture_rate", seed: int = 0,
+                    maneuver: str = "heur", baseline: str = "heur_heur",
+                    figsize=(6.8, 3.6)):
+    """배정 권한 ablation — 코드 가드레일이 약한 모델을 구제하는가.
+
+    본 조건은 mode="llm"(코드 보완 일절 없음)이다. 이 선택은 약한 모델에 불리하게
+    작용하므로 "일부러 불리하게 두지 않았나"라는 반론이 반드시 나온다. hybrid
+    (LLM 명시분은 잠그고 빈 클러스터만 코드가 채움)를 **같은 시드**로 돌려 직접 답한다.
+
+    읽는 법
+        · 회복하면    -> 코드 가드레일이 작은 로컬 모델을 실용 가능하게 만든다(설계 기여)
+        · 회복 안 하면 -> 커버리지를 메워도 안 되므로 churn 이 진범임이 확정된다(figN 강화)
+
+    ★ 대응표본이므로 두 모드가 **같은 시드**를 가진 행만 쓴다(dropna). 시드가 어긋난
+      모델을 섞으면 차이에 시나리오 난이도가 실려 비교가 무효가 된다.
+    """
+    piv = S.pivot_by_seed(df, metric)
+    base = "llm_" + maneuver
+    pairs = []
+    for m in models_in(df, mode="llm"):
+        a, b = base + "@" + m, base + "@" + m + "+hyb"
+        if a in piv.columns and b in piv.columns:
+            ok = piv[[a, b]].dropna()
+            if len(ok) >= 3:
+                pairs.append((m, ok[a].to_numpy(), ok[b].to_numpy()))
+    if not pairs:
+        raise ValueError("배정모드 ablation 에는 같은 모델의 llm/hybrid 조건이 둘 다 "
+                         "필요하다 (results/eval_hybrid 수집이 끝나야 한다)")
+
+    fig, (axL, axR) = plt.subplots(1, 2, figsize=figsize,
+                                   gridspec_kw={"width_ratios": [1.35, 1.0]})
+    xs = np.arange(len(pairs))
+    w = 0.36
+    for j, (lab, hatch, colr) in enumerate((("순수 LLM", "", "#8FA8BF"),
+                                            ("LLM+코드보완", "//", "#2E5E8E"))):
+        vals, los, his = [], [], []
+        for _, a, b in pairs:
+            v = a if j == 0 else b
+            est = S.mean_ci(v, seed=seed)
+            vals.append(est.mean)
+            los.append(max(0.0, est.mean - est.lo))
+            his.append(max(0.0, est.hi - est.mean))
+        axL.bar(xs + (j - 0.5) * w, vals, w, yerr=np.vstack([los, his]),
+                label=safe_text(lab), hatch=hatch, capsize=2.5, color=colr,
+                edgecolor="white", linewidth=0.6,
+                error_kw={"elinewidth": 0.9, "ecolor": "#333333"})
+    if baseline in piv.columns:
+        bm = float(np.nanmean(piv[baseline].to_numpy()))
+        axL.axhline(bm, ls="--", lw=1.1, color="#C62828")
+        axL.text(len(pairs) - 0.45, bm, safe_text(" 휴리스틱 baseline"), fontsize=7,
+                 color="#C62828", va="bottom", ha="right")
+    axL.set_xticks(xs)
+    axL.set_xticklabels([safe_text(model_label(m)) for m, _, _ in pairs],
+                        fontsize=7.5, rotation=12, ha="right")
+    axL.set_ylabel(safe_text(metric_label(metric)))
+    axL.set_title(safe_text("배정 권한별 성능"), fontsize=9, loc="left")
+    axL.legend(fontsize=7, frameon=False, loc="lower right")
+
+    # 오른쪽: 대응차이(hybrid - llm) + CI. 0 을 지나면 '구제 못 함'이다.
+    for i, (m, a, b) in enumerate(pairs):
+        est = S.paired_diff(b, a, seed=seed)
+        c = "#2E7D32" if est.lo > 0 else ("#C62828" if est.hi < 0 else "#777777")
+        axR.errorbar(est.mean, i,
+                     xerr=[[max(0.0, est.mean - est.lo)], [max(0.0, est.hi - est.mean)]],
+                     fmt="o", ms=5, color=c, elinewidth=1.3, capsize=3)
+    axR.axvline(0, ls="--", lw=1.0, color="#555555")
+    axR.set_yticks(xs)
+    axR.set_yticklabels([safe_text(model_label(m)) for m, _, _ in pairs], fontsize=7.5)
+    axR.set_ylim(-0.6, len(pairs) - 0.4)
+    axR.set_xlabel(safe_text("코드보완 - 순수 LLM (대응차이, 95% CI)"), fontsize=8)
+    axR.set_title(safe_text("구제 효과 (CI 가 0 을 지나면 구제 실패)"), fontsize=9, loc="left")
+    for ax in (axL, axR):
+        ax.grid(alpha=0.25, linewidth=0.5)
+        ax.set_axisbelow(True)
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
     fig.tight_layout()
     return fig
 
@@ -1513,6 +1742,10 @@ def save_all(df, outdir: str = "논문_그래프", *, llm_df=None,
     _try("figM_model_compare", lambda: fig_model_compare(df, llm_df, metric=metric,
                                                          seed=seed))
     _try("figM2_model_ladder", lambda: fig_model_ladder(df, metric=metric, seed=seed))
+    # 메커니즘·ablation — 데이터가 모자라면 _try 가 [skip] 을 찍고 넘어간다.
+    _try("figN_plan_quality",
+         lambda: fig_plan_quality(df, llm_df, metric=metric, seed=seed))
+    _try("figO_assign_mode", lambda: fig_assign_mode(df, metric=metric, seed=seed))
     return made
 
 

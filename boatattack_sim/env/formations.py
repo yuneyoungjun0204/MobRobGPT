@@ -75,7 +75,9 @@ def spawn_enemies(cfg: SimConfig = DEFAULT_CONFIG, rng=None, mode: str = "random
         "random"       가장자리 무작위 분산
         "concentrated" 한 변에 집중 (한 방향 돌파)
         "wave"         두 변에서 시차 웨이브 (여기선 위치만; 시차는 위빙 phase로)
-        "diversionary" 다수 양동 + 소수 반대편
+        "diversionary" 세 방위에서 4/3/3 동시 도래 (기준 방위 +130°/+230°)
+                       ※ 예전 설명("다수 양동 + 소수 반대편")은 구현과 달라 정정했다.
+                          지금은 한쪽에 7척을 몰지 않고 고르게 나눈다 — 아래 구현 주석 참조.
     phase = 위빙 위상 (적별 상이).
     """
     rng = rng or np.random.default_rng(cfg.seed)

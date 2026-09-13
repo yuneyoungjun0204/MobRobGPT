@@ -149,7 +149,15 @@ class CommandedDefenseEnv(DefenseVecEnv):
     #   클래스 속성으로 두는 이유: super().__init__ 이 _compute_assignment / _rl_decide 를
     #   부를 수 있어 인스턴스 속성이면 초기화 순서에 따라 AttributeError 가 난다.
     assign_source: str = "llm"        # "llm"(계획 주입) | "heuristic"(시뮬 내장 배정)
+    #: 누적 통계 키. reset() -> reset_stats() 가 super().__init__ 안에서 먼저 불리므로
+    #  인스턴스 속성이면 AttributeError 가 난다 — 위와 같은 이유로 클래스 속성이다.
+    _SK: tuple = ("captures", "breaches", "ally_collisions", "nets_used")
     maneuver_source: str = "policy"   # "policy"(학습 정책) | "heuristic"(휴리스틱 기동)
+    #: ★ 배정 권한 = 코드가 LLM 계획을 얼마나 보완하는가. "llm"|"hybrid"|"code".
+    #   assign_source 와는 **다른 축**이다: assign_source 는 'LLM 계획을 쓰는가',
+    #   assign_mode 는 '쓴 계획을 코드가 손보는가'. 정의는 sim_bridge.plan_to_assign 참조.
+    #   assign_source="heuristic" 이면 계획 자체가 없으므로 이 값은 무시된다.
+    assign_mode: str = "llm"
 
     def __init__(self, ckpt: str, enemy_mode: str = "rotate", device: str = "cpu",
                  gain: float = 1.0, avoid_steer: bool = False):
@@ -174,7 +182,6 @@ class CommandedDefenseEnv(DefenseVecEnv):
         self._micro_ct = 0
         self._ev = None
         self.running = True
-        self._SK = ("captures", "breaches", "ally_collisions", "nets_used")
         self.stats = {k: 0 for k in self._SK + ("survived",)}
         self._sprev = {k: 0.0 for k in self._SK}
         self.resolve_conflicts = False  # 기본 OFF: 겹침/중복 판단은 LLM 이 담당(프롬프트). c 키로 코드 강제 ON
@@ -206,7 +213,7 @@ class CommandedDefenseEnv(DefenseVecEnv):
         if prev is not None:
             self._assign[0] = prev   # 연속성 기준 = 직전 배정(build_battlefield_defense 가 읽어 sticky)
         state = build_battlefield_defense(self, self._plan_command)
-        self._inject(plan_to_assign(self._plan, state))
+        self._inject(plan_to_assign(self._plan, state, mode=self.assign_mode))
         # 배별 그물 투척여부·레그·거리배율 (스키마 최소화 후엔 기본값; 구버전 필드 있으면 존중)
         deploy_by = {d.cluster_id: bool(getattr(d, "deploy_net", True)) for d in self._plan.deployments}
         legs_by = {d.cluster_id: getattr(d, "net_legs", None) for d in self._plan.deployments}
@@ -370,8 +377,7 @@ class CommandedDefenseEnv(DefenseVecEnv):
         if bool(self.done[0]):
             self._spawn_worlds(np.array([0])); self._micro_ct = 0; self._ev = None
             self._h = self._actor.init_hidden(self.P, self._device)
-            self.stats = {k: 0 for k in self._SK + ("survived",)}
-            self._sprev = {k: 0.0 for k in self._SK}
+            self.reset_stats()
         if self._micro_ct % self.cfg.decision_period == 0:
             self._rl_decide()
             self._sprev = {k: 0.0 for k in self._SK}     # ev 는 결정마다 새로 누적됨
@@ -381,9 +387,20 @@ class CommandedDefenseEnv(DefenseVecEnv):
         self._micro_ct += 1
         return self.get_frame()
 
+    def reset_stats(self) -> None:
+        """누적 통계를 0 으로. 에피소드 경계마다 불러야 한다.
+
+        stats 는 _ev 의 **델타를 누적**하는 구조라 저절로 0 이 되지 않는다.
+        reset(seed=...) 을 반복 호출하며 시드를 훑을 때 이걸 안 부르면 포획 수가
+        에피소드를 가로질러 쌓인다(실제로 10 -> 20 -> 29 로 늘어나는 걸 봤다).
+        """
+        self.stats = {k: 0 for k in self._SK + ("survived",)}
+        self._sprev = {k: 0.0 for k in self._SK}
+
     def reset(self, seed=None):
         super().reset(seed)                    # 배열 할당 + 스폰 (base)
         self._micro_ct = 0; self._ev = None
+        self.reset_stats()                     # ★ 에피소드 경계 — 통계도 함께 초기화
         if getattr(self, "_actor", None) is not None:
             self._h = self._actor.init_hidden(self.P, self._device)
 

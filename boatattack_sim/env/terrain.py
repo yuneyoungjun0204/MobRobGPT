@@ -653,13 +653,21 @@ def fetch_land_mask(lat, lon, world_m, zoom=13, open_k=2, margin_px=1,
 # ── 임의 해상도로 면적비 다운샘플 ─────────────────────────────────────
 
 def _frac_pool(a, n):
-    """[H,H] bool → [n,n] float, 블록 내 True 면적비."""
-    h = a.shape[0]
-    idx = np.arange(h) * n // h
+    """[H,W] bool → [n,n] float, 블록 내 True 면적비.
+
+    ★ 정사각을 가정하면 안 된다. 타일 모자이크를 박스로 자를 때 반올림 때문에
+      가로·세로가 1~3 px 어긋나는 해역이 있다(실측: 신안_홍도북 804x803,
+      거제_매물도동 802x803). 예전에는 h 하나로 인덱스를 만들어 그런 해역에서
+      "array is not broadcastable" 로 죽었고, 그 결과 KOREA_SITES 6곳 중 2곳이
+      쓰이지 못했다. 축마다 따로 비율 인덱스를 만든다.
+    """
+    h, w = a.shape[:2]
+    iy = np.arange(h) * n // h
+    ix = np.arange(w) * n // w
     s = np.zeros((n, n))
     c = np.zeros((n, n))
-    np.add.at(s, (idx[:, None], idx[None, :]), a.astype(np.float64))
-    np.add.at(c, (idx[:, None], idx[None, :]), 1.0)
+    np.add.at(s, (iy[:, None], ix[None, :]), a.astype(np.float64))
+    np.add.at(c, (iy[:, None], ix[None, :]), 1.0)
     return s / np.maximum(c, 1.0)
 
 

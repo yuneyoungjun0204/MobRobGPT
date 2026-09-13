@@ -4,16 +4,17 @@
 - 배치: **양단** `figure*[t]`, `width=0.94\textwidth` · 캔버스 **4200 x 1300 (3.2:1)**
 - 레지스터: **B (기하 집합 연산 도해)** · 렌더링 문자열 **5개**
 
-> 근거: `boatattack_sim/env/defense_env.py::_cnn_valid_mask` — 환형 ∩ 반경게이트 ∩
-> 방위게이트 ∩ Voronoi 분할. 육지는 base 에 포함되어 폴백에서도 되살아나지 않는다.
+> 근거: `boatattack_sim/env/defense_env.py::_cnn_valid_mask` — 환형 ∩ 육지제외 ∩ 반경게이트 ∩
+> 방위게이트. 학습 체크포인트는 `cnn_gate_disjoint=False`(겹침 허용 레짐)라 **Voronoi 분할을 쓰지
+> 않는다**. 본문 4.3.3 의 4단계(2500→1000→979→387→299)와 동일한 순서다.
 
 ---
 
 ## INSTRUCTION
 
 ### Image Purpose
-기동 계층의 행동공간이 어떻게 좁혀지는지를 보이는 도판. 요격 환형에서 출발해 요격점 기준
-반경, 배정 클러스터를 향한 방위 부채꼴, 그리고 방어정별 최근접 분할을 차례로 교집합하여
+기동 계층의 행동공간이 어떻게 좁혀지는지를 보이는 도판. 요격 환형에서 출발해 육지 제외, 요격점 기준
+반경, 배정 클러스터를 향한 방위 부채꼴을 차례로 교집합하여
 최종 후보 칸 집합이 나온다는 것을 좌에서 우로 잇는다. 마스크가 정책보다 먼저 행동을
 결정한다는 점이 이 도판의 논지다.
 
@@ -22,7 +23,7 @@
 이름은 하단 라벨 하나로 충분해야 한다.
 
 ### Key Message
-후보 영역은 환형·반경·방위·분할의 교집합으로 좁혀진다.
+후보 영역은 환형·육지제외·반경·방위의 교집합으로 좁혀진다.
 
 ### Scene Description
 A wide off-white canvas holds four square plan-view panels of identical size arranged left to right in
@@ -38,17 +39,17 @@ belong to the admissible set are filled with a flat light accent tint while all 
 left plain and additionally covered by a sparse forty-five degree hatch, so admissible and inadmissible
 regions are separated by hatch as well as by tint and survive greyscale printing. The first panel's
 admissible set is a wide annular band centred on the mothership, bounded by a thin inner circle and a
-thin outer circle, with one irregular closed landmass outline near a corner excluded from the set and
-carrying a denser stipple. The second panel's admissible set is a filled disc centred on the intercept
-point, drawn with a thin boundary circle and a thin dimension line with end ticks running from the
-intercept point to the boundary. The third panel's admissible set is a wedge opening outward from the
-mothership, symmetric about the straight line joining the mothership to the intercept point, that line
-drawn as a thin dashed axis and the wedge bounded by two thin straight rays with a small dimension arc
-spanning between them at their vertex. The fourth panel's admissible set is one cell of a partition of
-the whole region into three contiguous territories separated by thin straight boundary lines, with the
-defending vessel's own territory tinted and the other two territories plain and hatched, and a small
-angular vessel marker sitting inside each of the three territories so the partition visibly follows
-proximity to vessels. Between consecutive panels a small circle enclosing a centred intersection symbol
+thin outer circle, and an irregular closed landmass outline near one corner overlaps the band without
+yet being excluded from it. The second panel repeats the annular band but the landmass region is now
+cut out of the admissible set, drawn with a denser stipple inside its outline and hatched like every
+other inadmissible cell, so the only change between the first and second panels is the removal of the
+land. The third panel's admissible set is the intersection of that land-free band with a filled disc
+centred on the intercept point, the disc drawn with a thin boundary circle and a thin dimension line
+with end ticks running from the intercept point to the boundary. The fourth panel's admissible set is
+the further intersection with a wedge opening outward from the mothership, symmetric about the
+straight line joining the mothership to the intercept point, that line drawn as a thin dashed axis and
+the wedge bounded by two thin straight rays with a small dimension arc spanning between them at their
+vertex. Between consecutive panels a small circle enclosing a centred intersection symbol
 sits in the gutter. At the right end, after a slightly wider gutter containing a small circle enclosing
 an equals symbol, the result panel repeats the same grid and reference marks but its admissible set is
 the small sector-shaped patch that survives all four constraints, tinted and outlined with a slightly
@@ -66,16 +67,17 @@ image.
 - 코너/경계: 패널은 직각 정사각형. 집합 경계선만 곡선(원·호·부채꼴 변)을 갖는다.
 - 연결선: 연결 화살표를 쓰지 않는다. 대신 거터의 **교집합 연산자 기호**가 관계를 말한다.
   마지막 거터만 등호 기호를 쓴다.
-- 시각장식: 치수선 2개(반경 하나, 각도 호 하나)와 파선 축 1개. 그 외 장식 없음.
+- 시각장식: 치수선 2개(반경 하나, 각도 호 하나)와 파선 축 1개, 육지 스티플. 그 외 장식 없음.
 - 공간구성: 5패널 1행 균등 배치, 거터 폭 균일, 마지막 거터만 약간 넓다. 여백 15~25%.
-- 시각메타포: 네 개의 제약이 겹쳐 마지막 한 조각만 남는다. 남은 조각의 작음 자체가 논지다.
+- 시각메타포: 네 개의 제약이 순서대로 겹쳐 마지막 한 조각만 남는다. 둘째 패널은 첫째와
+  육지 한 덩어리만 다르므로, 그 미세한 차이가 '육지는 어떤 폴백에서도 되살아나지 않는다'를 말한다. 남은 조각의 작음 자체가 논지다.
 
 ### Content Placement
-좌측부터 각 패널 하단 중앙에 'Annulus', 'Range gate', 'Bearing gate', 'Voronoi' 를 소 라벨로
+좌측부터 각 패널 하단 중앙에 'Annulus', 'Land excluded', 'Range gate', 'Bearing gate' 를 소 라벨로
 차례로 배치한다. 맨 오른쪽 결과 패널 하단 중앙에 'Candidate cells' 를 중 라벨로 배치하여
 결과 패널만 한 단계 큰 라벨을 갖게 한다. 그 밖의 어떤 문자열도 렌더링하지 않는다.
-교집합 관계는 거터의 연산자 기호로만, 육지 제외는 스티플로만, 분할 기준은 territory 안의
-방어정 마커 위치로만 표현하고 글로 적지 않는다.
+교집합 관계는 거터의 연산자 기호로만, 육지 제외는 스티플과 해칭의 추가로만 표현하고 글로
+적지 않는다.
 
 ## CONFIGURATION
 
@@ -105,12 +107,13 @@ image.
 
 ## CONTENT
 step_1: "Annulus"
-step_2: "Range gate"
-step_3: "Bearing gate"
-step_4: "Voronoi"
+step_2: "Land excluded"
+step_3: "Range gate"
+step_4: "Bearing gate"
 result: "Candidate cells"
 
 ## FORBIDDEN ELEMENTS
+- Voronoi 분할, 방어정별 영역 분할선 — 학습 체크포인트는 겹침 허용 레짐이라 이 단계가 없다
 - 다섯 패널의 크기·격자·기준 마커 위치가 서로 달라지는 것
 - 패널 문자 마커: (a), (b), (c), (d)
 - 수식 표기: 집합 기호를 제외한 어떤 수식·그리스 문자·첨자도 금지

@@ -1,0 +1,29 @@
+% 자동 생성 — tools/make_paper_tables.py. 손으로 고치지 말 것.
+\begin{table*}[t]
+\centering
+\caption{2$\times$2 상호작용 분해 (Gemini 지휘관). 10개 지표 중 \textbf{9개}에서 상호작용 신뢰구간이 0 을 포함한다 --- 두 계층의 기여는 \textbf{가산적}이다.}
+\label{tab:interaction}
+\footnotesize
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{%
+\begin{tabular}{lccc}
+\toprule
+지표 & 총효과 & 상호작용 [95\,\% CI] & 판정 \\
+\midrule
+포획률 & +0.062 & -0.039 [-0.083, +0.012] & 가산 \\
+돌파 수 & -0.62 & +0.39 [-0.13, +0.83] & 가산 \\
+충돌률(척당) & -0.052 & -0.015 [-0.070, +0.022] & 가산 \\
+그물 걸림 & -0.60 & +0.17 [-0.08, +0.41] & 가산 \\
+포획당 그물 & -0.328 & +0.004 [-0.045, +0.059] & 가산 \\
+포획당 이동거리 (m) & -182 & -55 [-125, +30] & 가산 \\
+총 선회량 (rad) & -757 & -56 [-165, +59] & 가산 \\
+포획 이격거리 (m) & +223 & +38 [-2, +81] & 가산 \\
+평균 포획 시각 (step) & -22 & -12 [-20, -6] & 상쇄 \\
+전개 시 적 거리 (m) & -371 & +26 [-44, +109] & 가산 \\
+\bottomrule
+\end{tabular}
+}
+\\[3pt]
+\begin{minipage}{\linewidth}\footnotesize
+상호작용 $=$ (LLM+U-Net $-$ LLM+휴리스틱) $-$ (휴리스틱+U-Net $-$ baseline). 신뢰구간이 0 을 포함하면 두 계층이 서로를 돕지도 잡아먹지도 않는다.
+\end{minipage}
+\end{table*}

@@ -1,0 +1,126 @@
+%==============================================================================
+%  자폭 USV 군집 방어 — EAAI 투고용 한글 원고 (full paper)
+%
+%  이 파일은 SNAK 요약본(USV_swarm_defense_paper_CNN.tex)과 **별개**다.
+%  요약본은 방법 소개가 전부이고 결과 절이 없다. 이 원고는 EAAI(Engineering
+%  Applications of Artificial Intelligence)의 관례에 맞춰 검증을 무게중심으로 둔다:
+%  관련연구·문제정의·실험설계·결과·고찰·한계가 전부 신규다.
+%
+%  조판: 2단. 큰 표(전 지표 10행×6열)와 가로로 긴 결과 도판은 table*/figure* 로
+%       양단 걸침 처리한다. 표제·초록은 twocolumn[...] 으로 양단에 낸다.
+
+%
+%  컴파일: xelatex 3회 (상호참조 해결)
+%       xelatex USV_swarm_defense_EAAI_KR.tex
+%
+%  ★ 표는 손으로 쓰지 않는다. tools/make_paper_tables.py 가 results/eval_merged/
+%    의 CSV 에서 tables/*.tex 를 굽고 여기서 \input 한다. 평가를 다시 돌리면
+%    표가 자동으로 맞는다. 표 안의 숫자를 직접 고치면 원자료와 어긋난다.
+%==============================================================================
+\documentclass[10pt,twocolumn]{article}
+
+%------------------------------------------------------------------ 용지·판면
+\usepackage[papersize={210mm,297mm}, left=20mm, right=20mm,
+            top=22mm, bottom=22mm, columnsep=7mm]{geometry}
+
+%------------------------------------------------------------------ 한글 글꼴
+\usepackage{kotex}
+\usepackage{fontspec}
+% TeX Gyre Termes 는 TeX Live 에 항상 포함된다(시스템 폰트 의존 없음).
+% 한글은 함초롬바탕 — fc-list 로 설치 확인함. 없는 PC 에서는 {Batang} 으로 바꾼다.
+\setmainfont{TeX Gyre Termes}[Ligatures=TeX]
+% ★ 함초롬 계열에는 이탤릭 자형이 없다. AutoFakeSlant 를 주지 않으면 본문의
+%   \emph{강조} 한글이 조용히 정체로 떨어진다(로그: TU/HCRBatang(0)/m/it undefined).
+%   본문에서 \emph 로 논지를 구분하므로 반드시 필요하다.
+\setmainhangulfont{HCR Batang}[AutoFakeBold=2.0, AutoFakeSlant=0.2]
+\setsanshangulfont{HCR Dotum}[AutoFakeBold=2.0, AutoFakeSlant=0.2]
+
+%------------------------------------------------------------------ 패키지
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}          % \toprule 등 — tables/*.tex 가 요구한다
+\usepackage{array}
+\usepackage{multirow}          % 지표 표의 관점 열 병합
+\usepackage{rotating}          % 부록의 전면 가로 도판(sidewaysfigure*)
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+% ── float 배치 완화 ──────────────────────────────────────────────────────
+%   twocolumn 에서 figure* 는 정의된 쪽에 못 들어가고 다음 쪽 상단으로만 간다. 양단
+%   그림이 연달아 나오면 큐가 막혀 절 끝(또는 문서 끝)까지 밀린다 — 실제로 §4 본문
+%   (5–11쪽)의 그림 11장이 21–27쪽에 떨어졌다. 아래 세 가지로 푼다.
+\usepackage{dblfloatfix}        % figure* 를 쪽 하단에도 허용 + 순서 꼬임 방지
+\renewcommand{\topfraction}{0.92}
+\renewcommand{\bottomfraction}{0.70}
+\renewcommand{\dbltopfraction}{0.92}
+\renewcommand{\textfraction}{0.05}
+\renewcommand{\floatpagefraction}{0.75}
+\renewcommand{\dblfloatpagefraction}{0.75}
+\setcounter{topnumber}{3}
+\setcounter{dbltopnumber}{3}
+\setcounter{totalnumber}{5}
+\usepackage[section]{placeins}  % 절이 바뀌면 남은 float 를 먼저 흘려보낸다
+\usepackage{xcolor}
+\usepackage{setspace}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+
+% 한글 원고이므로 abstract 환경의 표제를 한글로. (article 클래스 기본은 "Abstract".)
+\renewcommand{\abstractname}{초\;\;록}
+
+\graphicspath{{figs_snak/}{../논문_그래프/}{../논문_그래프/1_조건비교/}%
+              {../논문_그래프/2_요약패널/}{../논문_그래프/3_계층효과/}%
+              {../논문_그래프/4_모델비교/}{../논문_그래프/5_구조도/}%
+              {../논문_그래프/7_메커니즘/}{../논문_그래프/8_논문판/}}
+
+\captionsetup{font=small, labelfont=bf, skip=6pt}
+\captionsetup[table]{position=above}
+\setstretch{1.06}
+\setlength{\parskip}{2pt}
+
+% 본문에서 반복되는 표기
+\newcommand{\capr}{\mathrm{CR}}                     % 포획률
+\newcommand{\dz}{d_z}
+% \ensuremath 로 감싸 본문·수식 어디서나 쓸 수 있게 한다. 감싸지 않으면 본문에서
+% "\mathrm allowed only in math mode" 로 컴파일이 깨진다.
+\newcommand{\unit}[1]{\ensuremath{\,\mathrm{#1}}}
+
+%==============================================================================
+\begin{document}
+
+\title{\bfseries 군집 자폭 수상 드론 방어를 위한\\
+LLM 기반 지휘체계와 U-Net 점수맵 기반\\
+다중 에이전트 협력 강화학습}
+
+\author{윤영준\thanks{충남대학교} \and 방현태\footnotemark[1] \and
+        전유라\thanks{한국과학기술원} \and 김덕환\footnotemark[2] \and
+        윤원근\footnotemark[1]}
+\date{}
+% 2단 조판에서 표제·초록은 양단 걸침으로 낸다. 좁은 단에 초록이 들어가면
+% 문단이 잘게 쪼개져 읽히지 않는다.
+\twocolumn[\begin{@twocolumnfalse}
+\maketitle
+\input{sections/00_abstract}
+\input{sections/00d_keywords_legacy}
+%% 하이라이트는 넣지 않는다 --- Elsevier 전용 요소이고, 이 자작 2단 조판본은
+%% 국내 논문 형식의 기준 원고다. EAAI 투고본(USV_swarm_defense_EAAI.tex)에는
+%% elsarticle 의 highlights 환경으로 들어가고, 별도 제출 파일은
+%% tools/make_highlights.py 가 논문초안/highlights.{txt,tex} 로 뽑는다.
+\vspace{8pt}
+\end{@twocolumnfalse}]
+\input{sections/01_intro}
+\input{sections/02_related}
+\input{sections/03_problem}
+\input{sections/04_method}
+\input{sections/05_experiment}
+\input{sections/06_results}
+\input{sections/07_discussion}
+\input{sections/08_limitations}
+\input{sections/09_conclusion}
+\input{sections/10_declarations}
+\input{sections/refs}
+% 영문 초록은 국내 논문 관례대로 맨 뒤.
+\input{sections/00b_abstract_en}
+
+\end{document}

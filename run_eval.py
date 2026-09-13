@@ -239,6 +239,12 @@ def main() -> int:
                          "= 배포 경로의 `--replan 25` 와 동일. >1 로 올리면 API 호출은 줄지만 "
                          "계획이 낡아 휴리스틱(매 결정 재계산) 대비 불리해진다 — "
                          "그 자체를 보려면 재계획 주기 ablation 으로 따로 돌릴 것")
+    ap.add_argument("--assign-mode", default="llm", choices=["llm", "hybrid", "code"],
+                    help="배정 권한 — 코드가 LLM 계획을 얼마나 보완하는가. "
+                         "llm(기본, 코드 보완 없음: 논문 본 조건) | "
+                         "hybrid(LLM 명시분 잠금 + 빈 클러스터만 코드가 채움) | "
+                         "code(모든 배정을 코드가 재최적화). "
+                         "여러 모드를 쉼표로 주면 모드마다 조건을 만들어 한 번에 비교한다.")
     ap.add_argument("--nets", type=int, default=3, help="배당 그물 수")
     ap.add_argument("--metric", default="capture_rate")
     ap.add_argument("--out", default="results/eval", help="CSV·표 저장 위치")
@@ -286,9 +292,14 @@ def main() -> int:
             recorders = {t: r for t, (_, r) in built.items()}
             # 휴리스틱 조건은 지휘관과 무관하므로 1벌만, LLM 조건은 지휘관마다 복제.
             conds = tuple(c for c in H.MATRIX_2x2 if c.assign != "llm")
+            # ★ 배정모드마다 조건을 복제한다. 모드는 '지휘관을 하나 더 쓴 것'과 같은
+            #   지위라 조건 key 의 @태그에 실린다(with_backend). 여러 모드를 한 실행에
+            #   넣어야 **같은 시드**로 대응비교가 되므로, 모드별 실행을 나누지 않는다.
+            modes = [m.strip() for m in str(args.assign_mode).split(",") if m.strip()]
             for b, mdl in specs:
-                conds += tuple(H.with_backend(c, b, mdl)
-                               for c in H.MATRIX_2x2 if c.assign == "llm")
+                for am in modes:
+                    conds += tuple(H.with_backend(c, b, mdl, am)
+                                   for c in H.MATRIX_2x2 if c.assign == "llm")
 
         n_ep = len(seeds) * len(forms) * len(conds)
         log(f"[eval] 조건 {len(conds)} × 포메이션 {len(forms)} × 시드 {len(seeds)} "
@@ -431,6 +442,20 @@ def main() -> int:
     log(f"[eval] 다지표 표 → {p}")
 
     # ── 그림 ──
+    # ★ 논문 도판 폴더 보호. --figdir 기본값이 논문_그래프 라, 다른 실험의 원자료로
+    #   돌리면 논문 도판이 그 데이터로 조용히 덮인다. 실제로 hybrid ablation 드라이버가
+    #   이 경로로 논문 도판을 덮어써, 논문의 표(eval_merged)와 그림(eval_hybrid)이 서로
+    #   다른 데이터를 가리킨 사고가 있었다(2026-09-07). 에러가 안 나고 그림만 바뀌므로
+    #   PDF 를 눈으로 보기 전까지 아무도 모른다.
+    _variant = sorted({c for c in df["condition"].unique()
+                       if "+hyb" in str(c) or "+code" in str(c)})
+    if _variant and os.path.basename(os.path.normpath(args.figdir)) == "논문_그래프":
+        log("[eval] ⚠ 논문 도판 폴더에 **배정모드 변형 조건**이 섞인 원자료로 그림을 "
+            "생성하려 합니다.")
+        log(f"[eval]   변형 조건: {', '.join(_variant)}")
+        log("[eval]   논문 도판은 results/eval_merged 기준으로만 생성해야 표와 일치합니다.")
+        log("[eval]   → 그림 생성을 건너뜁니다. 다른 --figdir 를 주고 다시 실행하세요.")
+        return 0
     log(f"[eval] 그림 생성 → {args.figdir}/")
     made = P.save_all(df, args.figdir, llm_df=llm_df, metric=args.metric,
                       verbose=not args.quiet)

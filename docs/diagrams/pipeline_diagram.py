@@ -7,8 +7,14 @@
 렌더:
     python docs/diagrams/pipeline_diagram.py
 출력:
-    docs/diagrams/mobrobgpt_pipeline.png   (상세, 7단계 전체 — 부록/포스터용)
-    docs/diagrams/mobrobgpt_overview.png   (요약, 발표 본문 슬라이드용)
+    docs/diagrams/mobrobgpt_pipeline.{png,pdf}   (상세, 7단계 전체 — 부록/포스터용)
+    docs/diagrams/mobrobgpt_overview.{png,pdf}   (요약, 발표 본문 슬라이드용)
+
+★ PDF_TOO — 논문에는 반드시 PDF 를 실을 것. Graphviz 의 **PNG 래스터라이저가 한글
+  글리프를 자리에 따라 잘못 고른다**: 같은 그림 안에서 "이동 WP + 그물벽" 은 정상인데
+  "그물 도색" 이 "그불 도색", "저수준 제어" 가 "저수순 제어" 로 나온다. 글꼴을 바꿔도
+  깨지는 글자만 달라진다(NanumGothic 에서는 "그룰"). SVG·PDF 출력의 텍스트는 정확하므로
+  PNG 는 미리보기용으로만 쓴다.
 
 수치 출처 — 창작 없음:
     boatattack_sim/models/u-net_map.pt (config)  … decision_period 25, arrive_radius 200,
@@ -46,7 +52,7 @@ EDGE = {"fontname": FONT, "fontsize": "10"}
 # 계층별 색 — project_ppt.md 의 2계층 구분과 같은 의미
 C_IN     = "#ECEFF1"   # 입력
 C_STATE  = "#E3F2FD"   # 전장상태
-C_LLM    = "#FFF3E0"   # 전략 계층 (느린 주기)
+C_LLM    = "#FFF3E0"   # 전략 계층 (지연이 큰 쪽)
 C_OBS    = "#F1F8E9"   # 관측
 C_POLICY = "#E8EAF6"   # 기동 계층 (학습 정책)
 C_CTRL   = "#FCE4EC"   # 저수준 제어
@@ -103,7 +109,9 @@ def build_detail():
             [clu, pre] >> Edge(color=E_ST) >> state
 
         # ── ③ 전략 계층 ────────────────────────────────────────────────
-        with Cluster("③  전략 계층 — LLM 지휘관\n느린 비동기 주기 (25 step)",
+        # ★ "느린 주기"라고 쓰지 말 것 — 두 판단 계층은 같은 25 step 주기다.
+        #   갈리는 것은 지연이다(14B 평균 16.6 s vs 순전파 1회).
+        with Cluster("③  전략 계층 — LLM 지휘관\n25 step 주기 · 비동기 (14B 지연 평균 16.6 s)",
                      graph_attr=_cl(C_LLM)):
             prompt = Document("prompts.py\n전술 원칙 9개\n출력 스키마")
             llm = Delay("LLM 지휘관\nollama / openai\ntemperature = 0\n구조적 JSON")
@@ -114,7 +122,7 @@ def build_detail():
             # prompt·fb 는 들어오는 엣지가 없어 rank 0 으로 밀린다 → ②와 상자가 겹친다.
             # 보이지 않는 엣지로 ② 뒤 대역에 고정한다.
             state >> Edge(style="invis") >> [prompt, fb]
-            state >> Edge(color=E_LLM, penwidth="2.2", label=" 느린 주기") >> llm
+            state >> Edge(color=E_LLM, penwidth="2.2", label=" 비동기 호출") >> llm
             prompt >> Edge(color=E_LLM, style="dashed") >> llm
             llm >> Edge(color=E_LLM, penwidth="2.2") >> plan
             fb >> Edge(color="#9E9E9E", style="dashed", label=" 폴백") >> plan
@@ -136,7 +144,9 @@ def build_detail():
             out >> Edge(color=E_LLM, penwidth="2.2", label=" 배정 주입") >> [smap, own, valid]
 
         # ── ⑤ 기동 계층 ────────────────────────────────────────────────
-        with Cluster("⑤  기동 계층 — U-Net 점수맵 정책 (강화학습)\nu-net_map.pt",
+        # 주기를 ③과 같이 명시한다. 한쪽에만 주기를 적으면 "다른 주기"로 읽힌다.
+        with Cluster("⑤  기동 계층 — U-Net 점수맵 정책 (강화학습)\n"
+                     "25 step 주기 · 동기 (배치 호출 1회) · u-net_map.pt",
                      graph_attr=_cl(C_POLICY)):
             unet = PredefinedProcess("UNetLite (w=32)\n+ CoordConv\n15 ch → key [32]/px")
             ctxn = Action("own_mlp(own) → ctx\nq_proj → q [32]")
@@ -191,7 +201,7 @@ def build_overview():
     g = dict(GRAPH); g["fontsize"] = "26"; g["ranksep"] = "1.35"; g["nodesep"] = "0.8"
     n = dict(NODE); n["fontsize"] = "13"
     with Diagram(
-        "판단 주기가 다른 2계층 — 전략(LLM) / 기동(강화학습)",
+        "판단 지연이 다른 2계층 — 같은 25 step 주기, 다른 응답 시간",
         filename=os.path.join(OUT, "mobrobgpt_overview"),
         outformat="png", show=False, direction="LR",
         graph_attr=g, node_attr=n, edge_attr=EDGE,
@@ -199,23 +209,27 @@ def build_overview():
         src = InputOutput("입력\nGPS · IMU · 적 탐지\n(또는 시뮬 물리)")
         st = Document("전장상태\n무리 분할 + 기하 선계산")
 
-        with Cluster("전략 계층 — 느린 비동기 (25 step)", graph_attr=_cl(C_LLM)):
+        with Cluster("전략 계층 — 25 step 주기 · 비동기 (지연 평균 16.6 s)",
+                     graph_attr=_cl(C_LLM)):
             llm = Delay("LLM 지휘관\n어느 배 → 어느 무리\nHOLD 판단")
             asg = InputOutput("_assign [P]\n−1 = HOLD")
             llm >> Edge(color=E_LLM, penwidth="2.4") >> asg
 
-        with Cluster("기동 계층 — 매 결정 스텝", graph_attr=_cl(C_POLICY)):
+        with Cluster("기동 계층 — 25 step 주기 · 동기 (배치 호출 1회)",
+                     graph_attr=_cl(C_POLICY)):
             obs = InputOutput("래스터 관측\n15 ch × 50 × 50")
             pol = PredefinedProcess("U-Net 점수맵 정책\n픽셀 2점 지목")
             wp = InputOutput("경유점 route\n이동 WP + 그물벽")
             obs >> Edge(color=E_POL, penwidth="2.4") >> pol
             pol >> Edge(color=E_POL, penwidth="2.4") >> wp
 
-        ctrl = Action("저수준 제어\nPD 조타 6.0 m/s\n그물 도색 450 m")
+        # ★ 세 번째 시간척도를 명시한다. 두 판단 계층은 25 step 으로 같고, 제어만
+        #   매 tick(1 s)이다 — 이걸 안 적으면 "계층마다 주기가 다르다"는 오해가 남는다.
+        ctrl = Action("저수준 제어 — 매 tick (1 s)\nPD 조타 6.0 m/s\n그물 도색 450 m")
         act = InputOutput("액추에이터\n/ally_i/waypoints\n또는 시뮬 물리")
 
         src >> Edge(color=E_IN, penwidth="2.4") >> st
-        st >> Edge(color=E_LLM, penwidth="2.4", label=" 느린 주기") >> llm
+        st >> Edge(color=E_LLM, penwidth="2.4", label=" 비동기 호출") >> llm
         st >> Edge(color=E_OBS, style="dashed") >> obs
         asg >> Edge(color=E_LLM, penwidth="2.4", label=" 배정 주입") >> obs
         wp >> Edge(color=E_CTL, penwidth="2.4") >> ctrl

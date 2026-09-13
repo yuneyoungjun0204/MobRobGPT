@@ -80,7 +80,6 @@ class CommandedCnnEnv(CommandedDefenseEnv):
         self._micro_ct = 0
         self._ev = None
         self.running = True
-        self._SK = ("captures", "breaches", "ally_collisions", "nets_used")
         self.stats = {k: 0 for k in self._SK + ("survived",)}
         self._sprev = {k: 0.0 for k in self._SK}
         self.resolve_conflicts = False         # 겹침은 학습 레짐이 허용(joint 잠금 안 씀)

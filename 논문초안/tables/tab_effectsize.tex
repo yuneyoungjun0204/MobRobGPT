@@ -1,0 +1,29 @@
+% 자동 생성 — tools/make_paper_tables.py. 손으로 고치지 말 것.
+\begin{table*}[t]
+\centering
+\caption{전 지표 효과크기 (제안 = LLM 지휘관 + U-Net 점수맵, Gemini). $|d_z|$ 내림차순. \textbf{포획률이 가장 둔한 지표이며, 다중비교 보정에서 유의성을 잃는 유일한 방어 성과 지표다.}}
+\label{tab:effectsize}
+\footnotesize
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+지표 & 방향 & baseline & 제안 & $\Delta$ & $d_z$ \\
+\midrule
+총 선회량 (rad) & $\downarrow$ & 1625 & 868 & -757$^{*}$$^{\dagger}$ & -3.23 \\
+포획당 그물 & $\downarrow$ & 0.737 & 0.409 & -0.328$^{*}$$^{\dagger}$ & -2.09 \\
+포획 이격거리 (m) & $\uparrow$ & 1511 & 1734 & +223$^{*}$$^{\dagger}$ & +1.81 \\
+전개 시 적 거리 (m) & $\downarrow$ & 1499 & 1128 & -371$^{*}$$^{\dagger}$ & -1.60 \\
+그물 걸림 & $\downarrow$ & 0.82 & 0.22 & -0.60$^{*}$$^{\dagger}$ & -1.19 \\
+평균 포획 시각 (step) & $\downarrow$ & 430 & 408 & -22$^{*}$$^{\dagger}$ & -1.04 \\
+포획당 이동거리 (m) & $\downarrow$ & 825 & 643 & -182$^{*}$$^{\dagger}$ & -0.65 \\
+충돌률(척당) & $\downarrow$ & 0.130 & 0.078 & -0.052$^{*}$$^{\dagger}$ & -0.52 \\
+돌파 수 & $\downarrow$ & 1.56 & 0.93 & -0.62$^{*}$ & -0.44 \\
+포획률 & $\uparrow$ & 0.844 & 0.907 & +0.062$^{*}$ & +0.44 \\
+\bottomrule
+\end{tabular}
+}
+\\[3pt]
+\begin{minipage}{\linewidth}\footnotesize
+방향 $\uparrow$ = 높을수록 좋음, $\downarrow$ = 낮을수록 좋음. $^{*}$ 95\,\% 신뢰구간이 0 을 포함하지 않음. $^{\dagger}$ 지표 10개에 대한 Bonferroni 보정(99.5\,\% 구간)에서도 0 을 배제함 --- 즉 단검이 없는 행은 보정을 견디지 못한다.
+\end{minipage}
+\end{table*}

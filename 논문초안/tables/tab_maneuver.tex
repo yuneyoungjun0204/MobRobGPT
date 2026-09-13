@@ -1,0 +1,23 @@
+% 자동 생성 — tools/make_paper_tables.py. 손으로 고치지 말 것.
+\begin{table*}[t]
+\centering
+\caption{기동 계층(U-Net 점수맵 + GRPO)의 단독 기여. 두 조건 모두 배정은 휴리스틱이며 \textbf{LLM 을 전혀 사용하지 않는다} --- 따라서 이 결과는 외부 API 에 의존하지 않고 재현 가능하다. 파상 포메이션에서 가장 크다.}
+\label{tab:maneuver}
+\footnotesize
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{%
+\begin{tabular}{lcccc}
+\toprule
+포메이션 & 휴리스틱 기동 & U-Net 기동 & $\Delta$ [95\,\% CI] & $d_z$ \\
+\midrule
+집중 & 0.997 & 0.997 & +0.000 [-0.010, +0.010] & +0.00 \\
+양동 & 0.787 & 0.753 & -0.033 [-0.077, +0.000] & -0.31 \\
+파상 & 0.750 & 0.907 & +0.157 [+0.043, +0.270]$^{*}$ & +0.48 \\
+\textbf{전체} & 0.844 & 0.886 & +0.041 [+0.003, +0.082]$^{*}$ & +0.37 \\
+\bottomrule
+\end{tabular}
+}
+\\[3pt]
+\begin{minipage}{\linewidth}\footnotesize
+$^{*}$ 신뢰구간이 0 을 포함하지 않음. 전체 행은 3개 포메이션 통합.
+\end{minipage}
+\end{table*}

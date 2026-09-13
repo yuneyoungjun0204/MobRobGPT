@@ -1,0 +1,42 @@
+%==============================================================================
+%  Highlights — Elsevier **별도 제출 파일**
+%
+%  원고(PDF 앞쪽 별쪽)와 별개로 투고 시스템에 올리는 항목이다.
+%  ★ 손으로 고치지 말 것 — tools/make_highlights.py 가 원고에서 생성한다.
+%    원고를 고친 뒤 그 스크립트를 다시 돌리면 여기도 따라온다.
+%  컴파일: xelatex highlights.tex
+%==============================================================================
+\documentclass[11pt]{article}
+\usepackage[a4paper, margin=25mm]{geometry}
+\usepackage{kotex}
+\usepackage{fontspec}
+\setmainfont{TeX Gyre Termes}[Ligatures=TeX]
+\setmainhangulfont{HCR Batang}[AutoFakeBold=2.0, AutoFakeSlant=0.2]
+\usepackage{enumitem}
+\pagestyle{empty}
+\begin{document}
+
+\noindent{\Large\bfseries Highlights}
+
+\vspace{4pt}
+\begin{itemize}[leftmargin=1.2em, itemsep=3pt, topsep=4pt]
+\item Two judgment layers share one 25 s period; only the slow one is decoupled
+\item Pointing at score-map pixels keeps the action space invariant to swarm size
+\item Critic-free group relative optimization with counterfactual credit assignment
+\item Across 720 paired episodes the two layers are additive in 9 of 10 metrics
+\item Commander skill is explained by plan stability, not assignment coverage
+\end{itemize}
+
+\vspace{18pt}
+\noindent{\large\bfseries 연구 하이라이트}\;{\small (국문 원고 기준 --- 참고용)}
+
+\vspace{4pt}
+\begin{itemize}[leftmargin=1.2em, itemsep=3pt, topsep=4pt]
+\item 같은 25초 주기의 두 판단 계층을 지연 차이만으로 비동기 분리한 방어 체계
+\item 점수맵 픽셀 지목으로 행동공간을 격자에 가둔, 적선 수에 불변인 협동 정책
+\item 가치망 없는 그룹 상대 최적화와 반사실적 크레딧으로 다중 방어정 협동 학습
+\item 720 에피소드 대응표본 분해 결과 두 계층의 기여는 10지표 중 9지표에서 가산적
+\item 지휘관 성능은 배정 커버리지가 아니라 재계획 간 계획 안정성이 설명한다
+\end{itemize}
+
+\end{document}

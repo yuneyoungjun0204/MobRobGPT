@@ -1,0 +1,58 @@
+%============================================================ 영문 표제·초록
+%  EAAI 는 영문 저널이다. 이 한글 원고는 투고본의 기준 원고이므로, 번역 단계에서
+%  용어와 수치가 흔들리지 않도록 영문 제목·초록·주제어를 여기에 고정해 둔다.
+%  ★ 수치는 국문 초록과 한 글자도 다르면 안 된다 — tools/check_abstract_numbers.py 가 대조한다.
+%  ★ 이 파일은 투고 원고에 들어가지 않는다 — elsarticle 에는 본문 뒤 제2 초록에
+%    대응하는 요소가 없다. 독립 문서 영문초록_translation_reference.tex 가 읽는다.
+
+\section*{English Abstract}
+\addcontentsline{toc}{section}{English Abstract}
+
+% 14.4pt 볼드 한 줄로는 판면을 넘는다. 줄바꿈을 손으로 준다.
+\noindent\textbf{\large LLM-Based Command Architecture and U-Net Score-Map\\
+Multi-Agent Cooperative Reinforcement Learning\\
+for Defense Against Suicide USV Swarms}
+
+\vspace{4pt}
+\noindent
+Suicide unmanned surface vehicle (USV) swarms resist conventional counters: electronic warfare
+cannot reach wire-guided targets, and interception spends a missile costlier than its target.
+We adopt physical capture: defense boats slower than the attackers
+pre-block the mothership approach corridor with net walls. Two layers update on the
+\emph{same} decision period but differ sharply in \emph{response latency}, so only the slow
+layer is decoupled asynchronously. The maneuver layer
+rasterizes the battlefield into a mothership-centered 15 channel grid; a FiLM-conditioned U-Net
+emits a score map; each boat points at two high-scoring pixels in its valid region and
+lays a net wall between them. Pixel pointing keeps the action space
+grid-regularized and the input invariant to swarm size.
+Training extends critic-free group relative policy optimization to the multi-agent case,
+with counterfactual credit assignment separating individual contribution. In the strategy layer a large language model (LLM) commander
+assigns boats to enemy clusters from pre-computed geometry, with no combinatorial
+post-optimization.
+
+\vspace{4pt}
+\noindent
+We collected 720 seed-paired episodes: 8 conditions $\times$ 3 formations $\times$ 30 seeds.
+The maneuver layer alone raised capture rate from $0.844$ to $0.886$ ($+0.157$ under wave),
+while the strategy layer split by model --- a cloud model gained $+0.060$, whereas Qwen2.5 7B
+was significantly \emph{worse} than the heuristic at $-0.192$. In a $2\times2$ decomposition
+over 10 metrics, 9 interaction intervals contained $0$: the layers are \emph{additive}, not
+synergistic. Under Bonferroni correction capture rate and breaches lose significance; the
+other 8 metrics hold. The capture-rate effect size ($d_z = 0.44$) ranked lowest of the 10, far below
+total turning ($-3.23$) and nets per capture ($-2.09$). Commander skill tracked plan stability
+across replans, not assignment coverage.
+
+\vspace{4pt}
+\noindent\textbf{Keywords}\;:\;
+unmanned surface vehicle; swarm defense; multi-agent reinforcement learning; task assignment;
+large language model; semantic segmentation; group relative policy optimization
+
+\vspace{6pt}
+\noindent\textbf{Highlights}
+\begin{itemize}[leftmargin=1.1em, itemsep=1pt, topsep=2pt, parsep=0pt]
+\item Two judgment layers share one 25 s period; only the slow one is decoupled
+\item Pointing at score-map pixels keeps the action space invariant to swarm size
+\item Critic-free group relative optimization with counterfactual credit assignment
+\item Across 720 paired episodes the two layers are additive in 9 of 10 metrics
+\item Commander skill is explained by plan stability, not assignment coverage
+\end{itemize}

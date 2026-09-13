@@ -1,0 +1,167 @@
+%==============================================================================
+%  자폭 USV 군집 방어 — EAAI 투고본 (Elsevier elsarticle 공식 클래스)
+%
+%  이 파일은 USV_swarm_defense_EAAI_KR.tex(자작 2단 조판)를 대체한다.
+%  본문·표·도판(sections/, tables/, figs_snak/)은 그대로 재사용하므로
+%  내용은 한 글자도 잃지 않는다. 바뀌는 것은 조판 규약뿐이다.
+%
+%  왜 클래스를 바꾸나
+%      Elsevier 는 투고 원고를 elsarticle 로 조판할 것을 요구하고, 그 클래스가
+%      frontmatter 의 순서·필드·환경을 강제한다. 자작 조판으로 겉모습만 흉내내면
+%      \affiliation 키-값, highlights 환경, keyword \sep 같은 규약이 어긋난다.
+%
+%  근거 문서 (전부 로컬 TeX Live, Elsevier 자신이 배포하는 것)
+%      c:/texlive/2026/texmf-dist/doc/latex/elsarticle/elsdoc.pdf         매뉴얼
+%      c:/texlive/2026/texmf-dist/doc/latex/elsarticle/elsarticle-template-num.tex
+%      c:/texlive/2026/texmf-dist/tex/latex/elsarticle/elsarticle.cls
+%      (context7 에는 Elsevier/elsarticle 항목이 없다 — 3회 검색 무소득.)
+%
+%  ── 판(版) 네 가지 · tools/build_paper.sh 가 한 번에 굽는다 ────────────────
+%  ① submission(기본) [preprint,12pt]            실제로 제출하는 형태(단단)
+%  ② review           [review,12pt] + 행번호     심사용. 행간을 넓히고 lineno 를 켠다
+%  ③ journal          [final,5p,times,twocolumn] EAAI 지면에 실린 모습
+%  ④ authoryear       [preprint,authoryear,12pt] 저자-연도 인용 확인용
+%       원본 .tex 는 건드리지 않고 클래스 옵션만 바꾼 사본을 굽는다.
+%
+%  ── 인용 방식 ─────────────────────────────────────────────────────────────
+%  ★ 기본은 numbered(대괄호 번호)다 — elsarticle 의 기본이자 Elsevier 공학 저널의
+%    다수 관행이다. authoryear 로 바꾸려면 클래스 옵션에 authoryear 를 넣으면 된다.
+%    참고문헌은 \bibitem[저자(연도)]{키} 형식으로 두어 **두 모드 모두에서** 동작한다.
+%    ⚠ EAAI 의 실제 지정 스타일은 저널의 Guide for Authors 에서 확인할 것.
+%      오프라인에서 확정할 수 없어 전환을 한 줄로 만들어 두었다.
+%    ★ 스타일을 바꾸면 **참고문헌 순서도 바꿔야 한다.** 수동 thebibliography 는
+%      \bibitem 의 물리적 순서가 곧 번호이기 때문이다:
+%          numbered   → 최초 인용 순    python tools/sort_refs.py --order cite
+%          authoryear → 알파벳 순       python tools/sort_refs.py --order alpha
+%      tools/check_elsarticle.py 가 옵션을 읽어 맞는 순서인지 검사한다.
+%
+%  컴파일: xelatex 3회 (한글 — kotex/fontspec 이라 pdflatex 으로는 PDF 가 안 나온다)
+%
+%  ★ 표는 손으로 쓰지 않는다. tools/make_paper_tables.py 가 results/eval_merged/
+%    의 CSV 에서 tables/*.tex 를 굽고 여기서 \input 한다.
+%==============================================================================
+\documentclass[preprint,12pt]{elsarticle}
+% 게재본 모양으로 보려면 위 줄 대신:
+% \documentclass[final,5p,times,twocolumn]{elsarticle}
+% 저자-연도 인용으로 바꾸려면 옵션에 authoryear 를 추가:
+% \documentclass[preprint,authoryear,12pt]{elsarticle}
+
+%------------------------------------------------------------------ 한글 글꼴
+% elsarticle 은 natbib·graphicx·geometry 를 이미 불러온다. 여기서는 한글만 얹는다.
+\usepackage{kotex}
+\usepackage{fontspec}
+% TeX Gyre Termes 는 TeX Live 에 항상 포함된다(시스템 폰트 의존 없음).
+\setmainfont{TeX Gyre Termes}[Ligatures=TeX]
+% ★ 함초롬 계열에는 이탤릭 자형이 없다. AutoFakeSlant 를 주지 않으면 본문의
+%   \emph{강조} 한글이 조용히 정체로 떨어진다. 본문이 \emph 로 논지를 구분하므로 필수다.
+\setmainhangulfont{HCR Batang}[AutoFakeBold=2.0, AutoFakeSlant=0.2]
+\setsanshangulfont{HCR Dotum}[AutoFakeBold=2.0, AutoFakeSlant=0.2]
+
+%------------------------------------------------------------------ 패키지
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}          % \toprule 등 — tables/*.tex 가 요구한다
+\usepackage{array}
+\usepackage{multirow}          % 지표 표의 관점 열 병합
+\usepackage{rotating}          % 부록의 전면 가로 도판
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+% ── 심사용 행번호 (1/2) ────────────────────────────────────────────────────
+%  공식 템플릿은 패키지만 preamble 에 두고, 행번호를 켜는 명령은 frontmatter 를
+%  닫은 뒤에 둔다(elsarticle-template-num.tex:47-50 과 :139-143). 그래야 표제·초록에
+%  번호가 붙지 않고 본문이 1행부터 시작한다 --- 심사자가 행번호로 지적을 달기 때문에
+%  이 차이가 실질적이다. tools/build_paper.sh 의 review 판이 주석을 푼다.
+% \usepackage{lineno}
+
+% 표 캡션은 위에 둔다(Elsevier 관행).
+\usepackage{caption}
+\captionsetup[table]{position=above}
+
+\graphicspath{{figs_snak/}{../논문_그래프/}{../논문_그래프/1_조건비교/}%
+              {../논문_그래프/2_요약패널/}{../논문_그래프/3_계층효과/}%
+              {../논문_그래프/4_모델비교/}{../논문_그래프/5_구조도/}%
+              {../논문_그래프/7_메커니즘/}{../논문_그래프/8_논문판/}}
+
+% 본문에서 반복되는 표기
+\newcommand{\capr}{\mathrm{CR}}                     % 포획률
+\newcommand{\dz}{d_z}
+% \ensuremath 로 감싸 본문·수식 어디서나 쓸 수 있게 한다. 감싸지 않으면 본문에서
+% "\mathrm allowed only in math mode" 로 컴파일이 깨진다.
+\newcommand{\unit}[1]{\ensuremath{\,\mathrm{#1}}}
+
+\journal{Engineering Applications of Artificial Intelligence}
+
+%==============================================================================
+\begin{document}
+
+\begin{frontmatter}
+
+%% ── 제목 ────────────────────────────────────────────────────────────────
+\title{군집 자폭 수상 드론 방어를 위한 LLM 기반 지휘체계와 U-Net 점수맵 기반
+       다중 에이전트 협력 강화학습}
+
+%% ── 저자와 소속 ─────────────────────────────────────────────────────────
+%% Elsevier 규약: \affiliation 은 키-값 형식이며 구식 \address 를 쓰지 않는다.
+\author[cnu]{윤영준\corref{cor1}}
+\ead{yyeongjun530@gmail.com}
+\cortext[cor1]{교신저자}
+
+\author[cnu]{방현태}
+\author[kaist]{전유라}
+\author[kaist]{김덕환}
+\author[cnu]{윤원근}
+
+\affiliation[cnu]{organization={충남대학교},
+                  city={대전},
+                  country={대한민국}}
+
+\affiliation[kaist]{organization={한국과학기술원},
+                    city={대전},
+                    country={대한민국}}
+
+%% ── 초록 ────────────────────────────────────────────────────────────────
+\input{sections/00_abstract}
+
+%% ── 연구 하이라이트 ─────────────────────────────────────────────────────
+%% elsarticle 의 highlights 환경. 항목당 공백 포함 85자 이내(Elsevier 지침).
+\input{sections/00c_highlights}
+
+%% ── 주제어 ──────────────────────────────────────────────────────────────
+\input{sections/00d_keywords}
+
+\end{frontmatter}
+
+%% ── 심사용 행번호 (2/2) ──────────────────────────────────────────
+%% 템플릿과 같은 자리다. 여기서 켜야 본문이 1행부터 번호가 붙는다.
+% \linenumbers
+
+%==============================================================================
+\input{sections/01_intro}
+\input{sections/02_related}
+\input{sections/03_problem}
+\input{sections/04_method}
+\input{sections/05_experiment}
+\input{sections/06_results}
+\input{sections/07_discussion}
+\input{sections/08_limitations}
+\input{sections/09_conclusion}
+
+%% Elsevier 규약: 선언문은 본문 뒤·참고문헌 앞.
+\input{sections/10_declarations}
+
+%% 공식 템플릿(elsarticle-template-num.tex 말미)은 \appendix 블록을
+%% \begin{thebibliography} **앞**에 둔다. 그 순서를 따른다.
+%% 부록(채널 분해·파이프라인 도판)은 2026-09-11 본문 §4.3.1 로 흡수되어 파일이 삭제됨.
+% \input{sections/99_appendix}
+
+\input{sections/refs}
+
+%% ★ 영문 초록을 여기에 두지 않는다.
+%%   elsarticle 에는 본문 뒤 제2 초록에 대응하는 요소가 없다 — 초록은 frontmatter 의
+%%   abstract 환경 하나뿐이다. 번역 기준으로 쓰는 영문 초록은 독립 문서로 분리했다:
+%%       논문초안/영문초록_translation_reference.tex
+
+\end{document}

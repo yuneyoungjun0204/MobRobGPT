@@ -1,0 +1,28 @@
+% 자동 생성 — tools/make_paper_tables.py. 손으로 고치지 말 것.
+\begin{table*}[t]
+\centering
+\caption{조건별 포획률. 평균과 부트스트랩 95\,\% 신뢰구간, baseline 대비 대응표본 차이. 3개 포메이션 통합(각 조건 30시드).}
+\label{tab:main}
+\footnotesize
+\setlength{\tabcolsep}{4pt}%
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{%
+\begin{tabular}{llccc}
+\toprule
+지휘관(배정) & 기동 & 포획률 [95\,\% CI] & $\Delta$ vs baseline & $d_z$ \\
+\midrule
+휴리스틱 (baseline) & 휴리스틱 & 0.844 [0.808, 0.880] & --- & --- \\
+휴리스틱 & U-Net 점수맵 & 0.886 [0.847, 0.918] & +0.041 [+0.003, +0.082]$^{*}$ & +0.37 \\
+Qwen2.5 7B & 휴리스틱 & 0.652 [0.571, 0.716] & -0.192 [-0.264, -0.129]$^{*}$ & -1.00 \\
+Qwen2.5 14B & 휴리스틱 & 0.811 [0.766, 0.854] & -0.033 [-0.086, +0.017] & -0.23 \\
+Gemini 3.5 Flash-Lite & 휴리스틱 & 0.904 [0.864, 0.937] & +0.060 [+0.024, +0.100]$^{*}$ & +0.56 \\
+Qwen2.5 7B & U-Net 점수맵 & 0.641 [0.582, 0.693] & -0.203 [-0.274, -0.138]$^{*}$ & -1.03 \\
+Qwen2.5 14B & U-Net 점수맵 & 0.754 [0.698, 0.806] & -0.090 [-0.153, -0.033]$^{*}$ & -0.54 \\
+Gemini 3.5 Flash-Lite & U-Net 점수맵 & 0.907 [0.869, 0.937] & +0.062 [+0.013, +0.113]$^{*}$ & +0.44 \\
+\bottomrule
+\end{tabular}
+}
+\\[3pt]
+\begin{minipage}{\linewidth}\footnotesize
+$^{*}$ 신뢰구간이 0 을 포함하지 않음. $d_z$ 는 대응표본 효과크기. 첫 두 열이 $2\times2$ 설계의 두 축이다 --- 같은 지휘관 행 두 개를 비교하면 기동 계층의 기여가, 같은 기동 열을 비교하면 지휘관의 기여가 나온다. Qwen2.5 는 로컬(단일 RTX 4070) 서빙, Gemini 는 클라우드 API 다.
+\end{minipage}
+\end{table*}

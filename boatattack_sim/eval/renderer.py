@@ -41,7 +41,10 @@ C = {
 }
 
 # painted 격자용 컬러맵 (0=투명, 1=보라)
-_PAINT_CMAP = ListedColormap([(0, 0, 0, 0), (0.49, 0.34, 0.76, 0.55)])
+#   ★ 위성 배경 위에서는 알파가 낮으면 그물이 사진에 묻혀 안 보인다.
+#     그물은 이 시스템의 실제 무기라 화면에서 가장 또렷해야 한다 → 0.55 -> 0.88.
+NET_ALPHA = 0.88
+_PAINT_CMAP = ListedColormap([(0, 0, 0, 0), (0.42, 0.26, 0.72, NET_ALPHA)])
 
 # 클러스터 색 팔레트 (섹터 / 배정선 공유 → 어느 배가 어느 클러스터를 맡았나 한눈에)
 _CLUSTER_PALETTE = ["#FF8A65", "#BA68C8", "#4FC3F7", "#FFD54F", "#81C784", "#F06292"]
@@ -190,7 +193,8 @@ def draw_clusters(ax, fd: dict, z=4.5):
         cx, cy = mem[:, 0].mean(), mem[:, 1].mean()
         ax.scatter([cx], [cy], marker="x", s=70, c=col, linewidths=2, zorder=z + 0.2)
         ax.text(cx, cy, f"C{k} ×{int(cnt[k])}", color=col, fontsize=8,
-                ha="center", va="bottom", fontweight="bold", zorder=z + 0.2)
+                ha="center", va="bottom", fontweight="bold", zorder=z + 0.2,
+                clip_on=True)
 
 
 def draw_assignment(ax, fd: dict, z=4.7):
@@ -457,12 +461,13 @@ def draw_scene(ax, fd: dict, bg_img=None, bg_extent=None, show_help: bool = True
                     if k == 0 and (i == sel or (sel < 0 and i == 0)):   # 대표 배 첫 WP 라벨
                         ax.text(w["x"] + rmax, w["y"] + rmax,
                                 f"action range +-{rmax:.0f}m", color=C["residual"],
-                                fontsize=7, fontweight="bold", va="bottom", ha="left", zorder=6)
+                                fontsize=7, fontweight="bold", va="bottom", ha="left",
+                                zorder=6, clip_on=True)
                 # ★ WP 마커 = 파란/시안 '별'(그물 WP=초록 별). GIF 시점 디자인 복원(빨간 원 → 별).
                 ax.scatter([w["x"]], [w["y"]], marker="*", s=80, c=col,
                            edgecolors="white", linewidths=0.5, zorder=4)
                 ax.text(w["x"], w["y"], f"  {k+1}", color=col, fontsize=7,
-                        va="center", ha="left", zorder=4,
+                        va="center", ha="left", zorder=4, clip_on=True,
                         fontweight="bold" if w["paint"] else "normal")
         # 선박 (비활성=충돌로 격침된 아군은 회색·반투명)
         alive_i = True if alive is None else bool(alive[i])
@@ -480,7 +485,7 @@ def draw_scene(ax, fd: dict, bg_img=None, bg_extent=None, show_help: bool = True
         else:
             tag = f"#{i} ✖"
         ax.text(x, y + fd["ship_len"] * 0.7, tag, color=face, fontsize=6,
-                ha="center", va="bottom", zorder=9)
+                ha="center", va="bottom", zorder=9, clip_on=True)
 
     # 클로즈업 캠 모드: HUD/도움말 없이 씬만. 호출측(_draw_cam)이 타이틀/테두리 처리.
     if minimap:
@@ -631,14 +636,31 @@ def _draw_cam(ax, fd, view, bg_img=None, bg_extent=None):
         s.set_color(col); s.set_linewidth(1.6)
 
 
-def setup_panels(fig):
-    """메인 ax 위 오버레이 패널 3개 생성 후 dict 반환.
-      brief(좌상단 전장 상황판) / cam_enemy(우상단 모선근접 적 클러스터 캠) /
-      cam_ally(우상단 적근접 아군 캠)."""
+def setup_panels(fig, scene_ax=None, *, band_h: float = 0.215, pad: float = 0.012):
+    """씬 axes 위쪽에 오버레이 패널 3개를 만들어 dict 로 돌려준다.
+      brief(좌 전장 상황판) / cam_enemy(모선근접 적 클러스터 캠) / cam_ally(적근접 아군 캠).
+
+    `scene_ax` 를 주면 **그 axes 의 bbox 안쪽**에 배치한다 — 패널이 씬 밖으로 나가
+    옆 패널(지휘관 패널 등)을 덮는 일이 없다. 좌표를 절대값으로 박아두면 씬 크기가
+    다른 호출자마다 어긋난다(실제로 예전 고정 좌표는 cam_ally 가 x=0.975 까지 뻗어
+    run_commander_ui 의 지휘관 패널 위로 올라탔다).
+
+    `scene_ax=None` 이면 figure 전체를 씬으로 보고 배치한다.
+    """
+    if scene_ax is not None:
+        bb = scene_ax.get_position()
+        x0, x1, y1 = bb.x0, bb.x1, bb.y1
+    else:
+        x0, x1, y1 = 0.0, 1.0, 1.0
+    w = x1 - x0
+    y = y1 - band_h - pad
+    # 좌: 브리핑(약간 좁게) / 우: 캠 2개를 오른쪽 끝에 붙인다.
+    bw = w * 0.25
+    cw = w * 0.24
     P = {
-        "brief":     fig.add_axes([0.066, 0.715, 0.185, 0.215]),
-        "cam_enemy": fig.add_axes([0.548, 0.715, 0.212, 0.215]),
-        "cam_ally":  fig.add_axes([0.763, 0.715, 0.212, 0.215]),
+        "brief":     fig.add_axes([x0 + w * 0.02, y, bw, band_h]),
+        "cam_enemy": fig.add_axes([x1 - 2 * cw - w * 0.02, y, cw, band_h]),
+        "cam_ally":  fig.add_axes([x1 - cw - w * 0.005, y, cw, band_h]),
     }
     for a in P.values():
         a.set_zorder(20)

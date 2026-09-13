@@ -1,0 +1,23 @@
+% 자동 생성 — tools/make_paper_tables.py. 손으로 고치지 말 것.
+\begin{table*}[t]
+\centering
+\caption{지휘관 계획 품질과 성능. 계획 품질은 시뮬레이션 결과와 독립적으로, 계획이 산출된 시점에 측정한다. \textbf{7B 는 커버리지가 가장 높은데 포획률은 가장 낮다} --- 실패 원인은 미배정이 아니다.}
+\label{tab:planquality}
+\footnotesize
+\setlength{\tabcolsep}{4pt}%
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{%
+\begin{tabular}{lcccccc}
+\toprule
+지휘관 & 지연 (s) & 커버리지 $\uparrow$ & churn $\downarrow$ & 교차 $\downarrow$ & 폴백 $\downarrow$ & 포획률 $\uparrow$ \\
+\midrule
+Qwen2.5 7B (로컬) & 2.75 & 0.934 & 0.324 & 0.152 & 0.007 & 0.652 \\
+Qwen2.5 14B (로컬) & 16.59 & 0.877 & 0.167 & 0.111 & 0.001 & 0.811 \\
+Gemini 3.5 Flash-Lite (클라우드) & 1.56 & 0.881 & 0.098 & 0.033 & 0.000 & 0.904 \\
+\bottomrule
+\end{tabular}
+}
+\\[3pt]
+\begin{minipage}{\linewidth}\footnotesize
+커버리지 $=$ 배정된 활성 클러스터 비율. churn $=$ 재계획 간 담당이 바뀐 배의 비율. 교차 $=$ 두 방어정의 요격 경로가 교차한 비율. 포획률은 기동 계층을 휴리스틱으로 고정한 조건(LLM 지휘관 + 휴리스틱 기동)의 값이다.
+\end{minipage}
+\end{table*}

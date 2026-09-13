@@ -47,6 +47,25 @@ class Condition:
     maneuver: str    # "heuristic" | "policy"
     label: str       # 그림에 찍히는 한국어 라벨
     backend: str = ""   # LLM 조건에서 어느 지휘관인가 ("openai" | "ollama"). 휴리스틱이면 ""
+    #: ★ 배정 권한 — 코드가 LLM 계획을 얼마나 보완하는가. "llm"|"hybrid"|"code".
+    #   assign 과 다른 축이다: assign 은 'LLM 을 쓰는가', assign_mode 는 '쓴 걸 코드가 손보는가'.
+    #   기본 "llm"(순수 LLM, 코드 보완 없음)이 논문 본 조건이다.
+    assign_mode: str = "llm"
+
+    @property
+    def commander_tag(self) -> str:
+        """지휘관 dict 조회용 태그 — `backend` 에서 배정모드 접미사를 뗀 것.
+
+        `backend` 는 **그림에서 계열을 가르는 라벨**이라 모드 접미사가 붙어 있다
+        (`qwen2.5-7b+hyb`). 반면 지휘관 객체는 모드와 무관하게 모델당 하나뿐이라
+        `qwen2.5-7b` 로만 만들어진다 — 같은 값으로 조회하면 못 찾는다.
+        두 용도가 갈리는 지점이므로 여기서 한 번만 변환한다.
+        """
+        b = self.backend
+        for suf in ASSIGN_MODE_TAG.values():
+            if suf and b.endswith(suf):
+                return b[: -len(suf)]
+        return b
 
 
 def slugify_model(backend: str, model: str) -> str:
@@ -61,7 +80,12 @@ def slugify_model(backend: str, model: str) -> str:
     return m
 
 
-def with_backend(cond: Condition, backend: str, model: str = "") -> Condition:
+#: 조건 key 에 붙는 배정모드 태그. 기본 "llm" 은 태그 없음(기존 키와 호환 유지).
+ASSIGN_MODE_TAG = {"llm": "", "hybrid": "+hyb", "code": "+code"}
+
+
+def with_backend(cond: Condition, backend: str, model: str = "",
+                 assign_mode: str = "llm") -> Condition:
     """LLM 조건을 특정 지휘관(백엔드+모델)에 묶은 사본.
 
     key 에 `@<모델태그>` 를 붙여 조건을 분리한다 — 같은 배정 계층을 다른 지휘관으로
@@ -70,9 +94,15 @@ def with_backend(cond: Condition, backend: str, model: str = "") -> Condition:
     """
     if cond.assign != "llm":
         return cond
-    tag = slugify_model(backend, model)
+    if assign_mode not in ASSIGN_MODE_TAG:
+        raise ValueError(f"알 수 없는 assign_mode: {assign_mode!r} (llm|hybrid|code)")
+    # ★ 모드 태그를 **백엔드 태그 쪽**(@ 뒤)에 붙인다. plots._base_key 가 "@" 로 잘라
+    #   기본 조건을 얻으므로, 이렇게 두면 색·해칭·막대 순서가 기존 로직 그대로 살고
+    #   모드 변형은 '다른 지휘관'처럼 별도 계열로 그려진다. 앞에 붙이면 base_key 가
+    #   깨져서 모든 그림에서 미분류(회색)로 떨어진다.
+    tag = slugify_model(backend, model) + ASSIGN_MODE_TAG[assign_mode]
     return Condition(f"{cond.key}@{tag}", cond.assign, cond.maneuver,
-                     f"{cond.label} ({tag})", tag)
+                     f"{cond.label} ({tag})", tag, assign_mode)
 
 
 #: 논문 본표의 4개 조건. 순서가 그림의 막대 순서다(baseline → 제안).
@@ -251,6 +281,7 @@ def run_condition(cond: Condition, seeds: Sequence[int], formation: str, ckpt: s
     env = make_env(ckpt, formation, **env_kw)
     env.assign_source = cond.assign
     env.maneuver_source = cond.maneuver
+    env.assign_mode = cond.assign_mode
     hook = _llm_hook(commander, replan_every, recorder) if cond.assign == "llm" else None
 
     rows = []
@@ -262,7 +293,10 @@ def run_condition(cond: Condition, seeds: Sequence[int], formation: str, ckpt: s
               "label": cond.label, "formation": formation,
               # ★ 실험 설정을 원자료에 박아 둔다. 이 값이 다르면 조건이 사실상 다르므로
               #   같은 CSV 에 섞어 놓고 비교하면 안 된다(재계획 주기 = LLM 계획의 신선도).
-              "replan_every": int(replan_every) if cond.assign == "llm" else 0}
+              "replan_every": int(replan_every) if cond.assign == "llm" else 0,
+              # ★ 배정 권한도 원자료에 박는다. 모드가 다르면 사실상 다른 조건이므로
+              #   집계 전에 이 컬럼이 하나로 모였는지 확인해야 한다(replan_every 와 같은 이유).
+              "assign_mode": cond.assign_mode if cond.assign == "llm" else ""}
         r["backend"] = cond.backend
         rows.append(r)
         if sink is not None:
@@ -331,9 +365,9 @@ def run_matrix(ckpt: str, seeds: Sequence[int], *,
             cmd = commander
             rec = recorder
             if cond.assign == "llm" and commanders:
-                cmd = commanders.get(cond.backend, commander)
+                cmd = commanders.get(cond.commander_tag, commander)
                 if recorders:
-                    rec = recorders.get(cond.backend, recorder)
+                    rec = recorders.get(cond.commander_tag, recorder)
             if progress:
                 progress(f"[{formation}] {cond.key} ({len(todo)} seeds)")
             # ★ 에피소드 1건마다 append. 묶음 단위로 쓰면 중단 시 최대 30 에피소드(LLM 조건은

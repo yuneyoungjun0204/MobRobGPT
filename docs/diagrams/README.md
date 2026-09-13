@@ -30,9 +30,9 @@ python docs/diagrams/pipeline_diagram.py
 ```
 ①  입력            센서(GPS/IMU/적 탐지) 또는 시뮬 물리 → 원시 상태
 ②  전장상태 구성    무리 분할 + 기하 선계산 → BattlefieldState
-③  전략 계층        LLM 지휘관 → CommanderPlan → _assign[P]      ← 느린 비동기 (25 step)
+③  전략 계층        LLM 지휘관 → CommanderPlan → _assign[P]      ← 25 step 주기 · 비동기 (지연 큼)
 ④  관측 래스터화    gmap/smap/own/valid  (15 ch × 50 × 50)
-⑤  기동 계층        U-Net 점수맵 정책 → 픽셀 2점 → route[P,2,2]   ← 매 결정 스텝
+⑤  기동 계층        U-Net 점수맵 정책 → 픽셀 2점 → route[P,2,2]   ← 25 step 주기 · 동기
 ⑥  저수준 제어      PD 조타 + 그물 도색 + ptr 전진               ← 매 스텝 (dt = 1 s)
 ⑦  액추에이터       /ally_i/waypoints  또는  시뮬 상태 갱신
 ```
@@ -67,7 +67,7 @@ Graphviz 는 클러스터끼리 **랭크를 공유하면 상자를 겹쳐 그린
 
 ## PPT 에 넣기
 
-`docs/project_ppt.md` 의 「핵심 구조 — 판단 주기가 다른 2계층」 슬라이드에서
+`docs/project_ppt.md` 의 「핵심 구조 — 판단 지연이 다른 2계층」 슬라이드에서
 ASCII 다이어그램 대신 쓰면 된다.
 
 ```markdown
@@ -130,3 +130,17 @@ python docs/diagrams/scoremap_vs_regression.py     # 약 2분 (4 에피소드 ×
 | `논문_그래프/unet_scoremap.png` (3699 × 1665) | U-Net 구조 전체도 (PlotNeuralNet). 15 ch 입력 썸네일 + 우측에 실제 valid mask / score map k=0,1 |
 | `tools/PlotNeuralNet/pyexamples/obs_score.png` (1402 × 583) | 위 그림 우측 패널 단독 — 「유효 244/2500 → 픽셀 2개 순차 선택 → 그물벽」 |
 | `tools/PlotNeuralNet/pyexamples/obs_global.png` · `obs_self.png` | 전역 9채널 / 배별 3채널 + CoordConv 썸네일 |
+
+
+> ## 용어 주의 — "느린 주기"라고 쓰지 말 것
+>
+> 전략 계층과 기동 계층은 **같은 25 step 주기**로 갱신된다
+> (`decision_period=25`, `dt=1.0` → 25초; `--replan-every` 기본 1 = 매 결정).
+> 두 계층을 가르는 것은 주기가 아니라 **지연**이다 — 로컬 14B 호출은 평균 16.6초로
+> 주기의 2/3를 쓰고 4.2%는 주기를 넘긴다. 실제 갱신 주기는 25초(판단)와
+> 1초(PD 제어) **두 개뿐**이다.
+>
+> 2026-09-07 논문 검증에서 이 표현이 세 곳(본문·개요도·상세도)에 흩어져 있었고,
+> 앞의 두 곳만 고쳐 상세도가 남는 사고가 있었다. 고칠 때는 반드시
+> `grep -rn "느린 주기\|느린 비동기\|판단 주기가 다른" --include=*.py --include=*.tex .`
+> 로 **소스까지** 확인할 것.

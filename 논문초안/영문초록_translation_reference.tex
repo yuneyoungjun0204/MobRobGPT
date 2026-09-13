@@ -1,0 +1,27 @@
+%==============================================================================
+%  영문 제목·초록·주제어·하이라이트 — **번역 기준 문서** (투고본이 아니다)
+%
+%  왜 따로 있나
+%      elsarticle 에는 본문 뒤 제2 초록에 대응하는 요소가 없다. 초록은 frontmatter 의
+%      abstract 환경 하나, 키워드는 keyword 하나, 하이라이트는 highlights 하나다.
+%      영문판을 원고 말미에 \section* 으로 붙이면 형식 이탈이 된다.
+%
+%      그래서 원고에서 떼어 여기에 둔다. 이 파일은 EAAI 영문본을 만들 때
+%      제목·초록·주제어·하이라이트가 흔들리지 않게 하는 기준이다.
+%      수치는 국문 초록과 한 글자도 다르면 안 되며 tools/check_paper_meta.py 가 대조한다.
+%
+%  컴파일: xelatex 영문초록_translation_reference.tex
+%==============================================================================
+\documentclass[11pt]{article}
+\usepackage[a4paper, margin=25mm]{geometry}
+\usepackage{kotex}
+\usepackage{fontspec}
+\setmainfont{TeX Gyre Termes}[Ligatures=TeX]
+\setmainhangulfont{HCR Batang}[AutoFakeBold=2.0, AutoFakeSlant=0.2]
+\usepackage{amsmath, amssymb}
+\usepackage{enumitem}
+\newcommand{\dz}{d_z}
+
+\begin{document}
+\input{sections/00b_abstract_en}
+\end{document}

@@ -196,6 +196,18 @@ class BattlefieldState(BaseModel):
 #     (deploy_net/net_legs/radius_adjust 제거 → strict 스키마 모순 해소·폭주 방지·통제성↑)
 class ClusterDeployment(BaseModel):
     cluster_id: int = Field(..., description="담당 적 클러스터 id")
+    # ⚠⚠ 아래 description 의 마지막 문장("비우면 시스템이 …대신 고른다")은 **현재 기본
+    #   동작과 반대다.** 배정 권한이 mode="llm"(sim_bridge.plan_to_assign 기본, 평가
+    #   하네스 기본)로 바뀐 뒤로 코드는 빈 ally_ids 를 채우지 않는다 — 그 무리는 무방비로
+    #   남는다. prompts.py 의 [YOUR AUTHORITY] 블록은 정반대("비우면 아무도 안 보냄")를
+    #   지시하므로, 모델은 프롬프트와 스키마에서 **상충하는 지시를 동시에** 받는다.
+    #
+    #   ★ 그런데도 지금 고치지 않는 이유: 이 문자열은 model_json_schema() / response_schema
+    #     로 **모델 입력에 그대로 들어간다.** 문구를 바꾸면 프롬프트가 바뀌는 것이고,
+    #     논문의 720 에피소드 결과(results/eval_merged)는 이 문구가 있는 상태에서 나왔다.
+    #     지금 바꾸면 표의 수치와 코드가 어긋난다.
+    #   → 다음 재평가 때 함께 고칠 것. 그때 이 주석도 지운다.
+    #     (2026-09-07 논문 검증에서 발견. docs/paper_results_plan.md 에도 기록)
     ally_ids: List[int] = Field(default_factory=list,
                                 description="이 클러스터를 맡을 아군 USV id 목록. 효율(요격점에 가깝고·"
                                             "선회 적음)·안전(다른 배 경로와 비교차)한 배 선택. 보통 1척. "
