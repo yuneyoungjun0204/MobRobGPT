@@ -31,6 +31,7 @@ desktop.ini
 # ── 시뮬/지휘관 생성물 (런타임 생성) ────────────────────
 boatattack_sim/eval/_basemap_cache/    # OSM 타일 캐시
 *.pt                                    # 정책 체크포인트
+/logs/                                  # tools/gcs_bridge_control.py 사이드카 실행 로그
 
 # ── 렌더/진단 출력물 ────────────────────────────────────
 out.gif

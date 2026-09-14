@@ -382,5 +382,138 @@ class TestGcsBagCnnEnvWaypointSequencing(unittest.TestCase):
                          "_micro_ct, even after quorum was already reached once")
 
 
+@unittest.skipUnless(os.path.exists(CKPT), f"checkpoint not found: {CKPT}")
+class TestGcsLiveCnnEnvEnemyFrame(unittest.TestCase):
+    """Regression coverage for the 2026-09-10 session's coordinate-frame bug:
+    `--enemy-source live` fed raw ROS2 bag-local `/pose` values straight into
+    `SimScale.enu_to_sim` using the GCS-datum-relative `enu_origin`, so enemies landed
+    kilometres away from allies in sim space (clipped to the map edge) even though GCS's
+    own `/api/state` already reports both fleets in the SAME datum-relative frame.
+    `GcsLiveCnnEnv` fixes this by reading enemies through `/api/state` too (real
+    `GcsAllyLink` against a real loopback HTTP stub -- not a hand-rolled fake -- so the
+    test exercises the same `client.get_json` path production code takes)."""
+
+    def _build_env(self, ally_ids=("usv1", "usv2", "usv3"), target_ids=("usv4",)):
+        from commander.gcs_cnn_env import GcsLiveCnnEnv
+        server = _StubGcsServer()
+        self.addCleanup(server.close)
+        client = GcsClient(server.base_url, timeout=2.0)
+        ally_link = GcsAllyLink(client, list(ally_ids), source="rl")
+        enemy_link = GcsAllyLink(client, list(target_ids), source="rl")
+        env = GcsLiveCnnEnv(
+            CKPT, span_real=200.0, ally_link=ally_link, enemy_link=enemy_link,
+            publish_hz=1e9, nets_per_ship=1)
+        self.assertEqual(env.P, 3, "test assumes the shipped u-net_map.pt has P=3 allies")
+        return env, server
+
+    @staticmethod
+    def _vehicle(north, east, heading=0.0, connected=True, stale=False):
+        return {"ned": {"x": north, "y": east}, "heading": heading,
+                "connected": connected, "stale": {"position": stale, "attitude": stale}}
+
+    def test_enemy_lands_near_allies_when_gcs_reports_them_close(self):
+        """The actual bug scenario: GCS reports allies and a bag-relayed target vehicle
+        at nearby real-world positions (as `bag_enemy_relay.py --source pose` produces
+        once reprojected through the registry datum). Both must end up close together in
+        sim space -- not on opposite sides of the map, which is what the raw-ROS2-topic
+        path (`--enemy-source live`) produced when fed the bag's own recording-local
+        pose values directly."""
+        env, server = self._build_env()
+        server.set_state({
+            "usv1": self._vehicle(20.0, 30.0), "usv2": self._vehicle(20.5, 30.2),
+            "usv3": self._vehicle(19.8, 29.7), "usv4": self._vehicle(25.0, 35.0),
+        })
+        self.assertTrue(env._ingest_gcs())
+
+        # Exact check, not just "close enough": a loose distance threshold would still
+        # pass under an axis-swap regression (verified during review: a swapped-axis
+        # fixture measures ~990 sim-m, just under a 1000 m threshold) -- the point of
+        # this test is to catch exactly that class of bug, so it must assert the precise
+        # expected sim position, derived the same way production code does.
+        np.testing.assert_allclose(
+            env.e_pos[0, 0], env.scale.enu_to_sim(np.array([35.0, 25.0])))
+        self.assertTrue(bool(env.e_alive[0, 0]))
+
+    def test_stale_enemy_holds_last_known_position_not_phantom_origin(self):
+        """Same B1 principle _ingest_gcs_allies already applies to allies (test file
+        above) must also hold for enemies -- a dropped target must not snap to the
+        ENU-origin phantom point, which would corrupt clustering/assignment same as a
+        phantom ally would."""
+        env, server = self._build_env()
+        server.set_state({
+            "usv1": self._vehicle(20.0, 30.0), "usv2": self._vehicle(20.5, 30.2),
+            "usv3": self._vehicle(19.8, 29.7), "usv4": self._vehicle(25.0, 35.0),
+        })
+        self.assertTrue(env._ingest_gcs())
+        held_pos = env.e_pos[0, 0].copy()
+        self.assertTrue(bool(env.e_alive[0, 0]))
+
+        # Target drops off the GCS link (stale/disconnected) -- position must be held.
+        server.set_state({
+            "usv1": self._vehicle(20.0, 30.0), "usv2": self._vehicle(20.5, 30.2),
+            "usv3": self._vehicle(19.8, 29.7), "usv4": self._vehicle(0.0, 0.0, stale=True),
+        })
+        self.assertTrue(env._ingest_gcs())
+        np.testing.assert_allclose(env.e_pos[0, 0], held_pos,
+                                   err_msg="e_pos must hold the last known value")
+        self.assertFalse(bool(env.e_alive[0, 0]))
+
+    def test_extra_enemy_slots_never_go_alive(self):
+        """`--target-ids` may register fewer vehicles than the checkpoint's M enemy
+        slots -- the unused tail must stay e_alive=False forever, never picking up a
+        leftover spawn-formation ghost from CommandedCnnEnv's own reset()."""
+        env, server = self._build_env(target_ids=("usv4",))
+        self.assertGreater(env.M, 1, "test needs at least one unused enemy slot")
+        server.set_state({
+            "usv1": self._vehicle(20.0, 30.0), "usv2": self._vehicle(20.5, 30.2),
+            "usv3": self._vehicle(19.8, 29.7), "usv4": self._vehicle(25.0, 35.0),
+        })
+        self.assertTrue(env._ingest_gcs())
+        self.assertTrue(bool(env.e_alive[0, 0]))
+        self.assertFalse(bool(env.e_alive[0, 1:].any()),
+                         "unused enemy slots beyond len(target_ids) must never go alive")
+
+    def test_step_quorum_wait_then_latch_matches_bag_class_contract(self):
+        """`GcsLiveCnnEnv.step()` duplicates (rather than shares) the quorum-wait/
+        `_micro_ct` contract `TestGcsBagCnnEnvWaypointSequencing.
+        test_step_ticks_correctly_across_quorum_wait_and_a_later_outage` above guards for
+        the bag class (architect review: this is a known trade-off of the current
+        mixin design, not a bug) -- so it needs its own regression, or a future edit to
+        one copy could silently diverge from the other. Also covers a distinct safety
+        invariant every docstring here asserts but nothing previously tested: the enemy
+        link must never be commanded."""
+        env, server = self._build_env()
+        server.set_state({
+            "usv1": self._vehicle(20.0, 30.0), "usv2": self._vehicle(20.5, 30.2),
+            "usv4": self._vehicle(25.0, 35.0),
+            # usv3 missing entirely -- quorum must not latch yet.
+        })
+        for _ in range(3):
+            env.step()
+            self.assertFalse(env.ready)
+            self.assertEqual(env._micro_ct, 0,
+                             "no decision may run before every ally hull has been seen")
+            self.assertEqual(env.missing_ally_ids(), ["usv3"])
+
+        server.set_state({
+            "usv1": self._vehicle(20.0, 30.0), "usv2": self._vehicle(20.5, 30.2),
+            "usv3": self._vehicle(19.8, 29.7), "usv4": self._vehicle(25.0, 35.0),
+        })
+        env.step()
+        self.assertTrue(env.ready)
+        self.assertEqual(env._micro_ct, 1,
+                         "the transition tick itself must still count as one real tick")
+        env.step()
+        self.assertEqual(env._micro_ct, 2)
+
+        # Safety invariant (every docstring in gcs_bridge.py/gcs_cnn_env.py asserts this,
+        # nothing previously exercised it): a role=target vehicle is read-only, never
+        # commanded, regardless of how many decisions have run.
+        commanded = {path.split("/")[3] for path, _ in server.posts
+                     if path.startswith("/api/command/")}
+        self.assertEqual(commanded, {"usv1", "usv2", "usv3"},
+                         "enemy_link must never be POSTed a goto command")
+
+
 if __name__ == "__main__":
     unittest.main()

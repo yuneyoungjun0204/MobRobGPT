@@ -1,15 +1,25 @@
-"""commander/gcs_cnn_env.py — GCS 실텔레메트리 아군 + 로스백 실적선을 함께 쓰는 CNN 정책 환경.
+"""commander/gcs_cnn_env.py — GCS 실텔레메트리 아군(+ 적) 을 함께 쓰는 CNN 정책 환경.
 
-`commander/replay_cnn_env.py::ReplayCnnEnv`(적=로스백 실측, 아군=시뮬 물리)와
-`commander/ros2_unet_env.py::ROS2CnnEnv`(아군·적 전부 자체 ROS2 센서) 사이의 조합이다.
+세 조합이 있다:
+  `GcsBagCnnEnv`  적=로스백(BagEnemyReplay) 재생,        아군=GCS 실텔레메트리(real)
+  `GcsLiveCnnEnv` 적=GCS `/api/state`(role=target, real), 아군=GCS 실텔레메트리(real)
 
-  적  : ReplayCnnEnv 그대로 -- 로스백(BagEnemyReplay) 재생, 그물 재보급 타이머도 상속.
-  아군: ROS2CnnEnv 의 `_advance_and_paint`와 동일한 로직(§defense_env.py `_micro`와
-        1:1 대응)이지만, 센서 대신 GCS `/api/state`에서 위치·헤딩을 읽는다
-        (commander/gcs_bridge.py::GcsAllyLink). 시뮬 물리(`_micro`)는 돌리지 않는다
-        -- 실제 보트가 기동하고, GCS가 그 결과를 텔레메트리로 되돌려준다.
+`GcsLiveCnnEnv`가 필요한 이유 (2026-09-10 세션에서 실측으로 확인된 결함) —
+`commander/live_enemy_ros2.py::LiveEnemyReplay`(§`--enemy-source live`)는 raw ROS2 토픽
+`/usv/usv{i}/pose`를 그대로 구독하는데, 이 값은 **로스백 자기 자신의 녹화-로컬 프레임**이지
+GCS datum 기준이 아니다(`bag_enemy_relay.py`의 module docstring이 그렇게 명시한다: "local to
+the bag's own recording"). 반면 아군은 `GcsAllyLink`를 통해 GCS `/api/state`에서 읽는데, 이
+값은 GCS가 이미 `gcs.datum` 기준으로 정확히 재투영해서 보고하는 값이다. 두 좌표계가 다른데
+같은 `enu_origin`을 나눠 쓰면(둘 다 `SimScale.enu_to_sim`에 그대로 들어간다) 적 위치가 아군
+위치에서 수 km 어긋나 지도 밖으로 클리핑된다(실측: 로스백 raw pose ≈(-4.6,-1.1) vs 아군
+centroid 기준 enu_origin ≈(4944,3445) → 적이 매 tick 지도 모서리에 찍힘).
 
-매 tick, 그 배의 "현재 활성 경유점"(`route[ptr]`, ENU 미터로 변환)을 GCS
+GCS `/api/state`는 (`bag_enemy_relay.py --source pose`가 이미 registry datum 기준으로 재투영해
+MAVLink로 보낸 값을 GCS가 다시 datum 기준 ned로 계산하므로) **이미 아군과 같은 좌표계**다.
+그래서 `GcsLiveCnnEnv`는 로스백을 아예 거치지 않고, 적도 `GcsAllyLink`로 읽는다(대상
+vehicle_id만 role=target 인 것들로 바꿔서) — 좌표계 불일치가 구조적으로 사라진다.
+
+두 클래스 모두 매 tick, 그 배의 "현재 활성 경유점"(`route[ptr]`, ENU 미터로 변환)을 GCS
 `/gcs`-호환 goto 명령으로 보낸다(source="rl") -- 이게 `docs/contracts.md` §4가 말하는
 "RL이 0.5~2Hz로 계속 보낸다"는 그 지령이다. 그물 전개 시작/종료는 GCS로 보내지 않고
 `NetDeploySink`로만 알린다(gcs_bridge.py 모듈독스트링 참고 -- 액추에이터 명령 금지).
@@ -22,52 +32,24 @@ from typing import Optional
 import numpy as np
 
 from boatattack_sim.env import cnn_map as CM
+from boatattack_sim.env.scaling import SimScale
 
 from .bag_replay import BagEnemyReplay
 from .gcs_bridge import GcsAllyLink, GcsRequestError, NetDeploySink
 from .replay_cnn_env import ReplayCnnEnv
+from .unet_bridge import CommandedCnnEnv
 
 
-class GcsBagCnnEnv(ReplayCnnEnv):
-    """적=로스백 리플레이(real), 아군=GCS 실텔레메트리(real)로 구동하는 CNN 점수맵 정책 환경."""
+class _GcsAllyTelemetryMixin:
+    """GCS `/api/state` 아군 텔레메트리 수신 + WP 진행/그물 + goto 발행.
 
-    def __init__(
-        self,
-        ckpt: str,
-        bag: BagEnemyReplay,
-        span_real: float,
-        ally_link: GcsAllyLink,
-        *,
-        net_sink: Optional[NetDeploySink] = None,
-        publish_hz: float = 2.0,
-        ally_speed_real: float = 0.3,
-        enemy_mode: str = "wave",
-        device: str = "cpu",
-        nets_per_ship: int = 3,
-        geo: tuple[float, float] | None = None,
-        enu_origin: tuple[float, float] | None = None,
-        net_reload_period_real: float | None = None,
-    ):
-        super().__init__(
-            ckpt, bag, span_real, ally_speed_real=ally_speed_real,
-            enemy_mode=enemy_mode, device=device, nets_per_ship=nets_per_ship,
-            geo=geo, enu_origin=enu_origin,
-            net_reload_period_real=net_reload_period_real)
-        if ally_link.n_allies != self.P:
-            raise ValueError(
-                f"ally_link has {ally_link.n_allies} vehicle_ids but the checkpoint "
-                f"policy expects P={self.P} allies")
-        self.ally_link = ally_link
-        self.net_sink = net_sink or NetDeploySink()
-        if publish_hz <= 0:
-            raise ValueError("publish_hz must be > 0")
-        self._publish_period_real = 1.0 / float(publish_hz)
-        self._have_gcs = False
-        self._prev_pos = self.a_pos[0].copy()
-        # 실시간(wall-clock) 기준 -- `_t_real`(시뮬 시각)로 재던 초판은 --no-realtime 이나
-        # LLM 재배정으로 tick 이 밀리는 동안 스로틀이 같이 멈춰 GCS 를 과다/과소 호출했다
-        # (아키텍트 검토 B3). publish 는 GCS 로 나가는 실제 명령이므로 실제 시계를 쓴다.
-        self._next_publish_wall = 0.0
+    적 소스(로스백 재생이냐 GCS `/api/state`냐)와 완전히 무관하다 -- 아군 쪽 로직은
+    `GcsBagCnnEnv`/`GcsLiveCnnEnv` 양쪽에서 바이트 단위로 동일해야 하므로(둘 다 같은 실보트를
+    같은 방식으로 관제한다) 믹스인으로 한 번만 정의한다. 이 믹스인을 쓰는 클래스는
+    `self.ally_link`(`GcsAllyLink`), `self.net_sink`(`NetDeploySink`), `self.scale`
+    (`SimScale`), `self._publish_period_real`, `self._next_publish_wall`, `self._prev_pos`
+    를 자기 `__init__`에서 준비해 둬야 한다.
+    """
 
     # ── GCS 텔레메트리 주입 ─────────────────────────────────────────────
     def _ingest_gcs_allies(self) -> bool:
@@ -192,6 +174,48 @@ class GcsBagCnnEnv(ReplayCnnEnv):
         return [vid for vid, alive in zip(self.ally_link.vehicle_ids, self.a_alive[0])
                 if not alive]
 
+
+class GcsBagCnnEnv(_GcsAllyTelemetryMixin, ReplayCnnEnv):
+    """적=로스백 리플레이(real), 아군=GCS 실텔레메트리(real)로 구동하는 CNN 점수맵 정책 환경."""
+
+    def __init__(
+        self,
+        ckpt: str,
+        bag: BagEnemyReplay,
+        span_real: float,
+        ally_link: GcsAllyLink,
+        *,
+        net_sink: Optional[NetDeploySink] = None,
+        publish_hz: float = 2.0,
+        ally_speed_real: float = 0.3,
+        enemy_mode: str = "wave",
+        device: str = "cpu",
+        nets_per_ship: int = 3,
+        geo: tuple[float, float] | None = None,
+        enu_origin: tuple[float, float] | None = None,
+        net_reload_period_real: float | None = None,
+    ):
+        super().__init__(
+            ckpt, bag, span_real, ally_speed_real=ally_speed_real,
+            enemy_mode=enemy_mode, device=device, nets_per_ship=nets_per_ship,
+            geo=geo, enu_origin=enu_origin,
+            net_reload_period_real=net_reload_period_real)
+        if ally_link.n_allies != self.P:
+            raise ValueError(
+                f"ally_link has {ally_link.n_allies} vehicle_ids but the checkpoint "
+                f"policy expects P={self.P} allies")
+        self.ally_link = ally_link
+        self.net_sink = net_sink or NetDeploySink()
+        if publish_hz <= 0:
+            raise ValueError("publish_hz must be > 0")
+        self._publish_period_real = 1.0 / float(publish_hz)
+        self._have_gcs = False
+        self._prev_pos = self.a_pos[0].copy()
+        # 실시간(wall-clock) 기준 -- `_t_real`(시뮬 시각)로 재던 초판은 --no-realtime 이나
+        # LLM 재배정으로 tick 이 밀리는 동안 스로틀이 같이 멈춰 GCS 를 과다/과소 호출했다
+        # (아키텍트 검토 B3). publish 는 GCS 로 나가는 실제 명령이므로 실제 시계를 쓴다.
+        self._next_publish_wall = 0.0
+
     # ── 운용 루프 ────────────────────────────────────────────────────
     def step(self):
         if bool(self.done[0]):
@@ -255,4 +279,193 @@ class GcsBagCnnEnv(ReplayCnnEnv):
         self._next_publish_wall = 0.0
 
 
-__all__ = ["GcsBagCnnEnv"]
+class GcsLiveCnnEnv(_GcsAllyTelemetryMixin, CommandedCnnEnv):
+    """적·아군 모두 GCS `/api/state`(둘 다 real)로 구동하는 CNN 점수맵 정책 환경.
+
+    `GcsBagCnnEnv`의 자매 클래스다 -- 로스백을 아예 안 쓴다. `enemy_link`는 role=target 으로
+    등록된 GCS vehicle_id 들을 가리키는 `GcsAllyLink`(읽기만 쓴다, `submit_goto`는 절대
+    안 부른다 -- 적을 지휘하지 않는다). GCS 가 이미 이 값들을 `gcs.datum` 기준으로 정확히
+    재투영해서 주므로(`bag_enemy_relay.py --source pose` 가 그 경로), 아군과 완전히 같은
+    좌표계를 공유한다 -- 이 파일 모듈독스트링의 좌표계 불일치 설명 참고.
+    """
+
+    def __init__(
+        self,
+        ckpt: str,
+        span_real: float,
+        ally_link: GcsAllyLink,
+        enemy_link: GcsAllyLink,
+        *,
+        net_sink: Optional[NetDeploySink] = None,
+        publish_hz: float = 2.0,
+        ally_speed_real: float = 0.3,
+        enemy_mode: str = "wave",
+        device: str = "cpu",
+        nets_per_ship: int = 3,
+        geo: tuple[float, float] | None = None,
+        enu_origin: tuple[float, float] | None = None,
+        net_reload_period_real: float | None = None,
+    ):
+        super().__init__(ckpt, enemy_mode=enemy_mode, device=device, geo=geo,
+                          nets_per_ship=nets_per_ship)
+        self.reset(seed=0)                  # 배열 할당 + 육지 캐시 로드. 이후 물리는 안 돌린다
+        if ally_link.n_allies != self.P:
+            raise ValueError(
+                f"ally_link has {ally_link.n_allies} vehicle_ids but the checkpoint "
+                f"policy expects P={self.P} allies")
+        if enemy_link.n_allies > self.M:
+            raise ValueError(
+                f"enemy_link has {enemy_link.n_allies} vehicle_ids but the checkpoint "
+                f"policy only has M={self.M} enemy slots")
+        self.ally_link = ally_link
+        self.enemy_link = enemy_link
+        self.net_sink = net_sink or NetDeploySink()
+        if publish_hz <= 0:
+            raise ValueError("publish_hz must be > 0")
+        self._publish_period_real = 1.0 / float(publish_hz)
+        origin = (0.0, 0.0) if enu_origin is None else enu_origin
+        self.scale = SimScale(self.cfg, span_real=float(span_real),
+                              v_ally_real=float(ally_speed_real), enu_origin=origin)
+        if net_reload_period_real is None:
+            net_reload_period_real = max(1, self.cfg.nets_per_ship) * self.scale.period_real * 6.0
+        self.net_reload_period_real = float(net_reload_period_real)
+        if self.net_reload_period_real <= 0:
+            raise ValueError("net_reload_period_real 은 0보다 커야 합니다.")
+        self._t_real = 0.0
+        self._next_reload_real = self._t_real + self.net_reload_period_real
+        self._have_gcs = False
+        self._prev_pos = self.a_pos[0].copy()
+        self._next_publish_wall = 0.0
+        self._last_span_warn_wall = 0.0
+        # e_pos/e_hdg/e_alive 는 M 슬롯 고정(§9-⑨ 규약과 동일): enemy_link 척수(n)보다 많은
+        # 나머지 슬롯은 절대 살아나지 않는다 -- reset() 이 부모의 스폰 로직으로 채워놓은
+        # 값을 여기서 모두 지운다(적을 아예 '모른다'는 초기 상태로).
+        self.e_pos[0] = 0.0
+        self.e_hdg[0] = 0.0
+        self.e_alive[0] = False
+
+    # ── 상속받은 아군-전용 인제스트를 여기서는 쓰지 않는다 ──────────────
+    def _ingest_gcs_allies(self):
+        """`_GcsAllyTelemetryMixin`에서 상속되지만 이 클래스에서는 **호출하면 안 된다** --
+        `/api/state`를 한 번 더 폴링하면서 적(`e_pos`)은 갱신 안 하고 방치한다(아키텍트
+        검토 지적). `step()`은 반드시 아래 `_ingest_gcs()`(아군+적 한 번에)만 쓴다."""
+        raise NotImplementedError(
+            "GcsLiveCnnEnv 는 _ingest_gcs() 로 아군·적을 한 번에 읽는다 -- "
+            "_ingest_gcs_allies() 를 따로 부르면 두 번째 /api/state 폴링이 낭비되고 "
+            "적 관측이 갱신 안 된 채로 남는다.")
+
+    # ── GCS 텔레메트리 주입: 아군·적 한 번의 /api/state 로 같이 갱신 ──────
+    def _ingest_gcs(self) -> bool:
+        """`/api/state`를 한 번만 읽어 아군·적 스냅샷 양쪽에 재사용한다
+        (`GcsAllyLink.ally_snapshot`의 `state` 인자가 정확히 이 용도로 설계돼 있다 -- 같은
+        GCS 인스턴스를 두 번 폴링할 이유가 없다). 실패하면 아군·적 둘 다 마지막 상태
+        유지(§B1과 동일 원칙, 적에도 똑같이 적용). `_ingest_gcs_allies`(믹스인)와 마찬가지로
+        `Exception` 전체를 잡는다 -- malformed 응답(예: `ned` 필드 누락)이 여기서 새어나가면
+        run_gcs_bridge.py 의 결정 루프 전체가 죽는다.
+        """
+        try:
+            state = self.ally_link.client.get_json("/api/state")
+        except Exception as exc:                       # pragma: no cover -- network edge
+            print(f"[gcs_bridge] /api/state poll failed: {exc}")
+            return False
+        lo = CM.origin(self.cfg)
+        hi = lo + 2.0 * CM.extent_m(self.cfg)
+
+        ally = self.ally_link.ally_snapshot(state)
+        if ally.alive.any():
+            raw = self.scale.enu_to_sim(ally.pos[ally.alive])
+            self._warn_if_clipped("아군", raw, lo, hi)
+            self.a_pos[0][ally.alive] = np.clip(raw, lo, hi)
+            self.a_hdg[0][ally.alive] = ally.hdg[ally.alive]
+        self.a_alive[0] = ally.alive
+
+        enemy = self.enemy_link.ally_snapshot(state)
+        n = self.enemy_link.n_allies
+        if enemy.alive.any():
+            raw = self.scale.enu_to_sim(enemy.pos[enemy.alive])
+            self._warn_if_clipped("적", raw, lo, hi)
+            self.e_pos[0, :n][enemy.alive] = np.clip(raw, lo, hi)
+            self.e_hdg[0, :n][enemy.alive] = enemy.hdg[enemy.alive]
+        self.e_alive[0, :n] = enemy.alive
+        return True
+
+    def _warn_if_clipped(self, label: str, raw: np.ndarray, lo: float, hi: float) -> None:
+        """`--span`이 실제 함대 퍼짐보다 작으면 sim 좌표가 지도 밖으로 나가 조용히
+        클리핑된다 -- 2026-09-10 세션의 그 버그(적이 지도 모서리에 찍힘)를 잡아낸 신호가
+        바로 이거였다(`replay_cnn_env.py`의 --span 경고와 같은 역할, 여기서는 사전
+        추정치가 아니라 매 tick 실측을 본다). 5초에 한 번으로 스로틀."""
+        out = (raw < lo) | (raw > hi)
+        if not out.any():
+            return
+        now = time.monotonic()
+        if now - self._last_span_warn_wall < 5.0:
+            return
+        self._last_span_warn_wall = now
+        n_out = int(out.any(axis=-1).sum())
+        print(f"[gcs_bridge] ⚠ {label} {n_out}척이 --span {self.scale.span_real:g} m 박스 "
+              f"밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 "
+              f"조정하세요.")
+
+    # ── 운용 루프 (GcsBagCnnEnv.step 과 동형, 적 주입만 로스백 대신 GCS) ──
+    def step(self):
+        if bool(self.done[0]):
+            self.t[0] = 0
+            self.done[0] = False
+        if self._t_real >= self._next_reload_real:
+            self.a_nets[0] = self.cfg.nets_per_ship
+            self._next_reload_real += self.net_reload_period_real
+
+        if not self._ingest_gcs():
+            return self.get_frame()                # 텔레메트리 미수신 -- 마지막 상태 유지
+        if not self._have_gcs:
+            if not bool(self.a_alive[0].all()):
+                # GcsBagCnnEnv 와 동일 원칙(§S5) -- 아군 전원이 보이기 전엔 결정/발행을
+                # 시작하지 않는다. 적은 "몇 척 보이는지"를 요구하지 않는다 -- 적이 아직
+                # 하나도 안 보여도 아군은 대형을 갖출 수 있어야 한다.
+                return self.get_frame()
+            self._have_gcs = True
+            self._prev_pos = self.a_pos[0].copy()
+
+        if self._micro_ct % self.cfg.decision_period == 0:
+            self._rl_decide()
+            self._sprev = {k: 0.0 for k in self._SK}
+        self._advance_and_paint()
+        for k in self._SK:
+            cur = float(self._ev[k][0]) if self._ev is not None else 0.0
+            self.stats[k] += cur - self._sprev.get(k, 0.0)
+            self._sprev[k] = cur
+        self._micro_ct += 1
+        self._t_real += self.scale.dt_real
+        self._publish_to_gcs()
+        self.stats["survived"] = int(self.e_alive[0].sum())
+        return self.get_frame()
+
+    def reset(self, seed=None):
+        super().reset(seed)
+        self.e_pos[0] = 0.0
+        self.e_hdg[0] = 0.0
+        self.e_alive[0] = False
+        self._have_gcs = False
+        self._prev_pos = self.a_pos[0].copy()
+        self._next_publish_wall = 0.0
+        self._last_span_warn_wall = 0.0
+        self._t_real = 0.0
+        # `__init__` 이 net_reload_period_real 을 세팅하기 *전에* 배열 할당용으로 한 번
+        # reset(seed=0) 을 부르므로(위 __init__ 참고), 그 첫 호출에서는 이 속성이 아직 없다.
+        if hasattr(self, "net_reload_period_real"):
+            self._next_reload_real = self._t_real + self.net_reload_period_real
+
+    @property
+    def bag_time_real(self) -> float:
+        """run_gcs_bridge.py 의 결정 루프가 로그·재배정 타임스탬프에 쓰는 duck-type 필드
+        (`GcsBagCnnEnv`/`ReplayCnnEnv`와 이름을 맞춘다 -- 실제로는 '로스백 시각'이 아니라
+        이 환경이 GCS 연동을 시작한 이후 경과한 실초다)."""
+        return self._t_real
+
+    def bag_exhausted(self) -> bool:
+        """GCS 라이브 스트림은 절대 소진되지 않는다(`LiveEnemyReplay.duration_sec=inf`와
+        같은 계약) -- 종료는 호출부의 `--max-decisions`나 Ctrl+C 몫이다."""
+        return False
+
+
+__all__ = ["GcsBagCnnEnv", "GcsLiveCnnEnv"]
