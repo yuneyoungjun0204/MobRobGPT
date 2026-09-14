@@ -138,6 +138,13 @@ def main() -> None:
                          "datum=(0,0) 가정은 재배치 후 함대가 datum에서 수 km 떨어져 있을 때 "
                          "그 오프셋만큼 아군·적을 전부 지도 밖으로 클리핑시킨다(2026-09-10 세션 "
                          "실측 확인).")
+    ap.add_argument("--mothership-id", default=None,
+                    help="GCS에 등록된 모선 vehicle_id(예: mothership1) -- 주면 아군 위치 평균 "
+                         "근사 대신 이 배의 GCS 실측 위치를 맵 중앙(=모선, enu_origin)으로 스크립트 "
+                         "시작 시 1회 읽어 고정한다(에피소드 중 모선은 정지해 있다고 가정 -- 매 "
+                         "에피소드/실행마다 그때그때 모선 실제 위치가 반영됨). --enu-origin 을 같이 "
+                         "주면 그쪽이 우선한다. role 은 defender/target 아무거나 상관없다(위치만 "
+                         "읽고 명령은 안 보낸다).")
     ap.add_argument("--out", default=None, help="결정별 명령 로그를 저장할 JSON 경로(선택)")
 
     ap.add_argument("--gcs-url", default="http://127.0.0.1:8080",
@@ -211,6 +218,23 @@ def main() -> None:
 
     if args.enu_origin is not None:
         enu_origin = tuple(args.enu_origin)
+    elif args.mothership_id:
+        try:
+            mothership_snap = GcsAllyLink(client, [args.mothership_id], source="rl").ally_snapshot()
+        except Exception as exc:
+            raise SystemExit(
+                f"--mothership-id {args.mothership_id} 위치 조회 실패 -- GCS({args.gcs_url})에서 "
+                f"이 배 위치를 못 읽었습니다: {exc}. registry에 등록돼 있는지 확인하거나 "
+                f"--enu-origin X Y 를 직접 지정하세요.")
+        if not mothership_snap.alive[0]:
+            raise SystemExit(
+                f"--mothership-id {args.mothership_id} 이 GCS에 등록은 됐지만 지금 살아있다고 "
+                f"보고되지 않습니다(connected=false 이거나 위치/자세가 stale). GCS가 이 배를 "
+                f"보고 있는지 확인하거나 --enu-origin X Y 를 직접 지정하세요.")
+        enu_origin = (float(mothership_snap.pos[0, 0]), float(mothership_snap.pos[0, 1]))
+        print(f"[gcs_bridge] --mothership-id {args.mothership_id} 의 GCS 실측 위치 "
+              f"{tuple(round(c, 3) for c in enu_origin)}(datum 기준 동/북 m)을 맵 중앙(=모선)으로 "
+              f"사용합니다(스크립트 시작 시 1회 고정 -- 이 에피소드 동안 모선은 정지해 있다고 가정).")
     else:
         # ★ 2026-09-10 세션 실측으로 뒤집힌 가정: "gcs.datum=(0,0)이 곧 모선 위치"는
         # `demo_relocate_service.py`("배치모드")가 "registry의 datum 자체는 절대 옮기지
