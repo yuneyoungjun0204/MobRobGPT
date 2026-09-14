@@ -143,7 +143,7 @@ def _overlay_cells(ax, viz: dict) -> None:
 
 def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
              bg_img=None, bg_extent=None, hide_cells: bool = False,
-             info_provider=None) -> None:
+             info_provider=None, start_paused: bool = False) -> None:
     """matplotlib 실시간 창. `run_cell_play.py` 와 동일한 렌더 파이프라인을 재사용한다.
 
     `info_provider`: 인자 없이 호출하면 `{"status":, "cmd":, "assign":, "rationale":}`
@@ -186,7 +186,7 @@ def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
     # 하나로는 둘 다 못 잡는다(구버전 필터가 실제로 안 먹었던 원인). "font"만 걸어 포괄한다.
     warnings.filterwarnings("ignore", message="Glyph .* missing from .*font")
 
-    ui = {"running": True, "done": False}
+    ui = {"running": not start_paused, "done": False}
 
     policy_label = "셀선택" if hasattr(env, "cell_viz") else "CNN 점수맵(U-Net)"
     ax_info = None
@@ -261,7 +261,8 @@ def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
     fig.canvas.mpl_connect("key_press_event", on_key)
 
     anim = FuncAnimation(fig, update, interval=40, blit=False, cache_frame_data=False)
-    print("뷰어 실행: space=재생/일시정지  q=종료")
+    start_hint = "일시정지 상태로 시작 -- space 를 눌러야 추론이 시작됩니다" if start_paused else "재생 상태로 시작"
+    print(f"뷰어 실행: space=재생/일시정지  q=종료  ({start_hint})")
     plt.show()
     _ = anim
 
@@ -314,6 +315,9 @@ def main() -> None:
     ap.add_argument("--hide-cells", action="store_true",
                     help="--viz 전용, 셀선택 모델에서만 적용: 후보셀/유효셀/선택셀 오버레이를 숨기고 "
                          "대도·경로·그물만 표시(깔끔한 운용 화면)")
+    ap.add_argument("--pause-start", action="store_true",
+                    help="--viz 전용: 창을 일시정지 상태로 띄운다 -- space 를 한 번 눌러야 추론이 "
+                         "시작된다(기본은 즉시 재생). 재생 중에도 space 로 언제든 다시 일시정지 가능.")
     args = ap.parse_args()
 
     if args.replan_period < 1:
@@ -421,7 +425,8 @@ def main() -> None:
 
     if args.viz:
         _run_viz(env, advance_one_micro, max_reached, args.spf, log,
-                 bg_img=bg_img, bg_extent=bg_extent, hide_cells=args.hide_cells)
+                 bg_img=bg_img, bg_extent=bg_extent, hide_cells=args.hide_cells,
+                 start_paused=args.pause_start)
     else:
         while not max_reached():
             if not advance_one_micro():

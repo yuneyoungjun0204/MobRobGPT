@@ -181,6 +181,9 @@ def main() -> None:
                          "실제 lat/lon 평균을 앵커로 쓴다 -- 이 맵 중앙(enu_origin)이 실제로 어디인지 "
                          "GCS 쪽 값으로 구하므로, 함대가 어디로 재배치돼 있든 그 실제 지점의 위성사진이 "
                          "뜬다.")
+    ap.add_argument("--pause-start", action="store_true",
+                    help="--viz 전용: 창을 일시정지 상태로 띄운다 -- space 를 한 번 눌러야 추론이 "
+                         "시작된다(기본은 즉시 재생). 재생 중에도 space 로 언제든 다시 일시정지 가능.")
     args = ap.parse_args()
 
     if args.replan_period < 1:
@@ -494,7 +497,8 @@ def main() -> None:
     try:
         if args.viz:
             _run_viz(env, advance_one_micro, max_reached, args.spf, log,
-                     bg_img=bg_img, bg_extent=bg_extent, info_provider=lambda: info)
+                     bg_img=bg_img, bg_extent=bg_extent, info_provider=lambda: info,
+                     start_paused=args.pause_start)
         else:
             while not max_reached():
                 if not advance_one_micro():
