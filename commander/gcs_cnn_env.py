@@ -35,7 +35,7 @@ from boatattack_sim.env import cnn_map as CM
 from boatattack_sim.env.scaling import SimScale
 
 from .bag_replay import BagEnemyReplay
-from .gcs_bridge import GcsAllyLink, GcsRequestError, NetDeploySink
+from .gcs_bridge import GcsAllyLink, GcsRequestError, NetDeploySink, WaypointSink
 from .replay_cnn_env import ReplayCnnEnv
 from .unet_bridge import CommandedCnnEnv
 
@@ -46,8 +46,9 @@ class _GcsAllyTelemetryMixin:
     적 소스(로스백 재생이냐 GCS `/api/state`냐)와 완전히 무관하다 -- 아군 쪽 로직은
     `GcsBagCnnEnv`/`GcsLiveCnnEnv` 양쪽에서 바이트 단위로 동일해야 하므로(둘 다 같은 실보트를
     같은 방식으로 관제한다) 믹스인으로 한 번만 정의한다. 이 믹스인을 쓰는 클래스는
-    `self.ally_link`(`GcsAllyLink`), `self.net_sink`(`NetDeploySink`), `self.scale`
-    (`SimScale`), `self._publish_period_real`, `self._next_publish_wall`, `self._prev_pos`
+    `self.ally_link`(`GcsAllyLink`), `self.net_sink`(`NetDeploySink`),
+    `self.waypoint_sink`(`WaypointSink`), `self.scale`(`SimScale`),
+    `self._publish_period_real`, `self._next_publish_wall`, `self._prev_pos`
     를 자기 `__init__`에서 준비해 둬야 한다.
     """
 
@@ -130,7 +131,7 @@ class _GcsAllyTelemetryMixin:
         self.ptr = np.where(advance, self.ptr + 1, self.ptr)
         self.leg_netted = np.where(advance, False, self.leg_netted)
 
-    # ── GCS로 현재 활성 경유점 송신 (0.5~2Hz 지속 스트림 계약) ──
+    # ── GCS로 현재 활성 경유점 송신 (0.5~2Hz 지속 스트림 계약) + 경유점 2개 묶음 발행 ──
     def _publish_to_gcs(self) -> None:
         now = time.monotonic()
         if now < self._next_publish_wall:
@@ -140,19 +141,37 @@ class _GcsAllyTelemetryMixin:
         for p in range(self.P):
             if not bool(self.a_alive[0, p]):
                 continue                          # 위치를 모르는 배는 명령하지 않는다
+            vid = self.ally_link.vehicle_ids[p]
             east, north = self.scale.sim_to_enu(self.route[0, p, ptr_all[p]])
             try:
-                verdict = self.ally_link.submit_goto(
-                    self.ally_link.vehicle_ids[p], east=float(east), north=float(north))
+                verdict = self.ally_link.submit_goto(vid, east=float(east), north=float(north))
             except GcsRequestError as exc:
                 # 한 번의 TCP 타임아웃/거부로 전체 루프를 죽이지 않는다 -- gcs 의
                 # hold->fade->release 가 짧은 공백을 흡수하도록 설계돼 있다
                 # (docs/contracts.md §4). 다음 tick에서 다시 시도한다(아키텍트 검토 B2).
-                print(f"[gcs_bridge] {self.ally_link.vehicle_ids[p]} goto POST failed: {exc}")
+                print(f"[gcs_bridge] {vid} goto POST failed: {exc}")
                 continue
             if not verdict.get("accepted", False):
-                print(f"[gcs_bridge] {self.ally_link.vehicle_ids[p]} goto refused: "
+                print(f"[gcs_bridge] {vid} goto refused: "
                       f"{verdict.get('reason')}: {verdict.get('detail', '')}")
+            # goto(위 -- HTTP, 활성 경유점 1개)와 별개로, 이 배에 배정된 경유점 wp1+wp2를
+            # 한 메시지로 묶어 ROS2에도 발행한다. `self.Kw`(=cfg.transit_wp)는 route 배열의
+            # 최대 슬롯 수일 뿐 실제 배정과 다르다 -- RRT가 뽑은 실제 경로 길이 L이 Kw보다
+            # 짧으면 남는 슬롯은 마지막 점을 그대로 반복해 채운다(defense_env.py::
+            # apply_rrt_routes, "마지막 점 반복(도달 후 정지)"). 이 프로젝트의 "wp1/wp2"
+            # 개념(RUN_GUIDE.md §12, gcs_cnn_env.py 모듈독스트링)은 늘 2개이므로, Kw 전체가
+            # 아니라 앞 2개만 쓴다 -- 안 그러면 뒤쪽 중복 슬롯이 "서로 다른 경유점"인 것처럼
+            # 구독자에게 잘못 보인다(실측: Kw=6인 체크포인트에서 뒤 4개가 wp2와 완전히 같은
+            # 값으로 찍히는 걸 확인).
+            waypoints_enu = [tuple(self.scale.sim_to_enu(self.route[0, p, k]))
+                             for k in range(min(2, self.Kw))]
+            # ptr_all은 self.Kw(패딩 포함 슬롯 수, 위에서 봤듯 실제론 6까지 감) 기준으로
+            # 클립돼 있다 -- wp2 도착 후에도 arrived가 계속 True라 몇 micro-step 안에
+            # ptr이 Kw-1까지 올라간다(패딩 슬롯도 "도착"으로 잡히므로). waypoints_enu는
+            # 위에서 이미 앞 2개로 잘랐으므로, active_index도 그 길이에 맞춰 clamp해야
+            # 구독자가 waypoints[active_index]를 그대로 인덱싱해도 IndexError가 안 난다.
+            active_idx = min(int(ptr_all[p]), len(waypoints_enu) - 1)
+            self.waypoint_sink.publish(vid, waypoints_enu, active_index=active_idx)
 
     @property
     def ready(self) -> bool:
@@ -186,6 +205,7 @@ class GcsBagCnnEnv(_GcsAllyTelemetryMixin, ReplayCnnEnv):
         ally_link: GcsAllyLink,
         *,
         net_sink: Optional[NetDeploySink] = None,
+        waypoint_sink: Optional[WaypointSink] = None,
         publish_hz: float = 2.0,
         ally_speed_real: float = 0.3,
         enemy_mode: str = "wave",
@@ -206,6 +226,7 @@ class GcsBagCnnEnv(_GcsAllyTelemetryMixin, ReplayCnnEnv):
                 f"policy expects P={self.P} allies")
         self.ally_link = ally_link
         self.net_sink = net_sink or NetDeploySink()
+        self.waypoint_sink = waypoint_sink or WaypointSink()
         if publish_hz <= 0:
             raise ValueError("publish_hz must be > 0")
         self._publish_period_real = 1.0 / float(publish_hz)
@@ -297,6 +318,7 @@ class GcsLiveCnnEnv(_GcsAllyTelemetryMixin, CommandedCnnEnv):
         enemy_link: GcsAllyLink,
         *,
         net_sink: Optional[NetDeploySink] = None,
+        waypoint_sink: Optional[WaypointSink] = None,
         publish_hz: float = 2.0,
         ally_speed_real: float = 0.3,
         enemy_mode: str = "wave",
@@ -320,6 +342,7 @@ class GcsLiveCnnEnv(_GcsAllyTelemetryMixin, CommandedCnnEnv):
         self.ally_link = ally_link
         self.enemy_link = enemy_link
         self.net_sink = net_sink or NetDeploySink()
+        self.waypoint_sink = waypoint_sink or WaypointSink()
         if publish_hz <= 0:
             raise ValueError("publish_hz must be > 0")
         self._publish_period_real = 1.0 / float(publish_hz)

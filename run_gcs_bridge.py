@@ -43,6 +43,7 @@ import argparse
 import concurrent.futures
 import sys
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -165,6 +166,16 @@ def main() -> None:
     ap.add_argument("--net-ros2-namespace", default="mobrobgpt",
                     help="그물 전개 신호를 /<ns>/<vehicle_id>/net_deploy(std_msgs/Int32, "
                          "0=대기/1=전개중)로 발행할 네임스페이스. rclpy 없으면 자동으로 생략됨.")
+    ap.add_argument("--waypoint-ros2-namespace", default="mobrobgpt",
+                    help="배당 경유점 2개(wp1+wp2)를 /<ns>/<vehicle_id>/waypoints"
+                         "(std_msgs/String, JSON {active_index, waypoints:[{lat,lon},{lat,lon}]})"
+                         "로 발행할 네임스페이스. GCS `/api/config`의 datum을 못 읽거나 rclpy가 "
+                         "없으면 자동으로 생략됨(goto는 독립적으로 계속 나감).")
+    ap.add_argument("--waypoints-out", default=None,
+                    help="배마다 최신 wp1+wp2를 {\"vehicles\": {...}} JSON으로 이 경로에 계속 "
+                         "덮어쓴다(rclpy 유무와 무관 -- datum만 있으면 됨). 브라우저는 ROS2를 "
+                         "직접 구독 못 하므로, tools/gcs_bridge_control.py 사이드카가 이 파일을 "
+                         "GET /waypoints로 중계해 gcs 웹 UI가 폴링한다.")
     ap.add_argument("--realtime", dest="realtime", action="store_true", default=True,
                     help="micro-step 사이를 실제 SimScale.dt_real 만큼 대기(기본 켜짐 -- 실보트 "
                          "연동이므로 run_replay_infer.py와 달리 CPU 속도로 폭주하면 안 된다)")
@@ -200,7 +211,7 @@ def main() -> None:
         raise SystemExit("--ally-ids 는 최소 1개 이상의 vehicle_id 를 포함해야 합니다.")
 
     from commander.rl_bridge import build_battlefield_defense
-    from commander.gcs_bridge import GcsClient, GcsAllyLink, NetDeploySink
+    from commander.gcs_bridge import GcsClient, GcsAllyLink, NetDeploySink, WaypointSink
 
     _detect_policy_kind(args.ckpt)          # raises if this isn't a CNN-score-map checkpoint
     print(f"[gcs_bridge] 정책 로딩: {args.ckpt} (감지: CNN 점수맵(U-Net))")
@@ -215,6 +226,22 @@ def main() -> None:
     # A configurable value here would let it request "manual"'s higher command priority
     # (command/authority.py), which is an authority boundary gcs otherwise keeps sharp.
     ally_link = GcsAllyLink(client, ally_ids, source="rl")
+
+    # 경유점(wp1+wp2) 위경도 ROS2 발행용 datum -- 순수 HTTP로 구한다(GET /api/config).
+    # 예전엔 ROS2 /<ns>/datum/gps/fix 토픽(commander/live_mothership_ros2.py)으로 구했는데,
+    # --enu-origin 자동산출/--mothership-id 가 이미 HTTP 하나로만 가는 쪽으로 옮겨간 것과
+    # 같은 방향 -- rclpy 없이도(구독까지는 필요 없고, 발행만 하면 되므로) datum 자체는 얻는다.
+    datum = None
+    try:
+        cfg_json = client.get_json("/api/config")
+        d = cfg_json.get("datum")
+        if d and d.get("lat") is not None and d.get("lon") is not None:
+            datum = (float(d["lat"]), float(d["lon"]))
+            print(f"[gcs_bridge] datum(GET /api/config) = {datum} -- 경유점 위경도 발행에 씀")
+        else:
+            print("[gcs_bridge] ⚠ GCS /api/config 에 datum 이 없음 -- 경유점 위경도 ROS2 발행 생략")
+    except Exception as exc:
+        print(f"[gcs_bridge] ⚠ GCS /api/config 조회 실패({exc}) -- 경유점 위경도 ROS2 발행 생략")
 
     if args.enu_origin is not None:
         enu_origin = tuple(args.enu_origin)
@@ -321,12 +348,16 @@ def main() -> None:
 
     net_sink = NetDeploySink(log_path=args.net_log, ros2_vehicle_ids=ally_ids,
                               ros2_namespace=args.net_ros2_namespace)
+    waypoint_sink = WaypointSink(
+        datum=datum, ros2_vehicle_ids=ally_ids,
+        ros2_namespace=args.waypoint_ros2_namespace,
+        state_path=Path(args.waypoints_out) if args.waypoints_out else None)
 
     if args.enemy_source == "gcs":
         from commander.gcs_cnn_env import GcsLiveCnnEnv
         env = GcsLiveCnnEnv(
             args.ckpt, args.span, ally_link, enemy_link,
-            net_sink=net_sink, publish_hz=args.publish_hz,
+            net_sink=net_sink, waypoint_sink=waypoint_sink, publish_hz=args.publish_hz,
             ally_speed_real=args.ally_speed_real, enemy_mode=args.enemy_mode,
             nets_per_ship=args.nets,
             geo=tuple(args.geo) if args.geo else None,
@@ -337,7 +368,7 @@ def main() -> None:
         from commander.gcs_cnn_env import GcsBagCnnEnv
         env = GcsBagCnnEnv(
             args.ckpt, bag, args.span, ally_link,
-            net_sink=net_sink, publish_hz=args.publish_hz,
+            net_sink=net_sink, waypoint_sink=waypoint_sink, publish_hz=args.publish_hz,
             ally_speed_real=args.ally_speed_real, enemy_mode=args.enemy_mode,
             nets_per_ship=args.nets,
             geo=tuple(args.geo) if args.geo else None,
@@ -532,6 +563,7 @@ def main() -> None:
         if hasattr(bag, "shutdown"):
             bag.shutdown()
         net_sink.shutdown()
+        waypoint_sink.shutdown()
 
     if args.out:
         import json

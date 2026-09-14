@@ -36,8 +36,10 @@ ally link does, so it can't drift out of that frame. See commander/gcs_cnn_env.p
 docstring for the coordinate-frame bug this was found to cause):
     python3 tools/gcs_bridge_control.py \\
         --gcs-url http://127.0.0.1:8091 --ally-ids usv1,usv2,usv3 \\
-        --span 80 --llm heuristic --enemy-source gcs \\
+        --llm heuristic --enemy-source gcs \\
         --target-ids usv4,usv5,usv6,usv7,usv8 --port 8093
+    (--span defaults to 35; the GUI's "AI 방어 모드" span/시각화 controls override it
+    per POST /start call -- see "Per-start overrides" below)
 
 Usage (raw ROS2 topic instead, only correct if that topic is already GCS-datum-relative):
     python3 tools/gcs_bridge_control.py \\
@@ -49,6 +51,19 @@ Usage (bag replay instead of live topics):
         --gcs-url http://127.0.0.1:8091 --ally-ids usv1,usv2,usv3 \\
         --span 8 --llm heuristic \\
         --bag /home/yune/Downloads/ros_data/S03-gcs --port 8093
+
+Per-start overrides:
+    Most run_gcs_bridge.py flags are fixed at sidecar startup (see the comment above
+    the argparse block below for why). --span/--viz/--satellite/--spf/--pause-start are
+    the exception: the GUI's "AI 방어 모드" button lets the operator pick span and
+    toggle visualization per run, since those are exactly what changes run to run (map
+    scale, whether a screen is available to show a plot on) rather than deployment
+    config. POST /start with a JSON body overrides that call only, e.g.:
+        curl -X POST http://127.0.0.1:8093/start \\
+            -H 'Content-Type: application/json' \\
+            -d '{"span": 35, "viz": true}'
+    Unknown fields are rejected (400); omitted fields fall back to this process's own
+    --span/--viz/--satellite/--spf/--pause-start (i.e. this sidecar's own CLI defaults).
 """
 import argparse
 import json
@@ -69,6 +84,12 @@ _log_path: Path | None = None
 _started_at: float | None = None
 
 
+def _waypoints_path(args) -> Path:
+    """Fixed name (not timestamped like the run's own log file) so GET /waypoints
+    always knows where to look regardless of which launch wrote it last."""
+    return Path(args.log_dir) / "waypoints_latest.json"
+
+
 def _build_argv(args) -> list[str]:
     argv = [
         # -u: stdout redirected to a log file is non-tty, so Python fully block-buffers
@@ -82,6 +103,7 @@ def _build_argv(args) -> list[str]:
         "--llm", args.llm,
         "--publish-hz", str(args.publish_hz),
         "--enemy-source", args.enemy_source,
+        "--waypoints-out", str(_waypoints_path(args)),
     ]
     if args.model:
         argv += ["--model", args.model]
@@ -98,7 +120,60 @@ def _build_argv(args) -> list[str]:
             raise ValueError("--enemy-source gcs requires --target-ids")
         argv += ["--target-ids", args.target_ids]
     argv += ["--realtime"] if args.realtime else ["--no-realtime"]
+    # --spf/--satellite/--pause-start are "--viz 전용" in run_gcs_bridge.py's own
+    # --help -- passing them without --viz would be silently ignored there, so this
+    # sidecar keeps the same "only meaningful together" rule rather than passing
+    # dead flags through.
+    if args.viz:
+        argv += ["--viz", "--spf", str(args.spf)]
+        if args.satellite:
+            argv += ["--satellite"]
+        if args.pause_start:
+            argv += ["--pause-start"]
     return argv
+
+
+# Fields a POST /start body may override for that one launch. Deliberately narrow:
+# everything else (gcs-url, ally-ids, enemy-source, target-ids, llm, ...) stays a
+# sidecar-startup flag per the comment above main()'s argparse block -- span and
+# whether a matplotlib window pops up are the two things that legitimately vary
+# run to run (map scale; whether a screen is available to look at), not deployment
+# config a browser click should get to pick.
+_OVERRIDABLE_FIELDS = {"span", "viz", "satellite", "spf", "pause_start"}
+
+
+def _apply_overrides(args, overrides: dict):
+    """Return a copy of `args` with `overrides` applied, or raise ValueError."""
+    if not overrides:
+        return args
+    unknown = set(overrides) - _OVERRIDABLE_FIELDS
+    if unknown:
+        raise ValueError(f"unknown override field(s): {sorted(unknown)}; "
+                          f"allowed: {sorted(_OVERRIDABLE_FIELDS)}")
+    effective = argparse.Namespace(**vars(args))
+    if "span" in overrides:
+        try:
+            span = float(overrides["span"])
+        except (TypeError, ValueError):
+            raise ValueError("span must be a number")
+        if not 1.0 <= span <= 1000.0:
+            raise ValueError("span must be between 1 and 1000 (metres)")
+        effective.span = span
+    if "viz" in overrides:
+        effective.viz = bool(overrides["viz"])
+    if "satellite" in overrides:
+        effective.satellite = bool(overrides["satellite"])
+    if "spf" in overrides:
+        try:
+            spf = int(overrides["spf"])
+        except (TypeError, ValueError):
+            raise ValueError("spf must be an integer")
+        if spf < 1:
+            raise ValueError("spf must be >= 1")
+        effective.spf = spf
+    if "pause_start" in overrides:
+        effective.pause_start = bool(overrides["pause_start"])
+    return effective
 
 
 def _is_running() -> bool:
@@ -128,12 +203,13 @@ def _stop_locked(timeout: float = 5.0) -> None:
     _started_at = None
 
 
-def start(args) -> dict:
+def start(args, overrides: dict | None = None) -> dict:
     global _proc, _log_path, _started_at
-    argv = _build_argv(args)  # raises ValueError before touching any state
+    effective = _apply_overrides(args, overrides)  # raises ValueError before touching any state
+    argv = _build_argv(effective)
     with _lock:
         _stop_locked()
-        _log_path = Path(args.log_dir) / f"gcs_bridge_{int(time.time())}.log"
+        _log_path = Path(effective.log_dir) / f"gcs_bridge_{int(time.time())}.log"
         _log_path.parent.mkdir(parents=True, exist_ok=True)
         log_f = open(_log_path, "wb", buffering=0)
         _proc = subprocess.Popen(
@@ -142,7 +218,8 @@ def start(args) -> dict:
         )
         _started_at = time.time()
         pid = _proc.pid
-    return {"ok": True, "pid": pid, "log": str(_log_path), "argv": argv}
+    return {"ok": True, "pid": pid, "log": str(_log_path), "argv": argv,
+            "span": effective.span, "viz": effective.viz}
 
 
 def stop() -> dict:
@@ -194,15 +271,53 @@ def make_handler(args):
             self.end_headers()
 
         def do_GET(self):
-            if self.path != "/status":
-                self._send(404, {"ok": False, "detail": "unknown path"})
+            if self.path == "/status":
+                self._send(200, status())
                 return
-            self._send(200, status())
+            if self.path == "/waypoints":
+                # Gated on _is_running(), not just file existence: otherwise a
+                # stopped/crashed run's last waypoints_latest.json keeps being
+                # served forever, and the map would keep drawing wp1->wp2
+                # lines for a policy that isn't running any more -- unlike
+                # /status, which already reports "정지됨" the instant it stops.
+                if not _is_running():
+                    self._send(200, {})
+                    return
+                path = _waypoints_path(args)
+                if not path.exists():
+                    self._send(200, {})
+                    return
+                try:
+                    self._send(200, json.loads(path.read_text()))
+                except (OSError, json.JSONDecodeError):
+                    # A reader can race the sink's temp+rename write; the next
+                    # poll (gcs's web UI polls this every ~1s) just tries again.
+                    self._send(200, {})
+                return
+            self._send(404, {"ok": False, "detail": "unknown path"})
+
+        def _read_json_body(self) -> dict:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length == 0:
+                return {}
+            raw = self.rfile.read(length)
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                raise ValueError(f"invalid JSON body: {e}")
+            if not isinstance(body, dict):
+                raise ValueError("body must be a JSON object")
+            return body
 
         def do_POST(self):
             if self.path == "/start":
                 try:
-                    self._send(200, start(args))
+                    overrides = self._read_json_body()
+                except ValueError as e:
+                    self._send(400, {"ok": False, "detail": str(e)})
+                    return
+                try:
+                    self._send(200, start(args, overrides))
                 except ValueError as e:
                     self._send(400, {"ok": False, "detail": str(e)})
                 except Exception as e:
@@ -226,9 +341,23 @@ def main():
     # what each one means. Kept as sidecar-startup flags, not per-request
     # body fields, on purpose: this is a fixed deployment config (mock vs.
     # real hardware), not something a browser click should get to choose.
+    # --span/--viz/--satellite/--spf/--pause-start are the deliberate exception --
+    # they set this process's own defaults, but POST /start's JSON body can
+    # override any of them for that one launch (see _OVERRIDABLE_FIELDS /
+    # _apply_overrides above and the module docstring's "Per-start overrides").
     ap.add_argument("--gcs-url", default="http://127.0.0.1:8080")
     ap.add_argument("--ally-ids", required=True)
-    ap.add_argument("--span", type=float, required=True)
+    ap.add_argument("--span", type=float, default=35.0,
+                     help="run_gcs_bridge.py --span 기본값(실제 운용 박스 한 변, m) -- "
+                          "POST /start 본문의 span으로 매 실행마다 덮어쓸 수 있음")
+    ap.add_argument("--viz", action="store_true",
+                     help="run_gcs_bridge.py --viz 기본값 -- POST /start 본문의 viz(bool)로 덮어씀")
+    ap.add_argument("--satellite", action="store_true",
+                     help="run_gcs_bridge.py --satellite 기본값 (--viz 켜졌을 때만 의미 있음)")
+    ap.add_argument("--spf", type=int, default=3,
+                     help="run_gcs_bridge.py --spf 기본값 (--viz 켜졌을 때만 의미 있음)")
+    ap.add_argument("--pause-start", dest="pause_start", action="store_true",
+                     help="run_gcs_bridge.py --pause-start 기본값 (--viz 켜졌을 때만 의미 있음)")
     ap.add_argument("--ckpt", default="boatattack_sim/models/u-net_map.pt")
     ap.add_argument("--llm", default="heuristic", choices=["ollama", "openai", "heuristic"])
     ap.add_argument("--model", default=None)

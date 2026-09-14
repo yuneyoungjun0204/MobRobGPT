@@ -32,6 +32,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Optional
 
 import numpy as np
@@ -230,4 +231,139 @@ class NetDeploySink:
                 pass
 
 
-__all__ = ["GcsClient", "GcsAllyLink", "AllySnapshot", "NetDeploySink", "GcsRequestError"]
+# WGS84 곡률반경 기반 ENU(east,north 미터, datum 기준) -> 위경도. gcs 저장소
+# common/geo.py::Datum.to_geodetic와 동일한 공식(이 저장소는 gcs를 import 하지 않으므로
+# 복제) -- 그쪽에서 독립 검증(2026-09-09 세션, cm 단위 오차)된 바로 그 공식이다.
+_WGS84_A = 6378137.0                       # semi-major axis, m
+_WGS84_F = 1.0 / 298.257223563             # flattening
+_WGS84_E2 = _WGS84_F * (2.0 - _WGS84_F)    # first eccentricity squared
+
+
+def enu_to_latlon(datum_lat: float, datum_lon: float,
+                   east: float, north: float) -> tuple[float, float]:
+    """datum(lat,lon) 기준 로컬 ENU (east,north)[m] -> (lat,lon)[deg]."""
+    import math
+    sin_lat = math.sin(math.radians(datum_lat))
+    w = 1.0 - _WGS84_E2 * sin_lat * sin_lat
+    m = _WGS84_A * (1.0 - _WGS84_E2) / (w ** 1.5)   # meridian radius (동/북의 '북' 방향)
+    n = _WGS84_A / math.sqrt(w)                      # prime-vertical radius ('동' 방향)
+    lat = datum_lat + math.degrees(north / m)
+    lon = datum_lon + math.degrees(east / (n * math.cos(math.radians(datum_lat))))
+    return lat, lon
+
+
+class WaypointSink:
+    """배당 배정된 경유점(wp1+wp2)을 위경도로 묶어 ROS2로 내보낸다. GCS는 모른다.
+
+    `commander/gcs_cnn_env.py::_GcsAllyTelemetryMixin._publish_to_gcs()`가 매 tick,
+    goto(HTTP, "현재 활성 경유점" 하나만)와는 별도로 이 클래스의 `publish()`를 불러
+    그 배의 route 전체(현재 Kw=2, 즉 wp1+wp2)를 한 메시지로 묶어 발행한다.
+
+    `datum`(GCS `gcs.datum`의 lat/lon) 없이는 ENU->위경도 변환이 불가능하므로,
+    `datum is None`이면 ROS2 설정 자체를 건너뛰고 `publish()`가 조용히 no-op한다
+    (`NetDeploySink`가 rclpy 없을 때 그러는 것과 같은 원칙 -- 이 신호가 없어도 goto는
+    독립적으로 계속 나간다, 이 클래스가 스크립트 전체를 막으면 안 된다).
+
+    커스텀 .msg를 만들지 않는다(이 저장소 전체 관례) -- `std_msgs/String`에 JSON을 담는다.
+    `bridge/run_ros2_bridge.py`(gcs 저장소)의 `/gcs/cmd/target/intent`가 이미 같은
+    관례(String+JSON)를 쓴다.
+
+    `state_path`를 주면 최신 경유점을 vehicle_id별로 모아 그 경로에 JSON으로도 쓴다 --
+    브라우저는 ROS2 토픽을 직접 구독할 수 없으므로, gcs 웹 UI(index.html)의 시각화는
+    이 파일을 HTTP로 중계하는 별도 사이드카(tools/gcs_bridge_control.py)를 통해 읽는다.
+    rclpy 설치 여부와 무관하게 동작한다(`datum`만 있으면 됨) -- NetDeploySink의
+    `log_path`가 ROS2 pub 유무와 독립적으로 항상 쓰이는 것과 같은 이유다.
+    """
+
+    def __init__(self, datum: Optional[tuple] = None,
+                 ros2_vehicle_ids: Optional[list] = None,
+                 ros2_namespace: str = "mobrobgpt",
+                 log_fn: Callable[[str], None] = print,
+                 state_path: Optional[Path] = None):
+        self.datum = tuple(datum) if datum is not None else None
+        self.log_fn = log_fn
+        self.state_path = Path(state_path) if state_path is not None else None
+        self._latest: dict = {}
+        self._ros2_node = None
+        self._ros2_pubs: dict = {}
+        if self.datum is not None and ros2_vehicle_ids:
+            self._init_ros2(list(ros2_vehicle_ids), ros2_namespace)
+        elif ros2_vehicle_ids and self.datum is None:
+            self.log_fn("[waypoints] ⚠ datum 없음 -- 경유점 위경도 ROS2 발행 생략")
+
+    def _init_ros2(self, vehicle_ids: list, namespace: str) -> None:
+        try:
+            import rclpy
+            from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
+            from std_msgs.msg import String
+        except ImportError as exc:
+            self.log_fn(f"[waypoints] ⚠ rclpy 없음 -- ROS2 발행 생략: {exc}")
+            return
+        if not rclpy.ok():
+            rclpy.init()
+        self._node = rclpy.create_node("mobrobgpt_waypoints_pub")
+        self._ros2_node = self._node
+        # TRANSIENT_LOCAL: net_deploy와 같은 이유 -- 매 tick 발행이긴 하지만, 늦게 붙는
+        # 구독자가 첫 publish_hz 주기(최대 2s)를 기다리지 않고 바로 마지막 값을 본다.
+        qos = QoSProfile(reliability=ReliabilityPolicy.RELIABLE,
+                          durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                          history=HistoryPolicy.KEEP_LAST, depth=1)
+        self._String = String
+        for vid in vehicle_ids:
+            self._ros2_pubs[vid] = self._node.create_publisher(
+                String, f"/{namespace}/{vid}/waypoints", qos)
+
+    def publish(self, vehicle_id: str, waypoints_enu: list,
+                active_index: int, *, stamp: Optional[float] = None) -> None:
+        """`waypoints_enu`: [(east,north), ...] (route 순서 그대로, 현재 길이 2).
+        `active_index`는 `waypoints_enu`(=발행되는 `waypoints` 배열)를 가리키는
+        인덱스여야 한다 -- 호출부가 route 슬롯 전체(패딩 포함) 기준 ptr을 그대로 넘기면
+        `waypoints[active_index]`가 범위를 벗어난다, 반드시 `min(ptr, len(waypoints_enu)-1)`
+        로 clamp해서 넘길 것.
+
+        datum이 없으면 완전히 no-op(ENU->위경도 변환 자체가 불가능). datum이 있으면
+        ROS2 publisher 유무와 무관하게 `_latest`/`state_path`는 항상 갱신된다 -- 이
+        vehicle_id로 ROS2 publisher가 없을 때(rclpy 미설치, 또는 이 배가
+        ros2_vehicle_ids에 없었을 때)만 `pub.publish()`를 건너뛴다."""
+        if self.datum is None:
+            return
+        rec = {
+            "vehicle_id": vehicle_id,
+            "active_index": int(active_index),
+            "waypoints": [
+                {"lat": lat, "lon": lon}
+                for lat, lon in (enu_to_latlon(self.datum[0], self.datum[1], e, n)
+                                 for e, n in waypoints_enu)
+            ],
+            "stamp": float(stamp) if stamp is not None else time.time(),
+        }
+        self._latest[vehicle_id] = rec
+        if self.state_path is not None:
+            self._write_state()
+        pub = self._ros2_pubs.get(vehicle_id)
+        if pub is not None:
+            msg = self._String()
+            msg.data = json.dumps(rec, ensure_ascii=False)
+            pub.publish(msg)
+
+    def _write_state(self) -> None:
+        """temp+rename: 사이드카(tools/gcs_bridge_control.py)가 같은 파일을 동시에
+        읽어도 절반만 쓰인 JSON을 보는 일이 없게 한다."""
+        tmp = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
+        try:
+            self.state_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(json.dumps({"vehicles": self._latest}, ensure_ascii=False))
+            tmp.replace(self.state_path)
+        except OSError as exc:
+            self.log_fn(f"[waypoints] ⚠ 상태 파일 기록 실패({self.state_path}): {exc}")
+
+    def shutdown(self) -> None:
+        if self._ros2_node is not None:
+            try:
+                self._ros2_node.destroy_node()
+            except Exception:
+                pass
+
+
+__all__ = ["GcsClient", "GcsAllyLink", "AllySnapshot", "NetDeploySink", "WaypointSink",
+           "enu_to_latlon", "GcsRequestError"]
