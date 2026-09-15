@@ -17,14 +17,14 @@
 | 4 | `04_commander_layer.md` | 지휘관 계층 | `fig:commander` | 단단 80mm | 2400×1800 | B+A | 10 |
 | 5 | `05_valid_mask.md` | 유효 마스크 구성 | `fig:mask` | **양단** | 4200×1300 | B | 5 |
 | 6 | `06_raster_observation.md` | 다채널 래스터 관측 | `fig:observation` | 단단 80mm | 2400×1800 | A+B | 12 |
-| 7 | `07_unet_architecture.md` | 점수맵 신경망 구조 | `fig:unet` | **양단** | 4200×1600 | B | 19 |
-| 8 | `08_pointer_decoding.md` | 질의 스코어링·순차 선택 | `fig:pointer` | **양단** | 4200×1500 | B+A | 10 |
+| 7 | `07_unet_architecture.md` | 점수맵 신경망 구조 + 질의 스코어링 | `fig:unet` | **양단** | 4200×1600 | B | 23 |
+| ~~8~~ | `_retired/08_pointer_decoding.md` | ~~질의 스코어링·순차 선택~~ → 07에 흡수. 마스크·선택·그물벽은 논문 Fig.7 `fig_valid_mask`(실측)가 담당 | — | — | — | — | — |
 | 9 | `09_grpo_training.md` | 그룹상대 학습·반사실 기여 | `fig:grpo` | 단단 80mm | 2400×1800 | A+B | 9 |
 | 10 | `10_reward_structure.md` | 보상 구조 | `fig:reward` | 단단 80mm | 2400×1800 | A+B | 7 |
 | 11 | `11_coordinate_frames.md` | 3층 좌표 변환 | `fig:coords` | 단단 80mm | 2400×1800 | A→B | 10 |
 | 12 | `12_deployment_loop.md` | 실환경 배치 루프 | `fig:deployment` | 단단 80mm | 2400×1800 | B+A | 9 |
 
-Fig. 7 의 문자열 19개 중 12개는 채널 수·해상도 **수치 주기**다. 이 장르의 필수 표기이므로
+Fig. 7 의 문자열 23개 중 12개는 채널 수·해상도 **수치 주기**다. 이 장르의 필수 표기이므로
 텍스트 예산에서 제외한다(`00_style_sheet.md` §3).
 
 ## 풀페이퍼 절 배치안
@@ -35,7 +35,7 @@ Fig. 7 의 문자열 19개 중 12개는 채널 수·해상도 **수치 주기**�
 | 2. 제안 방법 (도입) | Fig. 2 (체계 구조·비동기) |
 | 2.1 문제 설정 | Fig. 3 (공격 포메이션) |
 | 2.2 전략 계층 | Fig. 4 (지휘관), Fig. 5 (유효 마스크) |
-| 2.3 기동 계층 | Fig. 6 (관측), Fig. 7 (신경망), Fig. 8 (순차 선택) |
+| 2.3 기동 계층 | Fig. 6 (관측), Fig. 7 (신경망+질의 스코어링), 논문 기존 `fig_valid_mask` (실측 마스크·선택) |
 | 2.4 학습 | Fig. 9 (GRPO), Fig. 10 (보상) |
 | 3. 실환경 적용 | Fig. 11 (좌표계), Fig. 12 (배치 루프) |
 | 4. 실험 결과 | **아래 참조 — 이미지 생성 대상 아님** |
@@ -74,7 +74,7 @@ Fig. 7 의 문자열 19개 중 12개는 채널 수·해상도 **수치 주기**�
 - [ ] 프리깃 / 공격정 / 방어정이 도판마다 **같은 모델**로 보이는가
 - [ ] 그물이 전 도판에서 주황 부표열 + 수면 아래 망으로 동일한가
 - [ ] 히트맵이 전부 viridis 단일 컬러맵인가 (무지개 섞이지 않았는가)
-- [ ] 텐서 슬래브의 오블리크 각도와 채움색이 2·6·7·8·12 에서 같은가
+- [ ] 텐서 슬래브의 오블리크 각도와 채움색이 2·6·7·12 에서 같은가
 - [ ] skip 화살표가 전부 보조색 파선인가
 - [ ] 이미지 안에 `Fig.` / `Figure` / 도판 제목이 **하나도** 없는가
 - [ ] 한글이 단 한 글자도 없는가
@@ -93,8 +93,15 @@ Fig. 7 의 문자열 19개 중 12개는 채널 수·해상도 **수치 주기**�
 fig1_concept.png       fig5_mask.png          fig9_grpo.png
 fig2_architecture.png  fig6_observation.png   fig10_reward.png
 fig3_formations.png    fig7_unet.png          fig11_coords.png
-fig4_commander.png     fig8_pointer.png       fig12_deployment.png
+fig4_commander.png     (fig8 없음 — 은퇴)    fig12_deployment.png
 ```
+
+## ⚠ 논문 기존 Fig. 6 `fig_unet_arch.png` 오류 (교체 필요)
+
+기존 도판 우측 끝에 **'Regression Head 64→32→2'** 가 그려져 있다. 코드(`cnn_actor.py`)에 회귀 헤드는
+없고 점수맵 위 `Categorical` 픽셀 지목이다. §4.3.3 과 바로 다음 Fig. 7 제목("왜 좌표 회귀가 아니라
+점수맵 위 픽셀 지목인가")과 정면 모순. 유효 마스크 단계도 빠져 있고 `dec1 (64×25×25)` 도 실제 출력
+채널은 32다. → **07 산출물로 교체**한다.
 
 ## ⚠ 그물벽 길이 불일치 (미해결 — 사용자 확정 필요)
 
@@ -107,7 +114,8 @@ fig4_commander.png     fig8_pointer.png       fig12_deployment.png
 다만 확정 후 두 도판의 **시각 비례**를 함께 맞춰야 한다:
 
 - Fig. 1 — 그물벽이 접근 회랑 폭에 비해 얼마나 긴가
-- Fig. 8 — 선택된 두 점 사이 간격이 방어정 크기에 비해 얼마나 먼가
+- Fig. 9 / Fig. 12 — 롤아웃·배치 썸네일 안의 그물벽 길이가 방어정 크기에 비해 얼마나 긴가
+- 논문 기존 `fig_valid_mask` 우측 패널의 두 픽셀 간격 (실측이므로 재렌더 시 자동 반영)
 
 두 도판은 서로 **상호 일관된 스키매틱 비율**로 두고, 값이 확정되면 함께 재조정한다.
 지금은 어느 쪽으로도 확정하지 않았다.

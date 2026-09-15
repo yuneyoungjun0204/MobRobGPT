@@ -13,10 +13,9 @@
 비동기로 분리함으로써, 호출이 진행되는 동안 기동 계층은 직전 배정을 그대로 사용하여 결정을
 계속하고 응답이 도착하면 다음 결정부터 새 배정이 반영된다.
 
-%-------------------------------------------------- 그림 2
-\begin{figure*}[tp]
+\begin{figure*}[b]
 \centering
-\includegraphics[width=\textwidth]{fig2_architecture.pdf}
+\includegraphics[width=\textwidth]{fig2.png}
 \caption{속도가 다른 2계층 비동기 구조. 두 판단 계층은 25초마다 결정을 내리지만, 전략
          계층(언어모델 지휘관)은 로컬 14B 모델에서 평균 16.6초가 걸리는 반면 기동 계층의
          순전파 시간은 무시할 수 있다. 그래서 전략 계층 호출만 비동기로 분리하고, 저수준
@@ -29,11 +28,18 @@
 
 두 판단 계층은 개별 적선이 아니라 \emph{무리}를 단위로 배정한다. 따라서 매 결정마다 생존
 적선을 모선 기준 방위로 묶어 최대 $C$ 개의 무리로 요약한다. 적선 $m$ 의 모선 기준 방위를
-항법 규약(북쪽 $0^\circ$, 시계 방향)으로 정의한다.
+항법 규약(북쪽 $0^\circ$, 시계 방향)으로 정의한다(절차의 개요는 Fig.~\ref{fig:clustering}).
 \begin{equation}
 \vartheta_m = \operatorname{atan2}\!\big(e_{m,x} - m_x,\; e_{m,y} - m_y\big) \bmod 360^\circ
 \label{eq:bearing}
 \end{equation}
+
+\begin{figure*}[b]
+\centering
+\includegraphics[width=0.92\textwidth]{fig3.png}
+\caption{방위 간격 기반 적응형 군집화의 네 단계. ① 모선 기준 방위각으로 적선을 원형 정렬 ② 이웃 방위 사이의 큰 빈틈(임계 $\delta_{\mathrm{gap}}$ 초과)을 찾음 ③ 빈틈에서 잘라 무리를 확정(무리 수는 $1$--$C$ 로 데이터에 맞춰 정해진다) ④ 무리마다 위협도를 매기고 무리 중심과 모선을 잇는 선분 위에 요격점을 둔다. 고정 구간(bin) 분할과 달리 한 무리가 구간 경계에서 둘로 쪼개지지 않는다.}
+\label{fig:clustering}
+\end{figure*}
 방위를 $360^\circ / C$ 폭의 고정 구간(bin)으로 나누는 방식은 한 무리가 구간 경계에 걸리면
 둘로 쪼개지고, 무리가 하나뿐인 상황에서도 빈 구간을 포함한 $C$ 개 슬롯으로 표현한다. 본 연구는 대신
 \emph{방위 간격(gap)} 에 따라 무리 수를 데이터에 맞추는 적응형 군집화를 쓴다. 생존 적선
@@ -180,22 +186,9 @@ i_k = \arg\min_{i \in \mathcal{V}^{(k)}_p} \lVert \mathbf{x}_i - \mathbf{t}_k \r
 유효 마스크 전체로 한 번에, 정책은 단계별로 되돌린다).
 
 휴리스틱은 유효 영역 안에서 기하로 정해진 한 점을 지목할 뿐 나머지 칸에 대한 선호가
-없으므로(Fig.~\ref{fig:heurvsunet} 가운데), 다른 무리를 맡은 방어정이 이미 친 벽, 파상 공격의
+없으므로, 다른 무리를 맡은 방어정이 이미 친 벽, 파상 공격의
 뒤 단, 지형이 만드는 길목은 요격점 계산에 반영되지 않는다. 이들은 해면 전체를 비교해야
 얻어지는 판단이며, \S\ref{sec:policy}의 점수맵이 그 비교를 학습된 함수로 대체한다.
-
-\begin{figure*}[tp]
-\centering
-\includegraphics[width=\textwidth]{fig_heur_vs_unet.png}
-\caption{기동 계층 두 방식의 비교(학습된 체크포인트의 실제 출력, 같은 전장·같은 시점).
-         왼쪽: 두 방식이 공유하는 유효 마스크 --- 2500칸 중 203칸만 선택 가능하다.
-         가운데: 휴리스틱은 유효 영역 안에서 기하로 정해진 두 점을 지목하며, 나머지
-         칸에 대한 선호를 표현하지 않는다(영역 전체가 균일하게 칠해져 있다).
-         오른쪽: 점수맵 정책은 같은 영역 위에 학습된 분포를 얹어 소수의 칸에 확률을
-         집중시킨다. \textbf{두 방식은 같은 격자·같은 마스크·같은 거리 제약을
-         통과한다} --- 행동공간이 동일해야 성능 차이가 방법의 차이가 된다.}
-\label{fig:heurvsunet}
-\end{figure*}
 
 \subsection{점수맵 기반 기동 정책}
 \label{sec:policy}
@@ -210,22 +203,9 @@ Fig.~\ref{fig:observation}). 총 15개 채널은 모든 방어정이 공유하�
 (Fig.~\ref{fig:tensorstack}), 각 채널의 정의와 값 범위를 Table~\ref{tab:channels}에
 정리하였다.
 
-\begin{figure*}[tp]
+\begin{figure}[t]
 \centering
-\includegraphics[width=0.88\linewidth]{fig_channels.png}
-\caption{래스터화된 15채널 관측의 한 장면(파상 포메이션, 통영 매물도 북측, $t=320$,
-         학습·평가와 같은 $50\times50$ 격자). 01--09는 전역 채널(적 밀도, 적 진행
-         $x$·$y$, 적 위협도, 아군 위치, 설치된 그물, 원점, 요격 환형, 육지), 10--12는
-         방어정 0의 채널(자기 위치, 배정 요격점, 유효 영역), 13--15는 좌표 채널($x$, $y$,
-         $r$)이며 모두 같은 격자에 정렬된다. 부호 없는 채널은 값이 클수록 검게, 부호 있는
-         채널($v_x$, $v_y$, 좌표 $x$·$y$)은 음을 파랑·양을 빨강으로 그렸다. 채널의 정의와
-         값 범위는 Table~\ref{tab:channels}에 있다.}
-\label{fig:observation}
-\end{figure*}
-
-\begin{figure*}[tp]
-\centering
-\includegraphics[width=0.86\textwidth]{fig_tensor_stack.png}
+\includegraphics[width=\columnwidth]{fig4.png}
 \caption{15채널 관측의 구성. 전역 9채널(01--09), 방어정별 3채널(10--12), 좌표 3채널
          (13--15)이 같은 격자에 겹쳐 하나의 다채널 영상을 이룬다. 오른쪽의
          채널 이름은 구현의 이름과 같다. 왼쪽 아래는 격자에 담기지 않고 벡터로 들어가는
@@ -235,6 +215,18 @@ Fig.~\ref{fig:observation}). 총 15개 채널은 모든 방어정이 공유하�
          표현이다} --- 본 연구의 래스터는 방어정 시야가 아니라 \textbf{모선을 중앙에 둔
          전역 격자}이며, 방어정마다 달라지는 것은 3채널(10--12)과 $\mathbf{o}_p$ 뿐이다.}
 \label{fig:tensorstack}
+\end{figure}
+\begin{figure*}[tp]
+\centering
+\includegraphics[width=0.8\textwidth]{fig5.png}
+\caption{래스터화된 15채널 관측의 한 장면(파상 포메이션, 통영 매물도 북측, $t=320$,
+         학습·평가와 같은 $50\times50$ 격자). 01--09는 전역 채널(적 밀도, 적 진행
+         $x$·$y$, 적 위협도, 아군 위치, 설치된 그물, 원점, 요격 환형, 육지), 10--12는
+         방어정 0의 채널(자기 위치, 배정 요격점, 유효 영역), 13--15는 좌표 채널($x$, $y$,
+         $r$)이며 모두 같은 격자에 정렬된다. 부호 없는 채널은 값이 클수록 검게, 부호 있는
+         채널($v_x$, $v_y$, 좌표 $x$·$y$)은 음을 파랑·양을 빨강으로 그렸다. 채널의 정의와
+         값 범위는 Table~\ref{tab:channels}에 있다.}
+\label{fig:observation}
 \end{figure*}
 
 \begin{table*}[tp]
@@ -256,7 +248,7 @@ Fig.~\ref{fig:observation}). 총 15개 채널은 모든 방어정이 공유하�
 6  &                         & 설치된 그물    & 물리 격자의 그물 점유를 최대값 풀링                     & $\{0,1\}$ \\
 7  &                         & 원점           & 모선 반경 안의 픽셀                                    & $\{0,1\}$ \\
 8  &                         & 요격 구역      & $r_{\min} \le \lVert \mathbf{x}_i - \mathbf{m} \rVert \le r_{\max}$ 인 픽셀 & $\{0,1\}$ \\
-9  &                         & 육지           & 고해상도 육지 마스크의 면적비 (Fig.~\ref{fig:landpipe}) & $[0,1]$ \\
+9  &                         & 육지           & 고해상도 육지 마스크의 면적비  & $[0,1]$ \\
 \midrule
 10 & \multirow{3}{*}{방어정별} & 자기 위치     & 방어정 $p$ 가 놓인 픽셀                                & $\{0,1\}$ \\
 11 &                         & 배정 요격점    & $\mathbf{I}_p$ 가 놓인 픽셀 (미배정이면 전부 0)        & $\{0,1\}$ \\
@@ -268,18 +260,6 @@ Fig.~\ref{fig:observation}). 총 15개 채널은 모든 방어정이 공유하�
 \bottomrule
 \end{tabular}
 \end{table*}
-
-\begin{figure*}[tp]
-\centering
-\includegraphics[width=0.88\textwidth]{fig_landpipe.png}
-\caption{실해역 지형의 반영 과정(통영 매물도 인근, 12.6\,km 박스). ① OpenStreetMap
-         벡터 폴리곤 $\to$ ② 고해상도 래스터($805^2$, 16\,m/px) $\to$ ③ 충돌 판정용
-         물리 격자($200^2$, 63\,m/cell) $\to$ ④ 정책 격자($50^2$, 252\,m/px)로 면적비
-         다운샘플. \textbf{판정과 관측을 다른 해상도로 두는 이유}는 충돌은 이진 판정을
-         요구하고, 관측은 해안선이 계단으로 들어가면 안 되기 때문이다. ⑤는 적의 우회를
-         유도하는 척력장으로, 관측이 아니라 적 기동 모형의 일부다.}
-\label{fig:landpipe}
-\end{figure*}
 
 \textbf{래스터화와 정규화.} 픽셀 크기는 $\ell = 2E/n_{\mathrm{g}}$ 이고, 월드 좌표
 $\mathbf{x}$ 는 모선 위치 $\mathbf{m}$ 을 중심으로 다음 픽셀 인덱스로 사상된다.
@@ -305,7 +285,7 @@ c^{\mathrm{thr}}_i = \max_{m \in \mathcal{A}_i}
 하고, 위협도는 모선까지 거리를 적이 에피소드 상한 안에 달릴 수 있는 최대 거리
 $v_e T_{\max}$ 로 정규화하여 가까울수록 1에 가깝게 한다.
 아군 위치 채널은 같은 방식으로 $P$ 로 나누고, 설치된 그물 채널은 고해상도 물리 격자의
-최대값 풀링, 육지 채널은 면적비 다운샘플(Fig.~\ref{fig:landpipe})이다. 좌표 채널은
+최대값 풀링, 육지 채널은 면적비 다운샘플이다. 좌표 채널은
 픽셀 중심 $\mathbf{x}_i = (x_i, y_i)$ 에 대해
 \begin{equation}
 (c^{x}_i,\, c^{y}_i) = \frac{\mathbf{x}_i - \mathbf{m}}{E}, \qquad
@@ -343,26 +323,34 @@ Fig.~\ref{fig:observation}은 이 15채널 관측을 한 장면에 대해 채널
 다만 합성곱은 평행이동 등변이라 절대 위치가 흐려지므로, 좌표 채널을 함께 넣어 위치를
 보존한다.
 
-육지 채널은 실제 해역 정보를 반영한다(Fig.~\ref{fig:landpipe}). OpenStreetMap 에서 해안선·섬 폴리곤을 추출하여
+육지 채널은 실제 해역 정보를 반영한다(학습에 쓴 해역 6곳은 Fig.~\ref{fig:sites}). OpenStreetMap 에서 해안선·섬 폴리곤을 추출하여
 격자로 변환한 뒤, 열림 연산으로 부두·방파제 같은 가는 돌출부를 제거하고 구멍 메우기로
 내부를 정리한다. 충돌 판정은 고해상도 물리 격자에서 이진으로 수행하고, 관측 채널은 이를
 면적비로 정책 격자에 다운샘플하여 해안선이 계단이 아닌 연속값으로 들어가게 한다.
 해역별로 한 번만 계산하여 캐시하므로 학습 중 외부 API 호출은 발생하지 않는다.
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig6.png}
+\caption{학습에 쓴 실해역 6곳의 육지 마스크(OpenStreetMap 해안선을 래스터화한 것, 12.6\,km 박스). 별표는 모선, 파선 원은 요격 구역이다. 각 패널 위의
+         백분율은 박스 안 육지 비율, 아래는 요격 구역에 육지가 잠식한 비율과 모선에서 가장
+         가까운 육지까지의 여유 거리이다. 오른쪽 아래(포항 호미곶 동측)는 육지가 없는 외해로,
+         지형이 없는 상황을 학습 분포에 넣기 위한 대조 해역이다.}
+\label{fig:sites}
+\end{figure}
+
 %-------------------------------------------------- 그림 4
 
 \subsubsection{FiLM 조건화 U-Net과 점수맵}
-
 
 관측은 U-Net 구조~\citep{ronneberger2015unet}를 지나 입력과 같은 해상도의 특징 지도로
 변환된다(Fig.~\ref{fig:policy}). 인코더 2단($50\to25\to13$)으로 수용 영역을 넓히고, 디코더
 2단으로 원해상도를 복원하며, skip 연결이 인코더의 위치 정보를 디코더로 전달한다. 정밀 좌표와
 전역 상황 판단을 동시에 요구하는 본 문제에 U자형 구조가 맞물리는 지점이 여기다.
 
-%-------------------------------------------------- 그림 5 (양단)
 \begin{figure*}[tp]
 \centering
-\includegraphics[width=0.84\textwidth]{fig_unet_arch.png}
+\includegraphics[width=\textwidth]{fig7.png}
 \caption{점수맵 정책의 구조. 각 방어정의 8차원 상태가 공유 MLP($8\to128\to32$)를
          지나 질의 $\mathbf{q}$가 되고, 15채널 관측은 Stem($32\times50\times50$) --
          인코더($32\times25\times25 \to 64\times13\times13$) -- FiLM 병목 --
@@ -420,27 +408,11 @@ s_{p,i} = \frac{\langle \mathbf{W}_q \mathbf{q}_p + \mathbf{b}_q,\, \mathbf{f}_i
 \S\ref{sec:deploy}에서 다루는 배치 크기 1의 실시간 추론이 학습과 같은 연산을 수행한다는
 전제가 된다.
 
-Fig.~\ref{fig:policy}가 구조의 개념 일러스트라면, Fig.~\ref{fig:pipeline_detail}은
-같은 망의 형상과 조건화 지점을 정확히 적은 구현 참조도이다 --- 실제 관측 채널 화면에서
-출발해 각 층의 텐서 크기, FiLM 계수가 들어가는 위치, 자기회귀 질의 갱신까지 한 장에 담았다.
-
-\begin{figure*}[tp]
+\begin{figure*}[tbp]
 \centering
-\includegraphics[width=0.88\textwidth]{fig_unet_plotnn.png}
-\caption{기동 계층의 텐서 흐름(구현 참조도, 244{,}389 파라미터, $d=32$, $K=2$).
-         \textbf{왼쪽}: 실제 관측 15채널 --- 전역 9채널(위)과 방어정별 3채널 $+$ CoordConv
-         3채널(아래)의 학습된 체크포인트 출력 화면. \textbf{가운데}: stem $\to$ enc1 $\to$
-         enc2(stride 2) $\to$ bottleneck $\to$ dec2 $\to$ dec1의 U-Net. 병목에서 전역 평균
-         풀링 $\to$ 선형층으로 FiLM 계수 $(\gamma,\beta)$를 만들어 병목 특징을 변조하고,
-         방어정 자체 상태 $\mathbf{o}_p \in \mathbb{R}^8$ 은 MLP($8\to128\to32$)를 거쳐
-         질의 $q$ 가 된다. 스킵 연결은
-         위쪽 파란 화살표. \textbf{오른쪽}: $1\times1$ 합성곱으로 픽셀 특징 $f$를 내고,
-         질의 $q$와의 내적 $\langle q, f\rangle/\sqrt{d}$로 점수맵을 만든 뒤 유효 마스크를
-         거쳐 argmax로 $K=2$ 픽셀을 고른다. 아래 점선은 자기회귀
-         $q \leftarrow q + f_{k-1}$ --- 첫 점의 특징을 질의에 더해 두 번째를 고른다.
-         본문 Fig.~\ref{fig:policy}는 같은 구조의 개념 일러스트이고, 이 그림은 형상과
-         조건화 지점을 정확히 적은 판이다.}
-\label{fig:pipeline_detail}
+\includegraphics[width=\textwidth]{fig8.png}
+\caption{유효 마스크와 픽셀 지목(학습된 체크포인트의 실제 출력, 통영 매물도 북측, 방어정 한 척의 결정 시점). (a) 전체 $50\times50$ 격자를 위성 영상 위에 겹친 것. 흰 베일이 덮인 칸은 놓을 수 없는 칸(이 장면에서 격자의 88\,\%), 밝은 칸이 놓을 수 있는 칸이며, 파선 사각형이 (b)의 범위다. 검붉은 원은 이 그림의 주인공인 방어정, 검붉은 부채꼴은 그 방어정이 맡은 적 무리, 화살표는 배정된 요격점 방향이다. 중앙의 항공모함이 모선이다. 연속 좌표를 회귀하는 출력에는 이 경계를 표현할 자리가 없다. (b) 후보 영역으로 확대한 점수맵(로그 스케일)과 선택된 두 픽셀(흰 원), 그 둘을 잇는 그물벽. 마스킹된 softmax 아래에서 베일 덮인 칸은 확률이 0이라 애초에 선택되지 않는다. (c) 제약이 순차 적용되며 후보가 줄어드는 과정($2500 \to 1000 \to 935 \to 386 \to 299$, 12.0\,\%). 6{,}652회 결정에 걸친 평균 후보 비율은 10.5\,\%였다.}
+\label{fig:validmask}
 \end{figure*}
 
 \subsubsection{유효 마스크와 픽셀 지목}
@@ -487,21 +459,6 @@ $r_{\max} = 4500$, $r_{\mathrm{g}} = 3000\unit{m}$, $\vartheta_{\mathrm{g}} = 60
 구역 1000 $\to$ 육지 제외 979 $\to$ 반경 게이트 387 $\to$ 방위 회랑 299로, 격자의
 \textbf{88\,\%가 애초에 갈 수 없는 자리}이다. 연속 좌표 회귀에는 이 구조를 표현할 수단이
 없다.
-
-%-------------------------------------------------- 유효 마스크
-\begin{figure*}[tp]
-\centering
-\includegraphics[width=\linewidth]{fig_valid_mask.pdf}
-\caption{유효 마스크와 픽셀 지목(학습된 체크포인트의 실제 출력, 방어정 한 척의 결정 시점).
-         (a) 전체 $50\times50$ 격자. 회색은 놓을 수 없는 칸(이 장면에서 격자의 88\,\%),
-         흰색은 놓을 수 있는 칸, 진회색은 육지이며 파선 사각형이 (b)의 범위다. 연속 좌표를
-         회귀하는 출력에는 이 경계를 표현할 자리가 없다. (b) 후보 영역으로 확대한 점수맵
-         (회색조, 로그 스케일)과 선택된 두 픽셀, 그 둘을 잇는 그물벽. 마스킹된 softmax
-         아래에서 회색 칸은 확률이 0이라 애초에 선택되지 않는다. (c) 제약이 순차 적용되며
-         후보가 줄어드는 과정($2500 \to 1000 \to 979 \to 387 \to 299$, 12.0\,\%).
-         6{,}652회 결정에 걸친 평균 후보 비율은 10.5\,\%였다.}
-\label{fig:validmask}
-\end{figure*}
 
 \textbf{왜 연속 좌표가 아니라 이산 격자인가.} 마스킹 말고도 세 가지 이득이 있다.
 첫째 \emph{다봉 분포}이다. 그물벽을 놓을 만한 자리는 흔히 한 곳이 아니라 서로 떨어진
@@ -567,10 +524,9 @@ i_k \sim \pi^{(k)}_p \equiv \pi_\theta(\cdot \mid \mathbf{q}^{(k)}_p, \mathcal{V
 정칙화에 그대로 쓰인다. 특징 조회에서 두 번째 점까지의 흐름을 Fig.~\ref{fig:picksteps}에
 요약하였다.
 
-%-------------------------------------------------- 픽셀 지목 4단계
-\begin{figure*}[tp]
+\begin{figure*}[b]
 \centering
-\includegraphics[width=0.86\textwidth]{fig_pick_steps.png}
+\includegraphics[width=0.9\textwidth]{fig9.png}
 \caption{점수맵 위 픽셀 지목의 네 단계. ① 복호기가 낸 픽셀별 특징 $F(x,y)$.
          ② 유효 마스크 $M$을 곱해 놓을 수 없는 칸을 차단한다(\S\ref{sec:validmask}).
          ③ 질의 $\mathbf{v}$와의 내적으로 점수맵 $S = F\cdot\mathbf{v}$를 얻고 최대 칸을
@@ -640,10 +596,9 @@ $g_{\max} = 1.0$ 에서 자른다.
 탐색 트리를 전개하지 않고 한 결정 시점의 후보 집합만 비교한다. 이 절차와 다음 소절의
 크레딧 배분을 Fig.~\ref{fig:grpocredit}에 한 장으로 정리하였다.
 
-%-------------------------------------------------- GRPO + 반사실 크레딧
 \begin{figure*}[tp]
 \centering
-\includegraphics[width=0.84\textwidth]{fig_grpo_credit.png}
+\includegraphics[width=0.82\textwidth]{fig10.png}
 \caption{가치망 없는 다중 방어정 그룹 상대 최적화의 한 갱신. \textbf{위}: 한 결정 상태에서
          $G$개의 결합 행동 후보를 표집하고, 각 후보를 시뮬레이터에서 공통 구간만큼 실제로
          진행시켜 팀 보상을 얻는다. \textbf{가운데}: 후보 평가에 쓰이는 롤아웃 창.
@@ -789,38 +744,6 @@ $+0.36$ 인 데 비해 절댓값 평균은 $7.40$ 으로, 창마다 크게 변�
 분포하도록 골랐고, 모선에서 가장 가까운 육지까지의 여유도 1.6\,km에서 무한대까지 걸쳐 있다.
 평가(\S\ref{sec:experiment})는 이 가운데 통영 매물도 서측 한 곳에서 수행한다.
 
-%-------------------------------------------------- 학습 해역 6곳
-\begin{figure*}[tp]
-\centering
-\includegraphics[width=0.80\textwidth]{fig_sites6.png}
-\caption{학습에 쓴 실해역 6곳의 육지 마스크(Fig.~\ref{fig:landpipe}의 절차를 각 해역에
-         적용한 결과, 12.6\,km 박스). 별표는 모선, 파선 원은 요격 구역이다. 각 패널 위의
-         백분율은 박스 안 육지 비율, 아래는 요격 구역에 육지가 잠식한 비율과 모선에서 가장
-         가까운 육지까지의 여유 거리이다. 오른쪽 아래(포항 호미곶 동측)는 육지가 없는 외해로,
-         지형이 없는 상황을 학습 분포에 넣기 위한 대조 해역이다.}
-\label{fig:sites}
-\end{figure*}
-
-같은 여섯 해역에서 학습된 정책이 실제로 어떻게 움직이는지는 Fig.~\ref{fig:sitesrun}에
-같은 진행 시점(에피소드의 약 65\,\%, 그물이 전개되고 적이 요격 구역에 도달한 시점)으로
-나란히 놓았다. 집중 포메이션·휴리스틱 배정·U-Net 기동으로 통일하였고 해역만 다르다. (c)
-신안 홍도 북측과 (e) 통영 매물도 북측에서는 해안선이 요격 구역 안쪽까지 들어와 유효
-마스크를 잠식하며, (f) 포항 호미곶 동측은 육지가 없어 정책이 지형 제약 없이 기동하는 대조
-사례다. 각 패널의 시드는 해당 해역에서 전멸 포획·돌파 0·충돌 0·아군 손실 0을 만족하는
-것으로 골랐다 --- 이 그림은 성능 주장이 아니라 지형이 경로와 그물 위치에 어떻게 개입하는지를
-보이는 용도이다.
-
-\begin{figure*}[tp]
-\centering
-\includegraphics[width=0.9\textwidth]{fig_sites6_run.png}
-\caption{학습 해역 6곳의 실행 장면(집중 포메이션, 휴리스틱 배정, U-Net 기동, 에피소드
-         진행률 65\,\%). 패널 순서와 육지 비율은 Fig.~\ref{fig:sites}와 같다. 위성 배경 위에
-         육지 마스크·설치된 그물(보라)·경유점·경로가 겹쳐 있고, 각 패널 상단에 전장
-         상황판과 적/아군 확대 창이 있다. 시드는 해역별로 사고 없는 에피소드를 골랐다
-         (\texttt{tools/find\_demo\_seeds.py --site}).}
-\label{fig:sitesrun}
-\end{figure*}
-
 Fig.~\ref{fig:traincurve}에 학습 경과를 정리하였다. 포획률(패널 (a))은 휴리스틱 기준선
 0.744 부근에서 출발하여 800 업데이트 안에 greedy 평가 최고 0.805(600 업데이트)에 도달한다.
 본 논문이 평가하는 정책은 \textbf{이 최고 시점의 가중치}이다.
@@ -839,7 +762,7 @@ greedy 평가(패널 (a)의 원 표식)로 하고, 최종 성능은 \S\ref{sec:e
 
 \begin{figure*}[tp]
 \centering
-\includegraphics[width=\textwidth]{fig_traincurve.pdf}
+\includegraphics[width=0.9\textwidth]{fig11.png}
 \caption{GRPO 학습 경과($50^2$ 격자, 후보 $G=8$, 후보 평가 구간 180\,step, 실해역 6곳
          로테이션(Fig.~\ref{fig:sites}), 800 업데이트). 검정 굵은 선은 20 업데이트마다 기록한
          원자료의 100 업데이트 이동평균이며, (a)에만 원자료를 연회색 가는 선으로 함께 두었다.
@@ -876,7 +799,7 @@ $\varsigma_t$ 는 행동복제 초기점 $\theta_{\mathrm{BC}}$ 로부터의 상
 
 \begin{figure*}[tp]
 \centering
-\includegraphics[width=\textwidth]{fig_convergence.pdf}
+\includegraphics[width=\textwidth]{fig12.png}
 \caption{수렴 진단 --- 채택 런과 같은 설정을 시드 3개로 다시 돌린 학습 동역학. 검정 굵은
          선은 시드 평균(40 업데이트 이동평균)이며, 시드별 궤적은 (a)에만 연회색으로 두었다.
          (a) 100 업데이트마다의 greedy 포획률(연회색은 시드별, 검정 실선은 평균, 검정 파선은
@@ -972,15 +895,15 @@ $\sigma_{\mathrm{BC}} = 0.8$\,px($\approx 202\unit{m}$)이며, 두 번째 픽셀
 즉 $0.01$ 에서 $0.001$ 로 줄어든다. 기울기는 식~\eqref{eq:update}대로 노름 $g_{\max} = 1.0$ 에서
 자른다.
 
-\begin{figure}[htbp]
+\begin{figure*}[b]
 \centering
-\includegraphics[width=\linewidth]{fig_lr_schedule.pdf}
+\includegraphics[width=0.85\textwidth]{fig13.png}
 \caption{학습 코드가 실제로 쓴 스케줄. (a) 식~\eqref{eq:cosine}의 단일 주기 코사인 학습률.
          원 표식은 200 업데이트마다의 greedy 평가 시점, 별표는 채택 가중치(600 업데이트,
          $\eta_t \approx 1.9\times10^{-5}$), 회색 파선은 $\eta_{\min}$이다.
          (b) 엔트로피 계수 $\lambda_{\mathrm{H}}(t)$의 선형 감쇠($0.01 \to 0.001$).}
 \label{fig:lrsched}
-\end{figure}
+\end{figure*}
 
 코사인을 고른 이유는 이 학습 구조의 두 가지 성질 때문이다. 첫째, 그룹 상대 이득
 (식~\eqref{eq:adv})은 매 업데이트마다 새로 표집한 전장에서 $G=8$개 후보의 \emph{순위}만
@@ -1010,7 +933,7 @@ Fig.~\ref{fig:runshot}에 있다. 입력은 전장 상태·임무 목표·교전
 
 \begin{figure*}[tp]
 \centering
-\includegraphics[width=\textwidth]{fig_runshot.png}
+\includegraphics[width=0.9\textwidth]{fig14.png}
 \caption{실행 화면(양동 포메이션, Gemini 지휘관, 재계획 주기 25\,step). 왼쪽은 위성 영상
          위에 육지 마스크·그물벽·요격 회랑을 겹친 전장과 적/아군 확대 창이고, 오른쪽은
          지휘관이 낸 배정과 그 근거이다. 상단 표시에서 이 시점의 전과(포획 3, 돌파 0,
