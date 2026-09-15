@@ -36,15 +36,40 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import scienceplots  # noqa: F401  --- plt.style 에 'science' 계열 스타일을 등록한다
+from cycler import cycler
 from matplotlib.patches import Patch
+from tueplots import axes as TA
+from tueplots import figsizes as TF
+from tueplots import fontsizes as TS
 
 from . import paper_names as PN
 from . import plots as P
 from . import stats as S
 
-# ── 배치 크기 (Elsevier: 1단 90 mm, 1.5단 140 mm, 2단 190 mm) ───────────────
+# ── 판형 ─────────────────────────────────────────────────────────────────────
+#  기준은 Elsevier 의 명목 단폭(90/140/190 mm)이 아니라 **실제 조판 본문 폭**이다.
+#  elsarticle preprint 의 본문 폭은 137 mm(tools/check_figure_widths.py 가 측정). 그림을
+#  이보다 넓게 그려 \includegraphics 로 줄이면 글자가 같은 비율로 작아진다 --- 180 mm 로
+#  그려 126 mm 에 넣던 이전 설정은 8 pt 글자를 5.6 pt 로 찍고 있었다. 이제 W2 = 본문 폭이므로
+#  width=\textwidth 로 넣으면 그림 안 8 pt 가 본문 8 pt 와 같다.
 MM = 1 / 25.4
-W1, W15, W2 = 88 * MM, 140 * MM, 180 * MM
+TEXT_W_MM = 137.0
+W2 = TEXT_W_MM * MM            # 양단(본문 폭)
+W15 = 0.80 * W2                # 1.5단 상당
+W1 = 0.60 * W2                 # 1단 상당
+
+
+def paper_figsize(rel_width: float = 1.0, *, nrows: int = 1, ncols: int = 1,
+                  ratio: float | None = None) -> tuple[float, float]:
+    """본문 폭 기준 figsize (inch). ratio 는 패널 하나의 높이/폭(기본 황금비).
+
+    tueplots.figsizes 의 계산 규칙을 그대로 쓰되 기준 폭만 elsarticle 본문 폭으로 둔다.
+    """
+    kw = dict(base_width_in=W2, rel_width=rel_width, nrows=nrows, ncols=ncols,
+              height_to_width_ratio=(ratio if ratio is not None else 0.618))
+    w, h = TF._from_base_in(**kw)          # (width_in, height_in)
+    return (float(w), float(h))
 
 # ── Okabe-Ito ───────────────────────────────────────────────────────────────
 OI = {
@@ -75,44 +100,56 @@ _GRID = "#DCDCDC"
 
 
 def use_paper_style() -> None:
-    """rcParams 를 논문판으로 바꾼다. 이 모듈의 함수는 전부 이걸 먼저 부른다."""
-    for kf in P._KFONTS:
-        if kf in P._avail:
-            matplotlib.rcParams["font.family"] = kf
-            break
-    matplotlib.rcParams.update({
-        "font.size": 8,
-        "axes.titlesize": 8,
-        "axes.labelsize": 8,
-        "xtick.labelsize": 7,
-        "ytick.labelsize": 7,
-        "legend.fontsize": 7,
-        "axes.unicode_minus": False,
-        "axes.linewidth": 0.7,
-        "axes.edgecolor": _INK,
-        "axes.labelcolor": _INK,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "axes.axisbelow": True,
-        "text.color": _INK,
-        "xtick.color": _INK, "ytick.color": _INK,
-        "xtick.direction": "out", "ytick.direction": "out",
-        "xtick.major.size": 2.5, "ytick.major.size": 2.5,
-        "xtick.major.width": 0.7, "ytick.major.width": 0.7,
-        "grid.color": _GRID, "grid.linewidth": 0.5,
-        "legend.frameon": False,
-        "legend.handlelength": 1.4,
-        "legend.handletextpad": 0.5,
-        "legend.columnspacing": 1.1,
-        "legend.borderaxespad": 0.2,
-        "lines.linewidth": 1.1,
-        "lines.markersize": 4,
+    """rcParams 를 논문판으로 바꾼다. 이 모듈의 함수는 전부 이걸 먼저 부른다.
+
+    세 겹으로 쌓는다.
+      1. SciencePlots ``science`` + ``no-latex`` --- 저널 관례(닫힌 프레임, 안쪽 눈금,
+         얇은 선, 프레임 없는 범례). ``no-latex`` 는 빌드 머신에 LaTeX 렌더 의존을 없앤다.
+      2. tueplots --- 8 pt 본문 / 6 pt 눈금·범례 위계와 선 두께 규칙.
+      3. 우리 오버라이드 --- 본문과 같은 글꼴(라틴 Times, 한글 HCR Batang 폴백),
+         Okabe-Ito 색 사이클, 소수 눈금 끔(시계열·막대에 잡음), TrueType 임베드.
+    """
+    plt.style.use(["science", "no-latex"])
+    rc: dict = {}
+    rc.update(TS._from_base(base=8))
+    rc.update(TA.lines(base_width=0.5))
+    rc.update(TA.legend(frameon=False))
+    rc.update(TA.grid(grid_alpha=0.25))
+    # 글꼴: 본문(TeX Gyre Termes + HCR Batang)과 맞춘다. matplotlib 은 목록 순으로 글리프를
+    # 찾으므로 라틴은 Times, 한글은 HCR Batang 에서 온다. 없는 환경은 뒤쪽으로 폴백.
+    fams = ["Times New Roman", "TeX Gyre Termes", "HCR Batang", "Noto Serif KR",
+            "Malgun Gothic", "STIXGeneral", "DejaVu Serif"]
+    fams = [f for f in fams if f in P._avail] or ["serif"]
+    rc.update({
+        "font.family": fams,
         "mathtext.fontset": "stix",
+        "axes.unicode_minus": False,
+        "axes.formatter.use_mathtext": False,
+        "axes.prop_cycle": cycler(color=[OI["blue"], OI["vermil"], OI["green"], OI["orange"],
+                                         OI["purple"], OI["sky"], OI["grey"]]),
+        "axes.edgecolor": _INK, "axes.labelcolor": _INK, "text.color": _INK,
+        "xtick.color": _INK, "ytick.color": _INK,
+        "xtick.minor.visible": False, "ytick.minor.visible": False,
+        "xtick.top": False, "ytick.right": False,   # 프레임은 닫되 위·오른쪽 눈금은 막대·범주축에 잡음
+        "grid.color": _GRID, "grid.linewidth": 0.4,
+        "legend.handlelength": 1.4, "legend.handletextpad": 0.5,
+        "legend.columnspacing": 1.1, "legend.borderaxespad": 0.3,
+        "lines.markersize": 4,
         "pdf.fonttype": 42, "ps.fonttype": 42,
-        "savefig.dpi": 600,
-        "savefig.bbox": "tight",
-        "savefig.pad_inches": 0.01,
+        "savefig.dpi": 600, "savefig.bbox": "tight", "savefig.pad_inches": 0.02,
+        "figure.constrained_layout.use": False,
     })
+    matplotlib.rcParams.update(rc)
+
+
+def _panel_label(ax, letter: str, *, dx: float = -0.10, dy: float = 1.02) -> None:
+    """패널 라벨 (a), (b), … 를 축 바깥 좌상단에 볼드로 놓는다(저널 관례).
+
+    set_title(loc="left") 는 축 안쪽 폭에 갇혀 y 축 라벨과 겹치고 회색 제목처럼 보인다.
+    축 좌표계 (dx, dy) 에 두면 y 축 라벨 폭과 무관하게 항상 같은 자리에 온다.
+    """
+    ax.text(dx, dy, f"({letter})", transform=ax.transAxes, ha="left", va="bottom",
+            fontsize=matplotlib.rcParams["axes.titlesize"], fontweight="bold", color=_INK)
 
 
 def _ygrid(ax):
@@ -397,7 +434,7 @@ def fig_interaction(df, metric: str = "capture_rate", *, backend: str = "",
     axa.set_ylabel(_M(metric))
     axa.margins(y=0.16)
     _ygrid(axa)
-    axa.set_title("(a)", loc="left", fontsize=8, color="#555555")
+    _panel_label(axa, "a")
 
     # ── (b) 대응 대비 ───────────────────────────────────────────────────────
     contrasts = [
@@ -439,7 +476,7 @@ def fig_interaction(df, metric: str = "capture_rate", *, backend: str = "",
                      va="bottom", ha="left", fontsize=6.6, color=_INK)
     axb.set_xlabel(_M(metric, unit=False) + _T(" 대응차이 (95% BCa CI)"))
     _xgrid(axb)
-    axb.set_title("(b)", loc="left", fontsize=8, color="#555555")
+    _panel_label(axb, "b")
     fig.tight_layout()
     return fig
 
@@ -579,22 +616,58 @@ def fig_plan_quality(df, llm_df, *, metric: str = "capture_rate", seed: int = 0,
         ax.set_ylim(0.55, 1.0)
         ax.margins(x=0.30)
         ax.grid(zorder=0); ax.set_axisbelow(True)
-        ax.set_title(f"({tags[k]})", loc="left", fontsize=8, color="#555555")
+        _panel_label(ax, f"{tags[k]}")
     fig.tight_layout()
     return fig
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# P6. 학습 곡선 — 논문이 평가하는 그 런 하나만
+# 흑백 저널판 공통 — Fig.14 / Fig.15 가 같이 쓴다
 # ════════════════════════════════════════════════════════════════════════════
-def fig_training_curve(run_dir: str, *, figsize=(W2, 3.6)):
+#: 흑백 인쇄 안전 팔레트. 색으로 구분하지 않고 선 종류·마커로 구분한다.
+MONO = {"ink": "#000000", "mid": "#7F7F7F", "light": "#C8C8C8"}
+
+
+def _smooth(y, win: int):
+    """중앙 정렬 이동평균. 양끝은 창을 줄여 NaN 없이 잇는다."""
+    import pandas as pd
+    return pd.Series(np.asarray(y, float)).rolling(win, min_periods=1, center=True).mean().to_numpy()
+
+
+def _clean_axis(ax, *, ny: int = 5, nx: int = 5, xlim=None, ymargin: float = 0.06):
+    """격자 없이, 눈금 수를 줄이고, 프레임만 남긴다.
+
+    x 여백은 0 --- 곡선이 프레임 양 끝에 닿는다(xlim 을 주면 그 범위로 고정).
+    y 는 데이터 범위 + ymargin 만 --- 범위를 넉넉히 잡으면 기울기가 평평해 보인다.
+    """
+    from matplotlib.ticker import MaxNLocator
+    ax.grid(False)
+    ax.margins(x=0, y=ymargin)
+    if xlim is not None:
+        ax.set_xlim(*xlim)
+    ax.xaxis.set_major_locator(MaxNLocator(nx, integer=True))
+    if ax.get_yscale() != "log":
+        ax.yaxis.set_major_locator(MaxNLocator(ny, steps=[1, 2, 2.5, 5, 10]))   # 0.08 같은 어색한 간격 방지
+
+
+def _log_decimal(ax):
+    """로그축 눈금을 10^{-k} 대신 0.01, 0.001 로. (Times 에는 지수 mathtext 가 어색하다)"""
+    from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
+    ax.set_yscale("log")
+    ax.yaxis.set_major_locator(LogLocator(base=10, numticks=6))
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
+    ax.yaxis.set_minor_formatter(NullFormatter())
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# P6. 학습 곡선 — 논문이 평가하는 그 런 하나만 (흑백·영문·스무딩)
+# ════════════════════════════════════════════════════════════════════════════
+def fig_training_curve(run_dir: str, *, figsize=None, smooth: int = 5):
     """GRPO 학습 경과. **평가된 런 하나만** 그린다.
 
-    탐색용 그림(fig_traincurve.png)은 두 런을 겹쳐 놓고 내부 실험 이름("dmin 스크리닝 C",
-    "cnn_dmin_best", "warm-start 체인")을 그대로 노출했다. 논문에는 최종 구조의 학습 경과만
-    싣고, 곡선의 뜻은 캡션이 말한다.
-
     입력: run_dir/metrics.csv (20 업데이트마다) + run_dir/evals.csv (greedy 평가).
+    `smooth` 는 metrics 행 단위 창이다 --- 5 행 = 100 업데이트.
+    원자료는 연회색 가는 선으로 뒤에 두고, 이동평균을 굵은 검정으로 앞에 놓는다.
     """
     import pandas as pd
     use_paper_style()
@@ -602,56 +675,54 @@ def fig_training_curve(run_dir: str, *, figsize=(W2, 3.6)):
     e = pd.read_csv(os.path.join(run_dir, "evals.csv"))
     base = float(e["baseline"].iloc[0]) if "baseline" in e else np.nan
     best_i = int(e["eval_cap"].idxmax())
+    mt = m[m["upd"] > 0]                      # upd=0 은 롤아웃 전 0
+    u = mt["upd"].to_numpy()
+    ink, mid, light = MONO["ink"], MONO["mid"], MONO["light"]
+    xlim = (0, int(np.ceil(m["upd"].max() / 100.0) * 100))   # 0–800 에 딱 맞춤
 
+    figsize = figsize or paper_figsize(nrows=2, ncols=2, ratio=0.62)
     fig, axes = plt.subplots(2, 2, figsize=figsize, sharex=True)
     (a1, a2), (a3, a4) = axes
-    c_train, c_eval, c_best = OI["blue"], OI["blue"], OI["vermil"]
 
-    # (a) 포획률 — 학습 중(옅게) + greedy 평가(표식) + 기준선
-    mt = m[m["upd"] > 0]                      # upd=0 은 롤아웃 전 0 --- 곡선을 눌러 버린다
-    a1.plot(mt["upd"], mt["cap_rate"], color=c_train, lw=0.8, alpha=0.45,
-            label=_T("학습 중 (후보 평균)"))
-    a1.plot(e["upd"], e["eval_cap"], color=c_eval, lw=1.1, marker="o", ms=4.5,
-            markerfacecolor="white", markeredgewidth=1.0, label=_T("greedy 평가"))
-    a1.plot([e["upd"].iloc[best_i]], [e["eval_cap"].iloc[best_i]], marker="*", ms=11,
-            color=c_best, linestyle="none", zorder=5,
-            label=_T(f"최고점 {e['eval_cap'].iloc[best_i]:.3f} (채택 가중치)"))
+    # (a) 포획률
+    a1.plot(u, mt["cap_rate"], color=light, lw=0.6, label="Training, raw (a only)")
+    a1.plot(u, _smooth(mt["cap_rate"], smooth), color=ink, lw=1.3,
+            label=f"Training, {smooth * 20}-update mean")
+    a1.plot(e["upd"], e["eval_cap"], color=ink, lw=0, marker="o", ms=4.5,
+            markerfacecolor="white", markeredgewidth=0.9, label="Greedy evaluation")
+    a1.plot([e["upd"].iloc[best_i]], [e["eval_cap"].iloc[best_i]], marker="o", ms=4.5,
+            color=ink, markerfacecolor=ink, linestyle="none", zorder=5,
+            label=f"Adopted weights ({e['eval_cap'].iloc[best_i]:.3f})")
     if np.isfinite(base):
-        a1.axhline(base, color=OI["grey"], ls=(0, (2.5, 2)), lw=0.9,
-                   label=_T(f"휴리스틱 기준선 {base:.3f}"))
-    a1.set_ylabel(_T("포획률"))
-    a1.set_ylim(0.40, 0.90)
-    a1.legend(loc="lower left", fontsize=6.4, ncol=2)
-    a1.set_title("(a)", loc="left", fontsize=8, color="#555555")
-    _ygrid(a1)
+        a1.axhline(base, color=mid, ls=(0, (4, 2)), lw=0.8, label=f"Heuristic baseline ({base:.3f})")
+    a1.set_ylabel("Capture rate")
+    _clean_axis(a1, ny=5, xlim=xlim)
+    fig_legend = a1.get_legend_handles_labels()
 
-    # (b) 보상 — 후보 평균 vs 후보 최대 (둘의 간격 = 그룹 내 변별력)
-    a2.plot(m["upd"], m["R"], color=OI["blue"], lw=1.0, label=_T("후보 평균 R"))
-    a2.plot(m["upd"], m["best"], color=OI["blue"], lw=0.8, ls=(0, (3, 2)),
-            label=_T("후보 최대 R"))
-    a2.fill_between(m["upd"], m["R"], m["best"], color=OI["blue"], alpha=0.10, lw=0)
-    a2.set_ylabel(_T("윈도우 보상"))
-    a2.legend(loc="lower right", fontsize=6.4)
-    a2.set_title("(b)", loc="left", fontsize=8, color="#555555")
-    _ygrid(a2)
+    # (b) 보상 — 후보 평균(실선) vs 후보 최대(파선)
+    a2.plot(u, _smooth(mt["R"], smooth), color=ink, lw=1.3, label="Candidate mean")
+    a2.plot(u, _smooth(mt["best"], smooth), color=ink, lw=1.1, ls=(0, (4, 2)), label="Candidate max")
+    a2.set_ylabel("Windowed reward")
+    a2.legend(loc="lower right")
+    _clean_axis(a2, xlim=xlim)
 
     # (c) 학습신호 유효율
-    a3.plot(m["upd"], m["valid"], color=OI["green"], lw=1.0)
-    a3.set_ylim(0, 1.0)
-    a3.set_ylabel(_T("학습신호 유효 월드 비율"))
-    a3.set_xlabel(_T("누적 업데이트"))
-    a3.set_title("(c)", loc="left", fontsize=8, color="#555555")
-    _ygrid(a3)
+    a3.plot(u, _smooth(mt["valid"], smooth), color=ink, lw=1.3)
+    a3.set_ylabel("Valid-signal fraction")
+    a3.set_xlabel("Updates")
+    _clean_axis(a3, xlim=xlim)
 
     # (d) 손실
-    a4.plot(m["upd"], m["loss"], color=OI["grey"], lw=1.0)
-    a4.axhline(0, color=_INK, lw=0.5)
-    a4.set_ylabel(_T("손실 (정책경사 + 엔트로피)"))
-    a4.set_xlabel(_T("누적 업데이트"))
-    a4.set_title("(d)", loc="left", fontsize=8, color="#555555")
-    _ygrid(a4)
+    a4.plot(u, _smooth(mt["loss"], smooth), color=ink, lw=1.3)
+    a4.axhline(0, color=mid, lw=0.5)
+    a4.set_ylabel("Loss")
+    a4.set_xlabel("Updates")
+    _clean_axis(a4, ny=5, xlim=xlim)
 
-    fig.tight_layout(h_pad=1.2, w_pad=1.6)
+    for ax, k in zip((a1, a2, a3, a4), "abcd"):
+        _panel_label(ax, k)
+    fig.tight_layout(h_pad=0.8, w_pad=1.4, rect=(0, 0.07, 1, 1))
+    fig.legend(*fig_legend, loc="lower center", ncol=3, bbox_to_anchor=(0.5, 0.0), frameon=False)
     return fig
 
 
@@ -659,7 +730,7 @@ def fig_training_curve(run_dir: str, *, figsize=(W2, 3.6)):
 # P7. 학습률·엔트로피 스케줄 — 학습 코드가 실제로 쓴 값
 # ════════════════════════════════════════════════════════════════════════════
 def fig_lr_schedule(run_dir: str | None = None, *, updates=800, lr=1e-4, eta_ratio=0.05,
-                    ent0=0.01, ent_end_ratio=0.1, figsize=(W15, 2.1)):
+                    ent0=0.01, ent_end_ratio=0.1, figsize=None):
     """단일 주기 코사인 학습률(재시작 없음) + 선형 감쇠 엔트로피 계수.
 
     값은 grpo_cnn.py 의 CosineAnnealingLR(T_max=updates, eta_min=lr*0.05) 와
@@ -672,6 +743,7 @@ def fig_lr_schedule(run_dir: str | None = None, *, updates=800, lr=1e-4, eta_rat
     lr_t = eta_min + (lr - eta_min) * 0.5 * (1.0 + np.cos(np.pi * u / updates))
     ent_t = ent0 * (1.0 - (1.0 - ent_end_ratio) * u / updates)
 
+    figsize = figsize or paper_figsize(nrows=1, ncols=2, ratio=0.62)
     fig, (a1, a2) = plt.subplots(1, 2, figsize=figsize)
     a1.plot(u, lr_t * 1e4, color=OI["blue"], lw=1.2)
     a1.axhline(eta_min * 1e4, color=OI["grey"], ls=(0, (2.5, 2)), lw=0.8)
@@ -687,18 +759,18 @@ def fig_lr_schedule(run_dir: str | None = None, *, updates=800, lr=1e-4, eta_rat
         bi = int(e["eval_cap"].idxmax())
         a1.plot([ue[bi]], [le[bi] * 1e4], "*", ms=11, color=OI["vermil"], zorder=5,
                 label=_T("채택 가중치"))
-        a1.legend(loc="upper right", fontsize=6.4)
-    a1.set_ylabel(_T(r"학습률 $\eta_t$ ($\times 10^{-4}$)"))
+        a1.legend(loc="upper right")
+    a1.set_ylabel("학습률 η (×10⁻⁴)")   # 한글+수식 혼용은 mathtext 폰트에 한글이 없어 깨진다
     a1.set_xlabel(_T("누적 업데이트"))
     a1.set_ylim(0, lr * 1e4 * 1.08)
-    a1.set_title("(a)", loc="left", fontsize=8, color="#555555")
+    _panel_label(a1, "a")
     _ygrid(a1)
 
     a2.plot(u, ent_t * 1e2, color=OI["green"], lw=1.2)
-    a2.set_ylabel(_T(r"엔트로피 계수 $\beta_t$ ($\times 10^{-2}$)"))
+    a2.set_ylabel("엔트로피 계수 λ (×10⁻²)")
     a2.set_xlabel(_T("누적 업데이트"))
     a2.set_ylim(0, ent0 * 1e2 * 1.08)
-    a2.set_title("(b)", loc="left", fontsize=8, color="#555555")
+    _panel_label(a2, "b")
     _ygrid(a2)
 
     fig.tight_layout(w_pad=1.8)
@@ -706,23 +778,20 @@ def fig_lr_schedule(run_dir: str | None = None, *, updates=800, lr=1e-4, eta_rat
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# P8. 수렴 진단 — 채택 런과 같은 설정으로 다시 돌린 3 시드의 학습 동역학
+# P8. 수렴 진단 — 채택 런과 같은 설정으로 다시 돌린 3 시드의 학습 동역학 (흑백·영문)
 # ════════════════════════════════════════════════════════════════════════════
 def fig_training_diag(diag_root: str, *, adopted_run: str | None = None,
-                      smooth: int = 20, figsize=(W2, 4.6)):
+                      smooth: int = 40, figsize=None):
     """수렴 근거 도판. 입력은 tools/train_diag.py 가 만든 seed*/{metrics,evals}.csv.
 
-    채택 런(figP6)은 20 업데이트마다 보상·포획률·손실만 남겨 "학습이 수렴했는가"에 답할
-    지표가 없다. 이 그림은 **같은 설정을 3 시드로 다시 돌려** 표준적인 수렴 진단을 보인다:
-      (a) greedy 포획률 --- 100 업데이트마다, 시드별 얇은 선 + 평균 굵은 선 + 휴리스틱 기준선
-      (b) 정책 엔트로피(1단계 픽셀 분포, nat) --- 균일분포 상한에서 얼마나 내려왔는가
-      (c) 업데이트 간 근사 KL(old‖new, k3 추정량) --- 정책이 한 걸음에 얼마나 움직이는가
+      (a) greedy 포획률 --- 100 업데이트마다, 시드별 연회색 + 평균 검정 + 휴리스틱 기준선
+      (b) 정책 엔트로피(1단계 픽셀 분포, nat) --- 균일분포 상한 대비
+      (c) 업데이트 간 근사 KL --- 정책이 한 걸음에 얼마나 움직이는가
       (d) 그래디언트 노름(클리핑 전) --- 클립 한계 1.0 대비
-      (e) 표본 후보 보상 − 휴리스틱 후보 보상(같은 전장, 같은 창) --- 0 을 넘으면 정책의
-          표본이 평균적으로 휴리스틱을 앞선다
+      (e) 표본 후보 보상 − 휴리스틱 후보 보상 --- 0 을 넘으면 정책 표본이 휴리스틱을 앞선다
       (f) 파라미터 이동 거리 ||θ_t − θ_BC|| / ||θ_BC|| --- 포화하면 정지점에 닿은 것
-    굵은 선은 시드 평균, 띠는 시드 간 최소~최대(3 시드라 표준오차 대신 범위를 그대로 보인다).
-    시계열은 창 `smooth` 업데이트 이동평균이다(매 업데이트 원자료는 CSV 에 있다).
+    시계열은 시드별 `smooth` 업데이트 이동평균을 연회색으로, 그 시드 평균을 검정 굵은 선으로
+    그린다. 밴드(min~max 채우기)는 쓰지 않는다 --- 흑백에서 읽히지 않고 선을 가린다.
     """
     import glob
     import pandas as pd
@@ -733,91 +802,75 @@ def fig_training_diag(diag_root: str, *, adopted_run: str | None = None,
     n_upd = min(len(m) for m in ms)
     ms = [m.iloc[:n_upd] for m in ms]
     base = float(np.mean([e["baseline"].iloc[0] for e in es]))
+    ink, mid, light = MONO["ink"], MONO["mid"], MONO["light"]
+    u = ms[0]["upd"].to_numpy()
+    xlim = (0, int(np.ceil(u.max() / 100.0) * 100))
 
-    def _sm(x):
-        return pd.Series(x).rolling(smooth, min_periods=1, center=True).mean().to_numpy()
-
-    def band(ax, col, color, *, log=False, label=None):
-        u = ms[0]["upd"].to_numpy()
-        Y = np.stack([_sm(m[col].to_numpy()) for m in ms])
-        ax.fill_between(u, Y.min(0), Y.max(0), color=color, alpha=0.18, lw=0)
-        ax.plot(u, Y.mean(0), color=color, lw=1.1, label=label)
+    def series(ax, col, *, log=False):
+        # 시드별 선은 (a)에만 둔다 --- (b)~(f)는 평균만 그려 y 범위를 평균선에 맞춘다(기울기 가독성).
+        Y = np.stack([_smooth(m[col].to_numpy(), smooth) for m in ms])
+        ax.plot(u, Y.mean(0), color=ink, lw=1.3)
         if log:
-            # 로그축 기본 포매터는 mathtext 10^{-1} 을 쓰는데 한글 폰트에 U+2212 가 없어
-            # 지수 부호가 깨진다 → 십진 표기(0.1, 0.01)로 바꾼다.
-            from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
-            ax.set_yscale("log")
-            ax.yaxis.set_major_locator(LogLocator(base=10, numticks=6))
-            ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
-            ax.yaxis.set_minor_formatter(NullFormatter())
+            _log_decimal(ax)
         return Y
 
+    figsize = figsize or paper_figsize(nrows=2, ncols=3, ratio=0.78)
     fig, axes = plt.subplots(2, 3, figsize=figsize, sharex=True)
     (a1, a2, a3), (a4, a5, a6) = axes
-    c = OI["blue"]
 
     # (a) greedy 포획률
-    for e in es:
-        a1.plot(e["upd"], e["eval_cap"], color=c, lw=0.6, alpha=0.4, marker="o", ms=2.2)
-    ue = es[0]["upd"].to_numpy()
     n_ev = min(len(e) for e in es)
+    ue = es[0]["upd"].to_numpy()[:n_ev]
     ce = np.stack([e["eval_cap"].to_numpy()[:n_ev] for e in es])
-    a1.plot(ue[:n_ev], ce.mean(0), color=c, lw=1.4, marker="o", ms=3.8,
-            markerfacecolor="white", markeredgewidth=1.0, label=_T("greedy 평가 (시드 평균)"))
-    a1.axhline(base, color=OI["grey"], ls=(0, (2.5, 2)), lw=0.9,
-               label=_T(f"휴리스틱 기준선 {base:.3f}"))
+    for y in ce:
+        a1.plot(ue, y, color=light, lw=0.6, marker="o", ms=2.0, markerfacecolor=light,
+                markeredgewidth=0, clip_on=False)
+    a1.plot(ue, ce.mean(0), color=ink, lw=1.3, marker="o", ms=4.2, markerfacecolor="white",
+            markeredgewidth=0.9, clip_on=False, label="Seed mean (3 seeds)")
+    a1.plot([], [], color=light, lw=0.6, label="Individual seeds (a only)")
+    a1.axhline(base, color=mid, ls=(0, (4, 2)), lw=0.8, label=f"Heuristic baseline ({base:.3f})")
     if adopted_run and os.path.exists(os.path.join(adopted_run, "evals.csv")):
         ea = pd.read_csv(os.path.join(adopted_run, "evals.csv"))
-        a1.plot(ea["upd"], ea["eval_cap"], linestyle="none", marker="*", ms=8,
-                color=OI["vermil"], zorder=5, label=_T("채택 런 (Fig. 학습 경과)"))
-    a1.set_ylabel(_T("greedy 포획률"))
-    a1.legend(loc="lower right", fontsize=6.2)
-    a1.set_title("(a)", loc="left", fontsize=8, color="#555555")
-    _ygrid(a1)
+        a1.plot(ea["upd"], ea["eval_cap"], linestyle="none", marker="s", ms=3.6, color=ink,
+                markerfacecolor=ink, zorder=5, label="Adopted run")
+    a1.set_ylabel("Greedy capture rate")
+    _clean_axis(a1, ny=5, xlim=xlim)
+    fig_legend = a1.get_legend_handles_labels()
 
-    # (b) 정책 엔트로피 --- 균일분포 상한 log(유효픽셀 중앙값 273)
-    band(a2, "ent_pix1", c)
-    h_max = np.log(273.0)
-    a2.axhline(h_max, color=OI["grey"], ls=(0, (2.5, 2)), lw=0.9)
-    a2.text(n_upd * 0.98, h_max - 0.08, _T("균일분포 (273 px)"), ha="right", va="top",
-            fontsize=6.2, color=OI["grey"])
-    a2.set_ylabel(_T("정책 엔트로피 (nat)"))
-    a2.set_title("(b)", loc="left", fontsize=8, color="#555555")
-    _ygrid(a2)
+    # (b) 엔트로피 --- 균일분포 상한 log(273)
+    series(a2, "ent_pix1")          # 균일분포 상한 ln 273 = 5.6 nat 는 축 밖 --- 캡션에 적는다
+    a2.set_ylabel("Policy entropy (nat)")
+    _clean_axis(a2, xlim=xlim)
 
     # (c) 근사 KL
-    band(a3, "kl", c, log=True)
-    a3.set_ylabel(_T("업데이트 간 근사 KL"))
-    a3.set_title("(c)", loc="left", fontsize=8, color="#555555")
-    _ygrid(a3)
+    series(a3, "kl", log=True)
+    a3.set_ylabel("Approx. KL per update")
+    _clean_axis(a3, xlim=xlim)
 
     # (d) 그래디언트 노름
-    band(a4, "grad_norm", c, log=True)
-    a4.axhline(1.0, color=OI["grey"], ls=(0, (2.5, 2)), lw=0.9)
-    a4.text(n_upd * 0.98, 1.0 * 1.15, _T("클립 한계 1.0"), ha="right", va="bottom",
-            fontsize=6.2, color=OI["grey"])
-    a4.set_ylabel(_T("그래디언트 노름 (클리핑 전)"))
-    a4.set_xlabel(_T("누적 업데이트"))
-    a4.set_title("(d)", loc="left", fontsize=8, color="#555555")
-    _ygrid(a4)
+    series(a4, "grad_norm")         # 선형축. 클립 한계 1.0 은 30~60 인 데이터의 축을 늘릴 뿐 --- 캡션에
+    a4.set_ylabel("Gradient norm (pre-clip)")
+    a4.set_xlabel("Updates")
+    _clean_axis(a4, xlim=xlim)
 
-    # (e) 표본 후보의 휴리스틱 후보 대비 보상 이득 (R_k − R_heur 의 평균, k≥1)
-    band(a5, "gain_heur", OI["green"])
-    a5.axhline(0.0, color=OI["grey"], ls=(0, (2.5, 2)), lw=0.9)
-    a5.set_ylabel(_T("표본 후보 보상 − 휴리스틱 후보 보상"))
-    a5.set_xlabel(_T("누적 업데이트"))
-    a5.set_title("(e)", loc="left", fontsize=8, color="#555555")
-    _ygrid(a5)
+    # (e) 휴리스틱 후보 대비 보상 이득
+    series(a5, "gain_heur")
+    a5.axhline(0.0, color=mid, lw=0.5)
+    a5.set_ylabel("Reward gain vs. heuristic")
+    a5.set_xlabel("Updates")
+    _clean_axis(a5, ny=5, xlim=xlim)
 
     # (f) 파라미터 이동 거리
-    band(a6, "dtheta_rel", OI["vermil"])
-    a6.set_ylabel(_T(r"$\|\theta_t-\theta_{\rm BC}\| \,/\, \|\theta_{\rm BC}\|$"))
-    a6.set_xlabel(_T("누적 업데이트"))
+    series(a6, "dtheta_rel")
+    a6.set_ylabel("Relative parameter shift")
+    a6.set_xlabel("Updates")
+    _clean_axis(a6, xlim=xlim)
     a6.set_ylim(bottom=0)
-    a6.set_title("(f)", loc="left", fontsize=8, color="#555555")
-    _ygrid(a6)
 
-    fig.tight_layout(h_pad=1.0, w_pad=1.4)
+    for ax, k in zip((a1, a2, a3, a4, a5, a6), "abcdef"):
+        _panel_label(ax, k)
+    fig.tight_layout(h_pad=0.8, w_pad=1.2, rect=(0, 0.06, 1, 1))
+    fig.legend(*fig_legend, loc="lower center", ncol=4, bbox_to_anchor=(0.5, 0.0), frameon=False)
     return fig
 
 

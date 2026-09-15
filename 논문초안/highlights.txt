@@ -2,7 +2,7 @@ Highlights
 
 - Two judgment layers share one 25 s period; only the slow one is decoupled
 - Pointing at score-map pixels keeps the action space invariant to swarm size
-- Critic-free group relative optimization with counterfactual credit assignment
+- Critic-free, heuristic-anchored group relative optimization for multi-boat coordination
 - Across 720 paired episodes the two layers are additive in 9 of 10 metrics
 - Commander skill is explained by plan stability, not assignment coverage
 
@@ -11,7 +11,7 @@ Highlights
 
 - 같은 25초 주기의 두 판단 계층을 지연 차이만으로 비동기 분리한 방어 체계
 - 점수맵 픽셀 지목으로 행동공간을 격자에 가둔, 적선 수에 불변인 협동 정책
-- 가치망 없는 그룹 상대 최적화와 반사실적 크레딧으로 다중 방어정 협동 학습
+- 가치망 없이 휴리스틱을 기준선으로 삼는 그룹 상대 최적화로 다중 방어정 협동 학습
 - 720 에피소드 대응표본 분해 결과 두 계층의 기여는 10지표 중 9지표에서 가산적
 - 지휘관 성능은 배정 커버리지가 아니라 재계획 간 계획 안정성이 설명한다
 

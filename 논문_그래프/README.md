@@ -30,6 +30,29 @@ python run_eval.py --from-csv results/eval/episodes.csv
 > 그림을 쓰려 하면 **생성을 거부**한다. 그래도 규칙은 지킬 것:
 > **논문 도판은 `results/eval_merged` 에서만 만든다. 다른 실험은 `--figdir` 를 따로 준다.**
 
+## 논문판 스타일 계층 (`8_논문판/`, `boatattack_sim/eval/paper_figs.py`)
+
+논문에 실리는 도판은 `paper_figs.use_paper_style()` 하나를 거친다. 세 겹이다.
+
+| 겹 | 무엇 | 왜 |
+|---|---|---|
+| 1 | **SciencePlots** `['science', 'no-latex']` | 저널 관례 — 닫힌 프레임, 안쪽 눈금, 0.5 pt 선, 프레임 없는 범례. `no-latex` 는 도판 생성이 LaTeX 설치에 묶이지 않게 한다. |
+| 2 | **tueplots** `fontsizes(base=8)`, `axes.lines`, `axes.legend`, `axes.grid` | 8 pt 본문 / 6 pt 눈금·범례 위계와 선 두께 규칙을 수치로 고정. |
+| 3 | 우리 오버라이드 | 본문과 같은 글꼴(라틴 Times New Roman, 한글 HCR Batang 폴백), Okabe-Ito 색 사이클, 위·오른쪽 눈금 끔, TrueType(Type 42) 임베드. |
+
+**판형 폭이 핵심이다.** `W2` 는 Elsevier 명목 2단 폭(190 mm)이 아니라 elsarticle 의 실제 본문 폭
+**137 mm** 다(`tools/check_figure_widths.py` 가 측정). 이보다 넓게 그려 `\includegraphics` 로 줄이면
+글자가 같은 비율로 작아진다 — 예전 180 mm 설정은 8 pt 를 5.6 pt 로 찍고 있었다. 신규 도판은
+`paper_figsize(nrows=, ncols=, ratio=)` 로 크기를 잡는다.
+
+- 패널 라벨은 `_panel_label(ax, "a")` — 축 바깥 좌상단 볼드. `set_title(loc="left")` 를 쓰지 않는다.
+- **한글과 수식(`$…$`)을 한 라벨에 섞지 않는다.** mathtext 글꼴에는 한글이 없어 두부(□)가 찍힌다.
+  그리스 문자·×·위첨자는 유니코드(η, λ, ×10⁻⁴)로 쓴다 — Times/HCR Batang 에 다 있다.
+- 재생성: `python -m boatattack_sim.eval.paper_figs --csv results/eval_merged`
+  (`--train-run`, `--diag-root` 기본값으로 학습 곡선·LR 스케줄·수렴 진단까지 P1–P8 을 굽는다.)
+  그다음 `8_논문판/` 의 P1–P5 와 P6→`fig_traincurve`, P7→`fig_lr_schedule`, P8→`fig_convergence` 를
+  `논문초안/figs_snak/` 로 복사하고 `bash tools/build_paper.sh`.
+
 ## 폴더 구조
 
 그림은 **"어떤 질문에 답하는가"** 로 갈라 하위 폴더에 담는다. 분류표는

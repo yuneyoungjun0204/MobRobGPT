@@ -26,7 +26,8 @@ emits a score map; each boat points at two high-scoring pixels in its valid regi
 lays a net wall between them. Pixel pointing keeps the action space
 grid-regularized and the input invariant to swarm size.
 Training extends critic-free group relative policy optimization to the multi-agent case,
-with counterfactual credit assignment separating individual contribution. In the strategy layer a large language model (LLM) commander
+anchoring one candidate to the geometric heuristic so that only joint actions that beat
+the heuristic receive positive advantage. In the strategy layer a large language model (LLM) commander
 assigns boats to enemy clusters from pre-computed geometry, with no combinatorial
 post-optimization.
 
@@ -52,7 +53,7 @@ large language model; semantic segmentation; group relative policy optimization
 \begin{itemize}[leftmargin=1.1em, itemsep=1pt, topsep=2pt, parsep=0pt]
 \item Two judgment layers share one 25 s period; only the slow one is decoupled
 \item Pointing at score-map pixels keeps the action space invariant to swarm size
-\item Critic-free group relative optimization with counterfactual credit assignment
+\item Critic-free, heuristic-anchored group relative optimization for multi-boat coordination
 \item Across 720 paired episodes the two layers are additive in 9 of 10 metrics
 \item Commander skill is explained by plan stability, not assignment coverage
 \end{itemize}
