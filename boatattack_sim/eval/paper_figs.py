@@ -688,11 +688,9 @@ def fig_training_curve(run_dir: str, *, figsize=None, smooth: int = 5):
     a1.plot(u, mt["cap_rate"], color=light, lw=0.6, label="Training, raw (a only)")
     a1.plot(u, _smooth(mt["cap_rate"], smooth), color=ink, lw=1.3,
             label=f"Training, {smooth * 20}-update mean")
-    a1.plot(e["upd"], e["eval_cap"], color=ink, lw=0, marker="o", ms=4.5,
-            markerfacecolor="white", markeredgewidth=0.9, label="Greedy evaluation")
-    a1.plot([e["upd"].iloc[best_i]], [e["eval_cap"].iloc[best_i]], marker="o", ms=4.5,
-            color=ink, markerfacecolor=ink, linestyle="none", zorder=5,
-            label=f"Adopted weights ({e['eval_cap'].iloc[best_i]:.3f})")
+    # greedy 평가점은 마커 대신 채택 시점의 세로 점선 하나로 --- 세 값은 캡션에 적는다.
+    a1.axvline(float(e["upd"].iloc[best_i]), color=ink, ls=(0, (1.5, 2)), lw=0.8,
+               label=f"Adopted checkpoint (greedy {e['eval_cap'].iloc[best_i]:.3f})")
     if np.isfinite(base):
         a1.axhline(base, color=mid, ls=(0, (4, 2)), lw=0.8, label=f"Heuristic baseline ({base:.3f})")
     a1.set_ylabel("Capture rate")
@@ -722,7 +720,7 @@ def fig_training_curve(run_dir: str, *, figsize=None, smooth: int = 5):
     for ax, k in zip((a1, a2, a3, a4), "abcd"):
         _panel_label(ax, k)
     fig.tight_layout(h_pad=0.8, w_pad=1.4, rect=(0, 0.07, 1, 1))
-    fig.legend(*fig_legend, loc="lower center", ncol=3, bbox_to_anchor=(0.5, 0.0), frameon=False)
+    fig.legend(*fig_legend, loc="lower center", ncol=2, bbox_to_anchor=(0.5, 0.0), frameon=False)
     return fig
 
 
@@ -823,16 +821,14 @@ def fig_training_diag(diag_root: str, *, adopted_run: str | None = None,
     ue = es[0]["upd"].to_numpy()[:n_ev]
     ce = np.stack([e["eval_cap"].to_numpy()[:n_ev] for e in es])
     for y in ce:
-        a1.plot(ue, y, color=light, lw=0.6, marker="o", ms=2.0, markerfacecolor=light,
-                markeredgewidth=0, clip_on=False)
-    a1.plot(ue, ce.mean(0), color=ink, lw=1.3, marker="o", ms=4.2, markerfacecolor="white",
-            markeredgewidth=0.9, clip_on=False, label="Seed mean (3 seeds)")
+        a1.plot(ue, y, color=light, lw=0.6)
+    a1.plot(ue, ce.mean(0), color=ink, lw=1.3, label="Seed mean (3 seeds)")
     a1.plot([], [], color=light, lw=0.6, label="Individual seeds (a only)")
-    a1.axhline(base, color=mid, ls=(0, (4, 2)), lw=0.8, label=f"Heuristic baseline ({base:.3f})")
+    a1.axhline(base, color=mid, ls=(0, (1.5, 2)), lw=0.8, label=f"Heuristic baseline ({base:.3f})")
     if adopted_run and os.path.exists(os.path.join(adopted_run, "evals.csv")):
         ea = pd.read_csv(os.path.join(adopted_run, "evals.csv"))
-        a1.plot(ea["upd"], ea["eval_cap"], linestyle="none", marker="s", ms=3.6, color=ink,
-                markerfacecolor=ink, zorder=5, label="Adopted run")
+        a1.plot(ea["upd"], ea["eval_cap"], color=ink, lw=1.0, ls=(0, (4, 2)), zorder=5,
+                label="Adopted run")
     a1.set_ylabel("Greedy capture rate")
     _clean_axis(a1, ny=5, xlim=xlim)
     fig_legend = a1.get_legend_handles_labels()
