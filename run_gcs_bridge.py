@@ -1,15 +1,29 @@
-"""로스백(실제 적선) + GCS 실텔레메트리(실제 아군)로 구동하는 CNN 점수맵(U-Net) 정책 —
-아군 경유점을 실제 GCS(`/home/yune/gcs`)의 명령 계약으로 내보내는 운용 진입점.
+"""적선(로스백 재생/라이브 ROS2 토픽/GCS `/api/state`) + GCS 실텔레메트리(실제 아군)로
+구동하는 CNN 점수맵(U-Net) 정책 — 아군 경유점을 실제 GCS(`/home/yune/gcs`)의 명령 계약으로
+내보내는 운용 진입점.
 
 `run_replay_infer.py`의 자매 스크립트다 -- 그 파일은 적(로스백)만 실데이터이고 아군은
 시뮬 물리로 가상 기동시키는 **오프라인 분석/시각화 도구**라 여기서는 건드리지 않는다
 (동시에 다른 세션이 그 파일을 활발히 고치고 있기도 하다). 이 스크립트는 반대로 아군도
 실제(GCS가 보는 실보트)로 만들고, 시각화는 선택 사항이다.
 
+적선 데이터 출처 3가지 (`--enemy-source`, 아래 인자 설명 참고):
+  bag  로스백(.db3)을 이 스크립트가 독립적으로 재생 (`commander/bag_replay.py`)
+  live raw ROS2 토픽 `/usv/usv{i}/pose`를 직접 구독 (`commander/live_enemy_ros2.py`) --
+       그 토픽이 GCS datum 기준 프레임이 아니면 아군과 좌표계가 어긋난다(2026-09-10
+       세션 실측 확인, `commander/gcs_cnn_env.py` 모듈독스트링 참고)
+  gcs  GCS `/api/state`에서 role=target 배들의 위치를 아군과 같은 방식으로 읽는다
+       (`commander/gcs_cnn_env.py::GcsLiveCnnEnv`) -- GCS가 이미 재투영해 둔 값이라
+       좌표계 문제가 구조적으로 없다. 재투영이 필요한 데모(예: bag_enemy_relay.py
+       --source pose)에는 이쪽을 쓸 것.
+
 GCS 쪽 요구사항 (docs/contracts.md, server/api.py):
   - GCS 서버가 `--ally-ids`에 준 각 vehicle_id로 이미 vehicles.yaml에 등록돼 있고,
     role이 "defender"여야 한다(command/authority.py) -- 아니면 매 명령이 role_mismatch로
     거부된다(이 스크립트는 거부를 그대로 로그만 남기고 계속 돈다).
+  - `--enemy-source gcs`는 추가로 `--target-ids`의 각 vehicle_id가 role="target"으로
+    등록돼 있어야 한다(등록만 돼 있으면 됨 -- 이 스크립트는 이 배들에게 명령을 내리지
+    않는다).
   - GCS 서버가 `--gcs-url`(기본 http://127.0.0.1:8080)에서 HTTP API를 서빙 중이어야 한다.
   - "그물 뿌리기"는 GCS로 전혀 전송되지 않는다 -- `--net-log`로 지정한 파일(또는 stdout)
     로만 신호가 나간다. 실제 그물 전개는 그 신호를 구독하는 별도 시스템의 몫이다.
@@ -19,6 +33,9 @@ GCS 쪽 요구사항 (docs/contracts.md, server/api.py):
         --bag /home/yune/Downloads/ros_data/S03-gcs --span 8 \\
         --ckpt boatattack_sim/models/u-net_map.pt --llm openai \\
         --gcs-url http://127.0.0.1:8080 --ally-ids usv1,usv2,usv3 --viz
+
+    python run_gcs_bridge.py --enemy-source gcs --target-ids usv4,usv5 --span 80 \\
+        --gcs-url http://127.0.0.1:8091 --ally-ids usv1,usv2,usv3 --llm heuristic
 """
 from __future__ import annotations
 
@@ -26,6 +43,9 @@ import argparse
 import concurrent.futures
 import sys
 import time
+from pathlib import Path
+
+import numpy as np
 
 
 def _load_ckpt_config(ckpt: str):
@@ -51,6 +71,10 @@ def _policy_n_allies(ckpt: str) -> int:
     return int(_load_ckpt_config(ckpt)("n_allies"))
 
 
+def _policy_n_enemies(ckpt: str) -> int:
+    return int(_load_ckpt_config(ckpt)("n_enemies"))
+
+
 def _make_commander(backend: str, model: str | None):
     if backend == "heuristic":
         from commander.fallback import heuristic_plan
@@ -66,19 +90,25 @@ def _make_commander(backend: str, model: str | None):
 
 def main() -> None:
     ap = argparse.ArgumentParser(
-        description="로스백 실제 적선 + GCS 실텔레메트리 아군으로 CNN 점수맵 정책을 운용",
+        description="실제 적선(로스백/라이브 ROS2/GCS) + GCS 실텔레메트리 아군으로 CNN 점수맵 정책을 운용",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
     ap.add_argument("--bag", default=None, help="rosbag2 디렉터리 경로 (metadata.yaml 포함, "
                     "--enemy-source bag 일 때 필수)")
-    ap.add_argument("--enemy-source", default="bag", choices=["bag", "live"],
+    ap.add_argument("--enemy-source", default="bag", choices=["bag", "live", "gcs"],
                     help="적선 데이터 출처. bag=--bag 의 .db3 를 이 스크립트가 독립적으로 "
                          "재생(오프라인, 매 실행마다 t=0부터). live=commander/live_enemy_ros2.py로 "
                          "--pose-topic-fmt/--heading-topic-fmt 를 실시간 구독(예: tests/simulation/"
                          "mock/run_mixed_demo.sh 처럼 GCS 지도에 이미 ros2 bag play -l 로 같은 "
-                         "로스백이 라이브 중계되고 있을 때 -- bag 모드로 별도 재생하면 두 재생이 "
-                         "서로 다른 시계로 돌아 정책이 겨냥하는 위치와 지도에 보이는 위치가 어긋난다)")
+                         "로스백이 라이브 중계되고 있을 때). gcs=--target-ids 로 준 GCS "
+                         "vehicle_id(role=target)들의 위치를 아군과 똑같이 GCS `/api/state`에서 "
+                         "읽는다(rclpy 불필요). ⚠ live 는 raw ROS2 토픽(로스백 자기 자신의 녹화 "
+                         "로컬 프레임)을 그대로 쓰므로, 그 프레임이 GCS datum 기준과 다르면(예: "
+                         "bag_enemy_relay.py --source pose 로 재투영해 중계하는 데모) 아군과 "
+                         "다른 좌표계가 섞여 적이 지도 밖으로 클리핑된다(2026-09-10 세션 실측 "
+                         "확인) -- 그 경우 live 대신 gcs 를 쓸 것. gcs 는 GCS 가 이미 재투영해 "
+                         "둔 값을 그대로 읽으므로 이 문제가 없다.")
     ap.add_argument("--span", type=float, required=True,
                     help="실제 운용 박스 한 변[m]")
     ap.add_argument("--ckpt", default="boatattack_sim/models/u-net_map.pt")
@@ -91,7 +121,9 @@ def main() -> None:
     ap.add_argument("--nets", type=int, default=3, help="배당 그물 장수")
     ap.add_argument("--net-reload-period", type=float, default=None,
                     help="그물 소진 후 재보급 주기[실제 초] (기본: 자동 산출)")
-    ap.add_argument("--enemy-mode", default="wave", help="초기 스폰용(매 tick 로스백으로 덮어씀)")
+    ap.add_argument("--enemy-mode", default="wave",
+                    help="초기 스폰용(bag/live 는 매 tick 로스백/ROS2 로 덮어씀, gcs 는 "
+                         "GCS `/api/state` 로 덮어씀)")
     ap.add_argument("--llm", default="ollama", choices=["ollama", "openai", "heuristic"])
     ap.add_argument("--model", default=None, help="LLM 모델명 (미지정 시 백엔드 기본값)")
     ap.add_argument("--command", default=None, help="지휘관에게 줄 자연어 지시(선택)")
@@ -100,16 +132,20 @@ def main() -> None:
     ap.add_argument("--max-decisions", type=int, default=None, help="처리할 결정 횟수 상한")
     ap.add_argument("--geo", type=float, nargs=2, default=None, metavar=("LAT", "LON"))
     ap.add_argument("--enu-origin", type=float, nargs=2, default=None, metavar=("X", "Y"),
-                    help="맵 중앙(=모선)에 대응하는 실좌표. 미지정시 (0,0) -- GCS가 보고하는 "
-                         "아군 ned/east/north 값 자체가 이미 GCS datum(모선 기준점) 상대값이므로, "
-                         "그 기준으로는 언제나 (0,0)이 모선이다(로스백 적선 평균 위치를 쓰던 "
-                         "이전 기본값은 GCS 연동에는 맞지 않는다 -- run_replay_infer.py처럼 "
-                         "GCS 없이 로스백만 재생할 때의 근사였다).")
-    ap.add_argument("--datum-namespace", default="gcs_fleet",
-                    help="GCS가 --ros2 --ros2-namespace 로 발행하는 데이터의 네임스페이스. "
-                         "/<ns>/datum/gps/fix(NavSatFix) 구독으로 --enu-origin=(0,0) 가정이 "
-                         "실제 GCS datum 설정과 맞는지 시작 시 확인한다(구버전 GCS 서버라 "
-                         "이 토픽이 없으면 확인 없이 경고만 내고 (0,0)을 그대로 가정한다).")
+                    help="맵 중앙(=모선)에 대응하는 실좌표(datum 기준 동/북 m). 미지정시 GCS가 "
+                         "지금 보고하는 --ally-ids 의 실위치 평균을 자동으로 쓴다 -- gcs.datum "
+                         "자체를 (0,0)으로 가정하지 않는다: '배치모드'(demo_relocate_service.py) "
+                         "등으로 함대를 재배치해도 registry의 datum은 절대 움직이지 않으므로, "
+                         "datum=(0,0) 가정은 재배치 후 함대가 datum에서 수 km 떨어져 있을 때 "
+                         "그 오프셋만큼 아군·적을 전부 지도 밖으로 클리핑시킨다(2026-09-10 세션 "
+                         "실측 확인).")
+    ap.add_argument("--mothership-id", default=None,
+                    help="GCS에 등록된 모선 vehicle_id(예: mothership1) -- 주면 아군 위치 평균 "
+                         "근사 대신 이 배의 GCS 실측 위치를 맵 중앙(=모선, enu_origin)으로 스크립트 "
+                         "시작 시 1회 읽어 고정한다(에피소드 중 모선은 정지해 있다고 가정 -- 매 "
+                         "에피소드/실행마다 그때그때 모선 실제 위치가 반영됨). --enu-origin 을 같이 "
+                         "주면 그쪽이 우선한다. role 은 defender/target 아무거나 상관없다(위치만 "
+                         "읽고 명령은 안 보낸다).")
     ap.add_argument("--out", default=None, help="결정별 명령 로그를 저장할 JSON 경로(선택)")
 
     ap.add_argument("--gcs-url", default="http://127.0.0.1:8080",
@@ -117,6 +153,12 @@ def main() -> None:
     ap.add_argument("--ally-ids", required=True,
                     help="쉼표구분 GCS vehicle_id 목록, 체크포인트의 P와 개수가 같아야 함 "
                          "(예: usv1,usv2,usv3). vehicles.yaml에 role=defender로 등록돼 있어야 함")
+    ap.add_argument("--target-ids", default=None,
+                    help="--enemy-source gcs 일 때 필수. 쉼표구분 GCS vehicle_id 목록(예: "
+                         "usv4,usv5) -- 체크포인트의 M(적 슬롯 수)보다 많으면 안 됨, 적으면 "
+                         "나머지 슬롯은 계속 e_alive=False. vehicles.yaml에 role=target으로 "
+                         "등록돼 있어야 함(등록만 돼 있으면 됨 -- 이 스크립트는 이 배들에게 "
+                         "명령을 내리지 않는다, 위치만 읽는다).")
     ap.add_argument("--publish-hz", type=float, default=2.0,
                     help="GCS로 경유점을 재전송하는 빈도(docs/contracts.md §4: 0.5~2Hz 권장)")
     ap.add_argument("--net-log", default=None,
@@ -124,6 +166,16 @@ def main() -> None:
     ap.add_argument("--net-ros2-namespace", default="mobrobgpt",
                     help="그물 전개 신호를 /<ns>/<vehicle_id>/net_deploy(std_msgs/Int32, "
                          "0=대기/1=전개중)로 발행할 네임스페이스. rclpy 없으면 자동으로 생략됨.")
+    ap.add_argument("--waypoint-ros2-namespace", default="mobrobgpt",
+                    help="배당 경유점 2개(wp1+wp2)를 /<ns>/<vehicle_id>/waypoints"
+                         "(std_msgs/String, JSON {active_index, waypoints:[{lat,lon},{lat,lon}]})"
+                         "로 발행할 네임스페이스. GCS `/api/config`의 datum을 못 읽거나 rclpy가 "
+                         "없으면 자동으로 생략됨(goto는 독립적으로 계속 나감).")
+    ap.add_argument("--waypoints-out", default=None,
+                    help="배마다 최신 wp1+wp2를 {\"vehicles\": {...}} JSON으로 이 경로에 계속 "
+                         "덮어쓴다(rclpy 유무와 무관 -- datum만 있으면 됨). 브라우저는 ROS2를 "
+                         "직접 구독 못 하므로, tools/gcs_bridge_control.py 사이드카가 이 파일을 "
+                         "GET /waypoints로 중계해 gcs 웹 UI가 폴링한다.")
     ap.add_argument("--realtime", dest="realtime", action="store_true", default=True,
                     help="micro-step 사이를 실제 SimScale.dt_real 만큼 대기(기본 켜짐 -- 실보트 "
                          "연동이므로 run_replay_infer.py와 달리 CPU 속도로 폭주하면 안 된다)")
@@ -140,6 +192,16 @@ def main() -> None:
 
     ap.add_argument("--viz", action="store_true", help="matplotlib 실시간 시각화(run_replay_infer.py 재사용)")
     ap.add_argument("--spf", type=int, default=3, help="--viz 전용: 프레임당 micro-step 수")
+    ap.add_argument("--satellite", action="store_true",
+                    help="--viz 전용: 실제 지도 위치의 위성 배경(인터넷 필요, 실패 시 기본 배경으로 "
+                         "자동 폴백). run_replay_infer.py의 --satellite와 달리 체크포인트의 학습 "
+                         "지오 앵커가 아니라 --geo(지정 시) 또는 GCS가 지금 보고하는 --ally-ids의 "
+                         "실제 lat/lon 평균을 앵커로 쓴다 -- 이 맵 중앙(enu_origin)이 실제로 어디인지 "
+                         "GCS 쪽 값으로 구하므로, 함대가 어디로 재배치돼 있든 그 실제 지점의 위성사진이 "
+                         "뜬다.")
+    ap.add_argument("--pause-start", action="store_true",
+                    help="--viz 전용: 창을 일시정지 상태로 띄운다 -- space 를 한 번 눌러야 추론이 "
+                         "시작된다(기본은 즉시 재생). 재생 중에도 space 로 언제든 다시 일시정지 가능.")
     args = ap.parse_args()
 
     if args.replan_period < 1:
@@ -149,9 +211,9 @@ def main() -> None:
         raise SystemExit("--ally-ids 는 최소 1개 이상의 vehicle_id 를 포함해야 합니다.")
 
     from commander.rl_bridge import build_battlefield_defense
-    from commander.gcs_bridge import GcsClient, GcsAllyLink, NetDeploySink
+    from commander.gcs_bridge import GcsClient, GcsAllyLink, NetDeploySink, WaypointSink
 
-    kind = _detect_policy_kind(args.ckpt)
+    _detect_policy_kind(args.ckpt)          # raises if this isn't a CNN-score-map checkpoint
     print(f"[gcs_bridge] 정책 로딩: {args.ckpt} (감지: CNN 점수맵(U-Net))")
     n_allies = _policy_n_allies(args.ckpt)
     if len(ally_ids) != n_allies:
@@ -159,33 +221,113 @@ def main() -> None:
             f"--ally-ids 개수({len(ally_ids)}: {ally_ids})가 체크포인트의 아군 수"
             f"(n_allies={n_allies})와 다릅니다.")
 
+    client = GcsClient(args.gcs_url)
+    # source is always "rl" -- this script IS the RL autonomy module, never the operator.
+    # A configurable value here would let it request "manual"'s higher command priority
+    # (command/authority.py), which is an authority boundary gcs otherwise keeps sharp.
+    ally_link = GcsAllyLink(client, ally_ids, source="rl")
+
+    # 경유점(wp1+wp2) 위경도 ROS2 발행용 datum -- 순수 HTTP로 구한다(GET /api/config).
+    # 예전엔 ROS2 /<ns>/datum/gps/fix 토픽(commander/live_mothership_ros2.py)으로 구했는데,
+    # --enu-origin 자동산출/--mothership-id 가 이미 HTTP 하나로만 가는 쪽으로 옮겨간 것과
+    # 같은 방향 -- rclpy 없이도(구독까지는 필요 없고, 발행만 하면 되므로) datum 자체는 얻는다.
+    datum = None
+    try:
+        cfg_json = client.get_json("/api/config")
+        d = cfg_json.get("datum")
+        if d and d.get("lat") is not None and d.get("lon") is not None:
+            datum = (float(d["lat"]), float(d["lon"]))
+            print(f"[gcs_bridge] datum(GET /api/config) = {datum} -- 경유점 위경도 발행에 씀")
+        else:
+            print("[gcs_bridge] ⚠ GCS /api/config 에 datum 이 없음 -- 경유점 위경도 ROS2 발행 생략")
+    except Exception as exc:
+        print(f"[gcs_bridge] ⚠ GCS /api/config 조회 실패({exc}) -- 경유점 위경도 ROS2 발행 생략")
+
     if args.enu_origin is not None:
         enu_origin = tuple(args.enu_origin)
+    elif args.mothership_id:
+        try:
+            mothership_snap = GcsAllyLink(client, [args.mothership_id], source="rl").ally_snapshot()
+        except Exception as exc:
+            raise SystemExit(
+                f"--mothership-id {args.mothership_id} 위치 조회 실패 -- GCS({args.gcs_url})에서 "
+                f"이 배 위치를 못 읽었습니다: {exc}. registry에 등록돼 있는지 확인하거나 "
+                f"--enu-origin X Y 를 직접 지정하세요.")
+        if not mothership_snap.alive[0]:
+            raise SystemExit(
+                f"--mothership-id {args.mothership_id} 이 GCS에 등록은 됐지만 지금 살아있다고 "
+                f"보고되지 않습니다(connected=false 이거나 위치/자세가 stale). GCS가 이 배를 "
+                f"보고 있는지 확인하거나 --enu-origin X Y 를 직접 지정하세요.")
+        enu_origin = (float(mothership_snap.pos[0, 0]), float(mothership_snap.pos[0, 1]))
+        print(f"[gcs_bridge] --mothership-id {args.mothership_id} 의 GCS 실측 위치 "
+              f"{tuple(round(c, 3) for c in enu_origin)}(datum 기준 동/북 m)을 맵 중앙(=모선)으로 "
+              f"사용합니다(스크립트 시작 시 1회 고정 -- 이 에피소드 동안 모선은 정지해 있다고 가정).")
     else:
-        # 이전 기본값(ReplayCnnEnv의 bag.centroid())은 "모선 위치를 모른다"는 전제의
-        # 근사였다 -- GCS 연동에선 그 전제가 안 맞는다: GCS가 보고하는 아군 ned/east/north는
-        # 이미 GCS datum(=모선 기준점, vehicles.yaml gcs.datum) 상대값이라, 그 기준으로는
-        # 언제나 (0,0)이 모선이다. 로스백 적선 평균을 원점으로 쓰면 아군 실좌표가 지도 밖으로
-        # 밀려나 클리핑된다(2026-09-09 세션에서 실측 확인된 결함).
-        #
-        # --enemy-source live(LiveEnemyReplay)가 자기 rclpy 노드를 백그라운드 스레드에서
-        # 계속 spin 하는 것보다 반드시 먼저 끝내야 한다 -- rclpy의 plain spin()/spin_once()는
-        # 같은 컨텍스트에서 스레드 간 동시 사용을 지원하지 않아(실측: IndexError in
-        # wait_for_ready_callbacks), 나중에 하면 이 확인 자체가 조용히 깨진다.
-        enu_origin = (0.0, 0.0)
-        from commander.live_mothership_ros2 import fetch_gcs_datum
-        datum = fetch_gcs_datum(namespace=args.datum_namespace, timeout=3.0)
-        if datum is not None:
-            print(f"[gcs_bridge] GCS datum 확인됨({datum['lat']:.7f}, {datum['lon']:.7f}) "
-                  f"-- --enu-origin=(0,0)이 이 datum(모선 기준점)과 일치함이 검증됨")
-        else:
-            print(f"[gcs_bridge] ⚠ /{args.datum_namespace}/datum/gps/fix 토픽을 "
-                  f"{3.0:g}초 안에 못 받음(구버전 GCS 서버이거나 --ros2 없이 기동됐을 수 "
-                  f"있음) -- --enu-origin=(0,0)을 검증 없이 그대로 가정합니다. 이 GCS "
-                  f"레지스트리의 모선이 datum과 다른 곳이면 --enu-origin 을 직접 지정하세요.")
+        # ★ 2026-09-10 세션 실측으로 뒤집힌 가정: "gcs.datum=(0,0)이 곧 모선 위치"는
+        # `demo_relocate_service.py`("배치모드")가 "registry의 datum 자체는 절대 옮기지
+        # 않는다"고 명시적으로 설계한 것과 정면으로 어긋난다 -- 배치모드로 함대를 재배치하면
+        # datum은 그대로인데 함대만 수 km 떨어진 곳으로 옮겨가고, 그 상태에서 enu_origin=
+        # (0,0)을 쓰면 그 오프셋 전체가 좌표 오차가 되어 --span(수십~수백 m) 박스 밖으로
+        # 아군·적이 전부 클리핑된다(실측: /api/state 의 usv1 ned=(3415,4900) m인데 가정은
+        # (0,0)). datum은 "GCS 좌표계 정의"일 뿐 "함대 현재 위치"가 아니므로, 대신 GCS가
+        # 지금 보고하는 아군 실위치의 평균을 쓴다 -- ReplayCnnEnv가 원래 하던
+        # bag.centroid() 근사와 같은 발상이고("모선 위치를 모르면 아는 것들의 평균으로
+        # 근사"), GCS 연동에서는 로스백 적선보다 아군 쪽이 훨씬 신뢰할 수 있는 소스다.
+        try:
+            origin_snap = ally_link.ally_snapshot()
+        except Exception as exc:
+            raise SystemExit(
+                f"--enu-origin 자동산출 실패 -- GCS({args.gcs_url})에서 아군 위치를 못 "
+                f"읽었습니다: {exc}. GCS가 떠 있는지 확인하거나 --enu-origin X Y 를 "
+                f"직접 지정하세요.")
+        if not origin_snap.alive.any():
+            raise SystemExit(
+                f"--enu-origin 자동산출 실패 -- --ally-ids {ally_ids} 중 GCS가 지금 "
+                f"살아있다고 보고하는 배가 없습니다. GCS가 이 배들을 이미 보고 있는지 "
+                f"확인하거나 --enu-origin X Y 를 직접 지정하세요.")
+        centroid = origin_snap.pos[origin_snap.alive].mean(axis=0)
+        enu_origin = (float(centroid[0]), float(centroid[1]))
+        offset_from_datum = float(np.hypot(*centroid))
+        print(f"[gcs_bridge] --enu-origin 미지정 -- 아군 {int(origin_snap.alive.sum())}/"
+              f"{len(ally_ids)}척의 현재 GCS 위치 평균 "
+              f"{tuple(round(c, 3) for c in enu_origin)}(datum 기준 동/북 m, "
+              f"datum에서 {offset_from_datum:.1f} m)을 맵 중앙(=모선)으로 사용합니다.")
+        if offset_from_datum > 50.0:
+            print(f"[gcs_bridge] ⚠ 함대가 gcs.datum에서 {offset_from_datum:.0f} m 떨어져 "
+                  f"있습니다 -- '배치모드' 등으로 재배치됐을 가능성이 높습니다(datum 자체는 "
+                  f"안 움직이는 게 정상 -- demo_relocate_service.py 설계). 위 자동산출 "
+                  f"원점을 그대로 쓰면 됩니다, 이 경고는 참고용입니다.")
 
-    if args.enemy_source == "live":
+    bag = None
+    enemy_link = None
+    if args.enemy_source == "gcs":
+        if not args.target_ids:
+            raise SystemExit("--enemy-source gcs 는 --target-ids 가 필요합니다.")
+        target_ids = [v.strip() for v in args.target_ids.split(",") if v.strip()]
+        if not target_ids:
+            raise SystemExit("--target-ids 는 최소 1개 이상의 vehicle_id 를 포함해야 합니다.")
+        overlap = set(target_ids) & set(ally_ids)
+        if overlap:
+            raise SystemExit(
+                f"--target-ids 와 --ally-ids 가 겹칩니다({sorted(overlap)}) -- 같은 배를 "
+                f"아군으로 명령하면서 동시에 적으로 읽으면 관측이 자기 자신을 적으로 "
+                f"본다.")
+        n_enemies = _policy_n_enemies(args.ckpt)
+        if len(target_ids) > n_enemies:
+            raise SystemExit(
+                f"--target-ids 개수({len(target_ids)}: {target_ids})가 체크포인트의 적 "
+                f"슬롯 수(n_enemies={n_enemies})보다 많습니다.")
+        # source="rl" 로 만들지만 submit_goto 는 절대 호출하지 않는다 -- 읽기 전용
+        # (GcsLiveCnnEnv._ingest_gcs 는 ally_snapshot() 만 부른다).
+        enemy_link = GcsAllyLink(client, target_ids, source="rl")
+        print(f"[gcs_bridge] GCS `/api/state` 적선 읽기: {target_ids}")
+    elif args.enemy_source == "live":
         from commander.live_enemy_ros2 import LiveEnemyReplay
+        print("[gcs_bridge] ⚠ --enemy-source live 는 raw ROS2 토픽을 GCS 재투영 없이 "
+              "그대로 씁니다 -- 그 토픽이 GCS datum 기준 프레임이 아니면(예: "
+              "bag_enemy_relay.py --source pose 로 재투영해 중계하는 데모) 적이 아군과 "
+              "다른 좌표계로 섞여 지도 밖에 클리핑됩니다. 그런 데모에서는 --enemy-source "
+              "gcs 를 쓰세요.")
         print(f"[gcs_bridge] 라이브 ROS2 적선 구독: {args.n_tracks}척 "
               f"(pose={args.pose_topic_fmt}, heading={args.heading_topic_fmt})")
         bag = LiveEnemyReplay(
@@ -204,30 +346,41 @@ def main() -> None:
         )
         print(f"[gcs_bridge] 로스백 길이 {bag.duration_sec:.1f} s")
 
-    client = GcsClient(args.gcs_url)
-    # source is always "rl" -- this script IS the RL autonomy module, never the operator.
-    # A configurable value here would let it request "manual"'s higher command priority
-    # (command/authority.py), which is an authority boundary gcs otherwise keeps sharp.
-    ally_link = GcsAllyLink(client, ally_ids, source="rl")
     net_sink = NetDeploySink(log_path=args.net_log, ros2_vehicle_ids=ally_ids,
                               ros2_namespace=args.net_ros2_namespace)
+    waypoint_sink = WaypointSink(
+        datum=datum, ros2_vehicle_ids=ally_ids,
+        ros2_namespace=args.waypoint_ros2_namespace,
+        state_path=Path(args.waypoints_out) if args.waypoints_out else None)
 
-    from commander.gcs_cnn_env import GcsBagCnnEnv
-    env = GcsBagCnnEnv(
-        args.ckpt, bag, args.span, ally_link,
-        net_sink=net_sink, publish_hz=args.publish_hz,
-        ally_speed_real=args.ally_speed_real, enemy_mode=args.enemy_mode,
-        nets_per_ship=args.nets,
-        geo=tuple(args.geo) if args.geo else None,
-        enu_origin=enu_origin,
-        net_reload_period_real=args.net_reload_period,
-    )
+    if args.enemy_source == "gcs":
+        from commander.gcs_cnn_env import GcsLiveCnnEnv
+        env = GcsLiveCnnEnv(
+            args.ckpt, args.span, ally_link, enemy_link,
+            net_sink=net_sink, waypoint_sink=waypoint_sink, publish_hz=args.publish_hz,
+            ally_speed_real=args.ally_speed_real, enemy_mode=args.enemy_mode,
+            nets_per_ship=args.nets,
+            geo=tuple(args.geo) if args.geo else None,
+            enu_origin=enu_origin,
+            net_reload_period_real=args.net_reload_period,
+        )
+    else:
+        from commander.gcs_cnn_env import GcsBagCnnEnv
+        env = GcsBagCnnEnv(
+            args.ckpt, bag, args.span, ally_link,
+            net_sink=net_sink, waypoint_sink=waypoint_sink, publish_hz=args.publish_hz,
+            ally_speed_real=args.ally_speed_real, enemy_mode=args.enemy_mode,
+            nets_per_ship=args.nets,
+            geo=tuple(args.geo) if args.geo else None,
+            enu_origin=enu_origin,
+            net_reload_period_real=args.net_reload_period,
+        )
     print(f"[gcs_bridge] GCS = {args.gcs_url}  ally_ids = {ally_ids}")
     print(f"[gcs_bridge] enu_origin(맵 중앙 대응 실좌표) = "
           f"{tuple(round(c, 3) for c in env.scale.enu_origin)}")
     print(f"[gcs_bridge] 결정주기 = {env.scale.period_real:.3g} 실초, "
           f"micro-step = {env.scale.dt_real:.3g} 실초")
-    print(env.scale.report(v_enemy_real=bag.mean_speed_mps()))
+    print(env.scale.report(v_enemy_real=bag.mean_speed_mps() if bag is not None else None))
     arrive_radius_real = env.cfg.arrive_radius / env.scale.S
     net_max_len_real = env.cfg.net_max_len / env.scale.S
     print(f"[gcs_bridge] arrive_radius = {arrive_radius_real:.3g} m, "
@@ -246,6 +399,15 @@ def main() -> None:
     pending: dict = {"future": None}
     log: list = []
     state = {"decision_idx": 0, "last_wait_print": 0.0, "seen_ready": False}
+    # --viz 정보패널용(run_commander_ui.py와 같은 키 구조) -- --viz 없이 돌 때도 그냥 dict
+    # 갱신일 뿐이라 추가 비용이 없다(그리기는 _run_viz의 info_provider 콜백이 호출될 때만).
+    info: dict = {
+        "model": getattr(commander, "model", args.llm),
+        "status": "GCS 텔레메트리 대기 중",
+        "cmd": args.command or "(none)",
+        "assign": "(아직 없음)",
+        "rationale": "첫 재배정 대기 중...",
+    }
 
     def replan_if_due(force: bool = False) -> None:
         if pending["future"] is not None:
@@ -263,8 +425,16 @@ def main() -> None:
             plan = fut.result()
         except Exception as exc:
             print(f"[gcs_bridge] LLM 재배정 실패, 이전 배정 유지: {exc}")
+            info["status"] = f"Error: {type(exc).__name__}: {exc}"
             return
         env.set_plan(plan, args.command)
+        held = sorted(getattr(plan, "hold_ships", None) or [])
+        alloc = "  ".join(f"C{d.cluster_id}:{d.ally_ids or 'none'}"
+                          for d in plan.deployments) or "(none)"
+        info["status"] = f"재배정 적용됨 (t={env.bag_time_real:.1f}s)"
+        info["cmd"] = args.command or "(none)"
+        info["assign"] = alloc + (f"\nHold: {held}" if held else "")
+        info["rationale"] = plan.rationale
         print(f"[t={env.bag_time_real:6.2f}s] 재배정: {plan.rationale}")
 
     def log_decision() -> None:
@@ -328,9 +498,62 @@ def main() -> None:
         except Exception as exc:
             print(f"[gcs_bridge] ⚠ --viz 재사용 실패({exc}) -- headless 로 계속합니다.")
             args.viz = False
+
+    bg_img = bg_extent = None
+    if args.viz and args.satellite:
+        if args.geo:
+            lat0, lon0 = float(args.geo[0]), float(args.geo[1])
+        else:
+            # --geo 미지정 -- enu_origin(맵 중앙)에 대응하는 실제 lat/lon을 GCS가 지금
+            # 보고하는 --ally-ids 자신의 lat/lon 평균으로 구한다(별도 위경도 변환 불필요 --
+            # GCS가 이미 datum 기준으로 재투영해 둔 값이다). enu_origin 자체도 이 배들의
+            # ENU 위치 평균이라 같은 앵커를 가리킨다.
+            try:
+                # ★ 변수명 `state`는 쓰지 않는다 -- main() 스코프에서 `state = {...}`로
+                # 재바인딩하면 아래 정의된 advance_one_micro() 가 클로저로 참조하는
+                # "결정 진행상태" state 딕셔너리(`seen_ready` 등)를 덮어써서
+                # KeyError('seen_ready')로 애니메이션이 깨진다(2026-09-11 세션 실측).
+                gcs_state = client.get_json("/api/state")
+                pts = [(gcs_state["vehicles"][v]["lat"], gcs_state["vehicles"][v]["lon"])
+                       for v in ally_ids
+                       if gcs_state["vehicles"].get(v) and gcs_state["vehicles"][v].get("lat") is not None]
+            except Exception as exc:
+                pts = []
+                print(f"[gcs_bridge] ⚠ --satellite 앵커용 lat/lon 조회 실패({exc})")
+            if pts:
+                lat0 = sum(p[0] for p in pts) / len(pts)
+                lon0 = sum(p[1] for p in pts) / len(pts)
+            else:
+                lat0 = lon0 = None
+        if lat0 is None:
+            print("[gcs_bridge] ⚠ --satellite 앵커(lat/lon)를 구하지 못했습니다 -- 기본 배경 사용. "
+                  "--geo LAT LON 을 직접 지정해보세요.")
+        else:
+            from commander.satellite import fetch_satellite_bg
+            print(f"[gcs_bridge] 위성 배경 로딩 중... (앵커 {lat0:.6f},{lon0:.6f}, "
+                  f"--span {args.span:g} m)")
+            res = fetch_satellite_bg(lat0, lon0, args.span)   # world_size 인자 = 실제 미터(--span)
+            if res:
+                img, ext_real = res   # ext_real: [xmin,xmax,ymin,ymax], 0~args.span 실미터 프레임
+                # fetch_satellite_bg는 "world_size(여기선 --span 실미터) = 렌더 프레임 전체 폭"을
+                # 가정한다(run_replay_infer.py의 기존 호출처럼 world_size==sim 프레임일 때만
+                # 맞는 가정) -- 여기서는 sim 프레임이 cfg.world_size(항상 12600)로 고정이고
+                # --span 은 SimScale.S 로 별도 변환되므로, 실미터 프레임(중심=--span/2)을
+                # SimScale과 같은 배율로 sim 프레임(중심=cfg.world_size/2)에 맞춰 재투영해야
+                # renderer.draw_scene(bg_extent=...)가 아군/적 궤적과 같은 좌표계에 놓인다.
+                half_real = args.span / 2.0
+                half_sim = env.cfg.world_size / 2.0
+                bg_extent = [(v - half_real) * env.scale.S + half_sim for v in ext_real]
+                bg_img = img
+                print("[gcs_bridge] 위성 배경 로드 완료")
+            else:
+                print("[gcs_bridge] ⚠ 위성 배경 로드 실패(오프라인 등) -- 기본 배경 사용")
+
     try:
         if args.viz:
-            _run_viz(env, advance_one_micro, max_reached, args.spf, log)
+            _run_viz(env, advance_one_micro, max_reached, args.spf, log,
+                     bg_img=bg_img, bg_extent=bg_extent, info_provider=lambda: info,
+                     start_paused=args.pause_start)
         else:
             while not max_reached():
                 if not advance_one_micro():
@@ -340,6 +563,7 @@ def main() -> None:
         if hasattr(bag, "shutdown"):
             bag.shutdown()
         net_sink.shutdown()
+        waypoint_sink.shutdown()
 
     if args.out:
         import json
