@@ -20,9 +20,9 @@ $[-0.013, +0.100]$ 로 0을 포함한다(\S\ref{sec:stats}). 이 절이 보이�
 
 \input{tables/tab_maneuver}
 
-\begin{figure*}[tp]
+\begin{figure*}[!tb]
 \centering
-\includegraphics[width=0.9\textwidth]{fig14.png}
+\includegraphics[width=0.5\textwidth]{fig15.png}
 \caption{휴리스틱 대 U-Net 기동의 지표 프로파일(바깥일수록 우수): (a) 전체, (b) 집중,
          (c) 양동, (d) 파상}
 \label{fig:radar_maneuver}
@@ -61,9 +61,9 @@ Table~\ref{tab:main}과 Fig.~\ref{fig:condbars}에 8개 조건의 포획률을 �
 
 \input{tables/tab_main}
 
-\begin{figure*}[tbp]
+\begin{figure*}[!tbp]
 \centering
-\includegraphics[width=0.9\textwidth]{fig15.png}
+\includegraphics[width=0.8\textwidth]{fig16.png}
 \caption{포메이션별·조건별 포획률(색: 지휘관, 빗금: 기동 계층, 오차막대: 시드 부트스트랩 신뢰구간)}
 \label{fig:condbars}
 \end{figure*}
@@ -92,9 +92,9 @@ $+0.062$ 보다 크다. 한편 이 구간은 악화 방향으로는 여전히 �
 기동 계층을 휴리스틱으로 고정하여 지휘관 축만 분리하면, 모델 능력에 따른 단조 증가가
 나타난다(Fig.~\ref{fig:ladder}; 오차막대는 시드 부트스트랩 95\,\% 신뢰구간).
 
-\begin{figure}[tbp]
+\begin{figure}[!tbp]
 \centering
-\includegraphics[width=\columnwidth]{fig16.png}
+\includegraphics[width=0.85\columnwidth]{fig17.png}
 \caption{지휘관 능력 사다리(기동 계층 휴리스틱 고정, 점선: 휴리스틱 배정 기준선)}
 \label{fig:ladder}
 \end{figure}
@@ -116,7 +116,7 @@ $+0.062$ 보다 크다. 한편 이 구간은 악화 방향으로는 여전히 �
 
 \begin{figure*}[!tbp]
 \centering
-\includegraphics[width=0.85\textwidth]{fig17.png}
+\includegraphics[width=0.85\textwidth]{fig18.png}
 \caption{계획 품질 대 성능: (a) 배정 커버리지, (b) 재계획 간 churn, (c) 경로 교차}
 \label{fig:planquality}
 \end{figure*}
@@ -137,15 +137,6 @@ $0.652 \to 0.811 \to 0.904$ 로 증가한다(모두 기동 계층을 휴리스�
 계획의 최적성보다 계획의 안정성이 중요하다.} 매 재계획마다 국소적으로 더 나은 배정을 찾아
 바꾸는 것은, 그 전환 비용(버려지는 그물, 교차하는 경로)을 고려하면 손해일 수 있다.
 
-\subsubsection{정성적 예시}
-\label{sec:res_qualitative}
-
-Fig.~\ref{fig:runshot}은 제안 체계가 실제로 동작하는 한 장면이다. 지휘관이 세 무리에 세
-방어정을 각각 배정하고(패널 우측의 배정과 근거; 근거 문장은 모델 출력을 영문으로 옮겨
-실었다), 각 방어정이 배정된 회랑에 그물벽을 친
-결과 이 시점까지 적 3척이 포획되고 돌파와 아군 충돌은 없다. 재계획 주기는
-\S\ref{sec:experiment}의 평가 설정과 같은 25\,step이다.
-
 \textbf{운용 함의.} 지휘관 계층은 능력 임계 위의 모델에만 켠다 --- 본 실험 기준 로컬 7B는 끄는 편이 낫고 14B는 이득이 없으며, 클라우드 모델만 이득이었다. 지휘관을 고르거나 프롬프트를 손볼 때의 기준은 배정 커버리지가 아니라 재계획 간 담당 유지율이다.
 
 \subsection{두 기여는 더해진다}
@@ -165,7 +156,7 @@ Fig.~\ref{fig:runshot}은 제안 체계가 실제로 동작하는 한 장면이�
 
 \begin{figure*}[tbp]
 \centering
-\includegraphics[width=0.78\textwidth]{fig18.png}
+\includegraphics[width=0.78\textwidth]{fig19.png}
 \caption{$2\times2$ 상호작용(Gemini 지휘관): (a) 네 셀의 포획률 평균, (b) 시드 대응차이와 BCa 신뢰구간}
 \label{fig:interaction}
 \end{figure*}
@@ -204,9 +195,9 @@ $[-19.84,\; -5.93]$ 로 유의한 상쇄를 보인다. \textbf{이 예외는 보
 
 \input{tables/tab_effectsize}
 
-\begin{figure}[!tp]
+\begin{figure}[!tbp]
 \centering
-\includegraphics[width=\columnwidth]{fig19.png}
+\includegraphics[width=\columnwidth]{fig20.png}
 \caption{제안 대 기준선의 전 지표 효과크기 $\dz$(굵은 선 신뢰구간, 옅은 선 Bonferroni 보정 구간)}
 \label{fig:forest}
 \end{figure}
@@ -255,7 +246,7 @@ $[-0.003, +0.132]$ 로 0을 아슬아슬하게 포함한다. 기동 계층 단�
 
 \begin{figure}[!tbp]
 \centering
-\includegraphics[width=\columnwidth]{fig20.png}
+\includegraphics[width=\columnwidth]{fig21.png}
 \caption{지휘관 응답 지연의 경험 누적분포(파선은 결정 주기)}
 \label{fig:latency_ecdf}
 \end{figure}
@@ -290,7 +281,7 @@ $2\sim4$초를 예상하고 있어 실측과 $4\sim8$배 차이가 난다. 따�
 \end{minipage}
 \end{table*}
 
-단 이 수치의 측정 구성에는 교란 요인이 있다(\S\ref{sec:limitations} 참조). 즉 \S\ref{sec:arch}의 비동기 설계는 클라우드 배치에서는 선택이지만 \textbf{로컬 배치에서는
+단 이 수치의 측정 구성에는 교란 요인이 있다(Table~\ref{tab:latency_tail} 주석 참조). 즉 \S\ref{sec:arch}의 비동기 설계는 클라우드 배치에서는 선택이지만 \textbf{로컬 배치에서는
 지연 꼬리에 대한 안전장치}로서 실질적 의미를 갖는다.
 
 \textbf{운용 함의.} 로컬 배치에서 비동기 분리는 선택이 아니라 전제이며, 배치 전에 확인할 값은 평균 지연이 아니라 주기를 넘기는 호출의 비율이다.

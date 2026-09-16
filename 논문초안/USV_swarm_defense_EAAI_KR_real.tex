@@ -67,6 +67,7 @@
 \setcounter{dbltopnumber}{3}
 \setcounter{totalnumber}{5}
 \usepackage[section]{placeins}  % 절이 바뀌면 남은 float 를 먼저 흘려보낸다
+\raggedbottom                   % 2단에서 단 바닥을 억지로 맞추느라 제목 사이 여백이 늘어나는 것을 막는다
 \usepackage{xcolor}
 \usepackage{setspace}
 \usepackage[numbers,sort&compress]{natbib}
@@ -92,6 +93,13 @@
 \newcommand{\unit}[1]{\ensuremath{\,\mathrm{#1}}}
 
 %==============================================================================
+
+% 단 폭(≈232pt)보다 긴 식은 TeX 가 번호를 다음 줄로 내린다. 그런 식만 글자 크기를 한 단계
+% (\small, 0.9배) 또는 두 단계(\footnotesize, 0.8배) 줄여 번호가 같은 줄에 남게 한다.
+% 어느 식이 밀리는지는 scratchpad/eqcheck.py 로 전수 측정했다(2026-09-16).
+\newenvironment{equationsmall}{\small\begin{equation}}{\end{equation}}
+\newenvironment{equationfn}{\footnotesize\begin{equation}}{\end{equation}}
+
 \begin{document}
 
 \title{\bfseries 군집 자폭 수상 드론 방어를 위한\\
