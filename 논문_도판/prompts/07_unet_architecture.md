@@ -5,8 +5,10 @@
 - 레지스터: **B (U-Net 논문 관례)** · 렌더링 문자열 **11개 + 채널/해상도 수치**
 - 통합 이력: 구 08(질의·내적·점수맵)의 앞부분을 이 도판 꼬리에 흡수. 마스크→두 픽셀→그물벽은
   논문 Fig. 7 `fig_valid_mask`(실측)가 담당하므로 여기 넣지 않는다.
-- **대체 대상**: 논문 기존 Fig. 6 `fig_unet_arch.png` — 그 도판의 'Regression Head 64→32→2'는
-  코드에 없는 구성이며 §4.3.3(픽셀 지목)과 모순된다. 이 도판이 그 자리에 들어간다.
+- **대체 대상**: 논문 기존 Fig. 6 `fig_unet_arch.png`. 그 도판의 'Regression Head 64→32→2' 는 코드의
+  부화소 오프셋 머리(`off_mu`, 64→32→2)와 일치하므로 오류가 아니다 — 다만 'Final Waypoint Output' 과
+  붙어 있어 좌표 회귀로 읽힌다. 이 도판은 점수맵에서 끝내고, 픽셀 지목과 오프셋은 논문 Fig. 7(실측)
+  캡션·본문이 담당한다.
 
 > 근거: `boatattack_sim/model/cnn_actor.py::UNetLite` — stem 15→32, enc1 32→32(H/2),
 > enc2 32→64(H/4), bottleneck 64→64, GAP→FiLM, dec2 96→32(H/2), dec1 64→32(H), head 32→d=32.
@@ -21,7 +23,8 @@
 병목에 주입된 뒤 확장 경로가 skip 연결을 받아 **입력과 같은 해상도**의 특징맵으로 복원된다는
 것을 보이고, 이어서 자기 상태에서 만든 질의 벡터와 칸 특징의 내적이 해면 전체에 점수맵을 그리는
 지점까지 잇는다. 해상도 보존이 점수맵을 가능하게 하는 전제이므로, 그것이 형태로 주장되어야 한다.
-**회귀 헤드는 없다.** 점수맵이 곧 행동 분포다.
+**경유점 좌표를 회귀하는 헤드는 없다.** 점수맵이 곧 행동 분포이고, 부화소 오프셋 머리는 지목된 칸 안의
+보정값만 낸다(이 도판 범위 밖).
 
 ### Target Audience
 조선해양공학 학술지 심사자와 독자. U-Net 계열 도해에 익숙한 독자는 채널 수 표기와 skip
@@ -67,7 +70,7 @@ inner-product operator glyph. One arrow leaves that operator into the final tile
 square of the same size again, rendered as a genuine viridis-colormapped heatmap with visible cell
 structure, one clear bright region and one weaker region. A vertical viridis colorbar with a thin
 border and small end ticks stands beside it, unlabelled. There is no further stage after the score
-map: no regression head, no coordinate output, no dense layers. All arrowheads are filled triangles
+map: no waypoint-coordinate regression output, no dense layers after the score map. All arrowheads are filled triangles
 except the skip arrows. No watermarks,
 no blurry text, no placeholder brackets, no random artifacts, no readable text inside any box, no
 figure caption numbers, no legend boxes, no kernel size annotations, no mathematical formulas.
@@ -86,8 +89,9 @@ Korean, Chinese, Japanese or Cyrillic characters anywhere in the image.
 - 시각장식: 박스 위 채널 수, 레벨 옆 90도 회전 해상도, 병목 아래 전역 문맥 박스와 변조 연산자,
   하단 질의 레인의 **진짜 열벡터**(키 큰 대괄호), 내적 연산자(원 안 점), 끝의 **진짜 viridis 점수맵**
   + 세로 컬러바. 그 외 장식 없음. 번호 배지·아이콘 금지.
-- 종단: 점수맵에서 끝난다. **회귀 헤드·좌표 출력·완전연결층을 그리면 실패**다 — 논문의 주장과
-  정반대가 된다. 마스크와 픽셀 선택은 다음 도판(실측)이 담당하므로 여기 넣지 않는다.
+- 종단: 점수맵에서 끝난다. **경유점 좌표를 내는 회귀 출력을 그리면 실패**다 — 픽셀 지목이 논문의
+  주장이다. 부화소 오프셋 머리(64→32→2)는 픽셀 선택 **뒤**에 오므로 이 도판 범위 밖이며, 마스크·픽셀
+  선택·오프셋은 논문 Fig. 7(실측)이 담당한다.
 - 공간구성: 정확한 좌우 대칭 U 자. 출력 박스 높이가 입력 박스 높이와 **정확히 같아야** 한다.
   여백 15~25%.
 - 시각메타포: 내려갔다 올라오는 대칭 경로와 그 위를 가로지르는 수평 다리들. 다리(skip)가
@@ -160,7 +164,7 @@ note_dot: "Inner product"
 stage_score: "Score map"
 
 ## FORBIDDEN ELEMENTS
-- **회귀 헤드, 좌표 출력, 점수맵 뒤의 완전연결층** — 기존 Fig. 6 의 오류. 점수맵에서 끝난다
+- **경유점 좌표 회귀 출력** — 점수맵에서 끝난다. (부화소 오프셋 머리는 존재하지만 이 도판 범위 밖)
 - 유효 마스크, 선택된 픽셀, 그물벽 — 논문 Fig. 7 실측 도판이 담당한다
 - 신경망을 외곽선 실루엣 하나로 뭉뚱그리기, 납작한 사각형만 늘어놓기
 - 채널 수·해상도 주기 생략 (이 장르의 필수 표기다)

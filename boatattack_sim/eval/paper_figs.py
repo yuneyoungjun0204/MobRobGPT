@@ -892,6 +892,97 @@ def diag_summary(diag_root: str) -> dict:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════
+# P9. 기동 계층 레이다 — 휴리스틱 대 U-Net 을 10개 지표에서 한눈에 (LLM 미사용)
+# ════════════════════════════════════════════════════════════════════════════
+#: 레이다 축 이름(영문). '바깥 = 우수' 로 읽히도록 방향을 낱말에 접는다 --- 낮을수록 좋은
+#  지표는 "Fewer/Less/Shorter/Earlier" 로 적어 뒤집힌 축임을 이름만 보고 알게 한다.
+RADAR_LABEL = {
+    "capture_rate":         "Capture\nrate",
+    "breaches":             "Fewer\nbreaches",
+    "collision_rate":       "Fewer\ncollisions",
+    "net_touches":          "Fewer\nentanglements",
+    "nets_per_capture":     "Fewer nets\nper capture",
+    "traveled_per_capture": "Shorter travel\nper capture",
+    "turn_sum_rad":         "Less\nturning",
+    "cap_dist_mean":        "Farther\ncapture",
+    "cap_time_mean":        "Earlier\ncapture",
+    "net_deploy_edist":     "Closer\ndeployment",
+}
+#: 패널 순서 --- (a) 전체, (b) 집중, (c) 양동, (d) 파상. 패널 제목은 캡션의 몫이라 그림에 없다.
+RADAR_FORMS = ("ALL", "concentrated", "diversionary", "wave")
+
+
+def radar_profile(df, *, formation: str = "ALL") -> "pd.DataFrame":
+    """조건별 지표 평균을 0--1 로 정규화한 표(행 = 조건, 열 = 지표).
+
+    정규화는 **같은 포메이션 조건 안 8개 조건 평균의 min--max** 다. 낮을수록 좋은 지표는
+    먼저 부호를 뒤집어 항상 1 = 8개 조건 중 최선, 0 = 최악이 된다. 두 조건만으로 min--max
+    를 하면 축마다 0 대 1 이 되어 모양이 사라지므로 8개 조건 전부를 기준으로 삼는다.
+    """
+    import pandas as pd
+
+    sub = df if formation == "ALL" else df[df["formation"] == formation]
+    keys = [k for k, _ko, _lb, _nd in PN.METRICS]
+    mean = sub.groupby("condition")[keys].mean()
+    signed = mean.copy()
+    for k in keys:
+        if k in PN.LOWER_BETTER:
+            signed[k] = -signed[k]
+    lo, hi = signed.min(axis=0), signed.max(axis=0)
+    span = (hi - lo).replace(0.0, 1.0)
+    return (signed - lo) / span
+
+
+def fig_radar_maneuver(df, *, conds=("heur_heur", "heur_unet"), figsize=None):
+    """2x2 레이다: (a) 전체 (b) 집중 (c) 양동 (d) 파상. 각 패널에 휴리스틱·U-Net 두 다각형.
+
+    반환은 (fig, profiles) --- profiles[formation] 이 `radar_profile` 표라 본문 수치에 쓴다.
+    """
+    use_paper_style()
+    if figsize is None:
+        figsize = (W2, W2 * 0.92)
+    keys = [k for k, _ko, _lb, _nd in PN.METRICS]
+    n = len(keys)
+    ang = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    ang_c = np.concatenate([ang, ang[:1]])
+    style = {"heur_heur": (OI["grey"], "Heuristic maneuver"),
+             "heur_unet": (OI["blue"], "U-Net score-map maneuver")}
+
+    fig, axs = plt.subplots(2, 2, figsize=figsize, subplot_kw={"projection": "polar"})
+    fig.subplots_adjust(left=0.13, right=0.87, top=0.92, bottom=0.11, wspace=0.75, hspace=0.42)
+    profiles = {}
+    for ax, letter, form in zip(axs.ravel(), "abcd", RADAR_FORMS):
+        prof = radar_profile(df, formation=form)
+        profiles[form] = prof
+        ax.set_theta_zero_location("N")
+        ax.set_theta_direction(-1)
+        ax.set_ylim(0, 1)
+        ax.set_rgrids([0.25, 0.5, 0.75, 1.0], labels=["", "0.5", "", "1"], angle=18,
+                      fontsize=5.5, color="#8A8A8A")
+        ax.set_thetagrids(np.degrees(ang), [RADAR_LABEL[k] for k in keys], fontsize=5.8)
+        ax.tick_params(axis="x", pad=3)
+        # 긴 라벨이 원 테두리를 물지 않도록 오른쪽 반원은 왼끝, 왼쪽 반원은 오른끝을 축에 맞춘다.
+        for a, lab in zip(ang, ax.get_xticklabels()):
+            deg = np.degrees(a) % 360
+            lab.set_ha("center" if deg in (0.0, 180.0) else ("left" if deg < 180 else "right"))
+        ax.grid(color=_GRID, linewidth=0.45)
+        ax.spines["polar"].set_color(_GRID)
+        ax.spines["polar"].set_linewidth(0.6)
+        for c in conds:
+            col, lab = style[c]
+            v = prof.loc[c, keys].to_numpy(dtype=float)
+            v_c = np.concatenate([v, v[:1]])
+            ax.plot(ang_c, v_c, color=col, linewidth=1.3, zorder=3, label=lab)
+            ax.fill(ang_c, v_c, color=col, alpha=0.16, zorder=2)
+            ax.scatter(ang, v, s=9, color=col, edgecolor="white", linewidth=0.4, zorder=4)
+        _panel_label(ax, letter, dx=-0.22, dy=1.06)
+    h, l = axs[0, 0].get_legend_handles_labels()
+    fig.legend(h, l, loc="lower center", ncol=2, bbox_to_anchor=(0.5, 0.0), frameon=False,
+               fontsize=7)
+    return fig, profiles
+
+
 def save_paper_figs(df, llm_df=None, outdir: str = "논문_그래프/8_논문판",
                     *, backend: str = "", seed: int = 0) -> list[str]:
     """논문에 실리는 결과 도판 5장을 한꺼번에 만든다."""
@@ -904,6 +995,7 @@ def save_paper_figs(df, llm_df=None, outdir: str = "논문_그래프/8_논문판
     out.append(save(fig_interaction(df, backend=backend, seed=seed),
                     outdir, "figP3_interaction"))
     out.append(save(fig_ladder(df, seed=seed), outdir, "figP4_ladder"))
+    out.append(save(fig_radar_maneuver(df)[0], outdir, "figP9_radar_maneuver"))
     if llm_df is not None and len(llm_df):
         out.append(save(fig_plan_quality(df, llm_df, seed=seed),
                         outdir, "figP5_plan_quality"))

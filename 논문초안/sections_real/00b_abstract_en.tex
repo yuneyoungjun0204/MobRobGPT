@@ -1,7 +1,7 @@
 %============================================================ 영문 표제·초록
 %  EAAI 는 영문 저널이다. 이 한글 원고는 투고본의 기준 원고이므로, 번역 단계에서
 %  용어와 수치가 흔들리지 않도록 영문 제목·초록·주제어를 여기에 고정해 둔다.
-%  ★ 수치는 국문 초록과 한 글자도 다르면 안 된다 — tools/check_abstract_numbers.py 가 대조한다.
+%  ★ 수치는 국문 초록과 한 글자도 다르면 안 된다 — tools/check_paper_meta.py 가 대조한다.
 %  ★ 이 파일은 투고 원고에 들어가지 않는다 — elsarticle 에는 본문 뒤 제2 초록에
 %    대응하는 요소가 없다. 독립 문서 영문초록_translation_reference.tex 가 읽는다.
 
@@ -15,33 +15,26 @@ for Defense Against Suicide USV Swarms}
 
 \vspace{4pt}
 \noindent
-Suicide unmanned surface vehicle (USV) swarms resist conventional counters: electronic warfare
-cannot reach wire-guided targets, and interception spends a missile costlier than its target.
-We adopt physical capture: defense boats slower than the attackers
-pre-block the mothership approach corridor with net walls. Two layers update on the
-\emph{same} decision period but differ sharply in \emph{response latency}, so only the slow
-layer is decoupled asynchronously. The maneuver layer
-rasterizes the battlefield into a mothership-centered 15 channel grid; a FiLM-conditioned U-Net
-emits a score map; each boat points at two high-scoring pixels in its valid region and
-lays a net wall between them. Pixel pointing keeps the action space
-grid-regularized and the input invariant to swarm size.
-Training extends critic-free group relative policy optimization to the multi-agent case,
-anchoring one candidate to the geometric heuristic so that only joint actions that beat
-the heuristic receive positive advantage. In the strategy layer a large language model (LLM) commander
-assigns boats to enemy clusters from pre-computed geometry, with no combinatorial
-post-optimization.
-
-\vspace{4pt}
-\noindent
-We collected 720 seed-paired episodes: 8 conditions $\times$ 3 formations $\times$ 30 seeds.
-The maneuver layer alone raised capture rate from $0.844$ to $0.886$ ($+0.157$ under wave),
-while the strategy layer split by model --- a cloud model gained $+0.060$, whereas Qwen2.5 7B
-was significantly \emph{worse} than the heuristic at $-0.192$. In a $2\times2$ decomposition
-over 10 metrics, 9 interaction intervals contained $0$: the layers are \emph{additive}, not
-synergistic. Under Bonferroni correction capture rate and breaches lose significance; the
-other 8 metrics hold. The capture-rate effect size ($d_z = 0.44$) ranked lowest of the 10, far below
-total turning ($-3.23$) and nets per capture ($-2.09$). Commander skill tracked plan stability
-across replans, not assignment coverage.
+Low-cost suicide unmanned surface vehicle (USV) swarms evade conventional counters:
+electronic warfare cannot reach wire-guided targets, and interceptors cost more than their
+targets and saturate. We propose a two-layer defense in which a few boats slower than the
+attackers pre-block the mothership approach corridor with net walls. In the strategy layer a
+large language model (LLM) commander assigns each boat to an enemy cluster; in the maneuver
+layer a U-Net emits a score map over a rasterized battlefield grid and each boat points at
+pixels to place its net wall. Both layers update on the same period but differ sharply in
+response latency, so only the slow strategy layer is decoupled asynchronously. Pixel pointing
+confines the action space to the grid, imposes safety constraints by masking, and is
+invariant to swarm size; training extends critic-free group relative policy optimization to
+the multi-agent case. With no combinatorial post-optimization, we collected
+720 seed-paired episodes (8 conditions $\times$ 3 formations $\times$ 30 seeds) and separated
+the two layers' contributions in a $2\times2$ decomposition. The maneuver layer alone raised
+capture rate from $0.844$ to $0.886$; the full system cut nets per capture by 44.5\,\% and total
+turning by 46.6\,\% at the same defense level, and the two contributions were \emph{additive}
+rather than synergistic. The commander paid off only above a capability threshold --- a cloud
+model gained $+0.060$, whereas local Qwen2.5 7B was significantly worse than the code heuristic
+at $-0.192$. Commander performance was explained by plan stability across replans, not by
+assignment coverage: in periodically replanning architectures, temporal consistency matters
+more than local optimality.
 
 \vspace{4pt}
 \noindent\textbf{Keywords}\;:\;

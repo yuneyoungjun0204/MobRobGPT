@@ -29,7 +29,8 @@ desktop.ini
 *.swp
 
 # ── 시뮬/지휘관 생성물 (런타임 생성) ────────────────────
-boatattack_sim/eval/_basemap_cache/    # OSM 타일 캐시
+# OSM 타일 캐시 (gitignore 는 줄 끝 주석을 지원하지 않는다 --- 패턴 뒤에 주석을 붙이면 무시가 안 된다)
+boatattack_sim/eval/_basemap_cache/
 *.pt                                    # 정책 체크포인트
 /logs/                                  # tools/gcs_bridge_control.py 사이드카 실행 로그
 
@@ -89,3 +90,5 @@ tools/PlotNeuralNet/
 # ── 대용량 산출물 (GitHub 100 MB 제한 초과 — 로컬에만 둔다) ──
 논문_그래프/6_영상/*.gif
 /*.pptx
+논문초안/*.xdv
+논문초안/sections_real/_backup_before_merge/

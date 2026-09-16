@@ -244,8 +244,10 @@ def check_symbols(sec: str) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--paper", default="논문초안", help="원고 폴더")
+    ap.add_argument("--sections", default="sections",
+                    help="섹션 하위 폴더 이름 (실그림 판은 sections_real)")
     args = ap.parse_args()
-    sec = os.path.join(args.paper, "sections")
+    sec = os.path.join(args.paper, args.sections)
     if not os.path.isdir(sec):
         print(f"섹션 폴더가 없다: {sec}")
         return 1
