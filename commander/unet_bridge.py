@@ -43,7 +43,8 @@ class CommandedCnnEnv(CommandedDefenseEnv):
     def __init__(self, ckpt: str, enemy_mode: str = "diversionary", device: str = "cpu",
                  avoid_steer: bool | None = None,
                  geo: tuple[float, float] | None = None,
-                 nets_per_ship: int = 3):
+                 nets_per_ship: int = 3,
+                 land_source: str | None = None):
         # ★ cfg 는 반드시 체크포인트에서 복원한다(직접 만들면 stem in_channels 가 어긋난다).
         actor, cfg = load_cnn_actor(ckpt, device=device)
         if not getattr(cfg, "cnn_action", False):
@@ -64,6 +65,10 @@ class CommandedCnnEnv(CommandedDefenseEnv):
         if geo is not None:
             cfg.geo_lat, cfg.geo_lon = float(geo[0]), float(geo[1])
         cfg.land_sites = ""
+        # 지형 소스 강제(예: "none" = 섬 없는 시뮬레이터 해역). land_obstacle 은 그대로 두어
+        # land 채널(obs_schema 12채널)은 유지하고 값만 전부 0이 되게 한다.
+        if land_source is not None:
+            cfg.land_source = str(land_source)
         if avoid_steer is not None:
             cfg.avoid_steer = bool(avoid_steer)
         cfg.mother_keepout = True   # APF 를 꺼도 모선-전용 회피는 항상(모선 충돌 방지)

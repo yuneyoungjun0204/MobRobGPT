@@ -58,7 +58,7 @@ def _split_messages(messages) -> tuple[str, str]:
 class GeminiCommander:
     def __init__(
         self,
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-flash-latest",
         api_key: str | None = None,     # None 이면 GEMINI_API_KEY / GOOGLE_API_KEY
         max_tokens: int = 1200,         # 정상 plan 은 ~300~500 토큰. 폭주 조기 차단.
         verbose: bool = True,

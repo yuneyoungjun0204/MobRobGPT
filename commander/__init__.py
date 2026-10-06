@@ -32,7 +32,7 @@ def make_commander(backend: str = "ollama", model: str | None = None, **kwargs):
     if b == "ollama":
         return OllamaCommander(model=model or "qwen2.5:7b", **kwargs)
     if b in ("gemini", "google"):
-        return GeminiCommander(model=model or "gemini-2.5-flash", **kwargs)
+        return GeminiCommander(model=model or "gemini-flash-latest", **kwargs)
     raise ValueError(f"알 수 없는 backend: {backend} (ollama|openai|gemini)")
 
 

@@ -19,10 +19,17 @@ MAVLink로 보낸 값을 GCS가 다시 datum 기준 ned로 계산하므로) **�
 그래서 `GcsLiveCnnEnv`는 로스백을 아예 거치지 않고, 적도 `GcsAllyLink`로 읽는다(대상
 vehicle_id만 role=target 인 것들로 바꿔서) — 좌표계 불일치가 구조적으로 사라진다.
 
-두 클래스 모두 매 tick, 그 배의 "현재 활성 경유점"(`route[ptr]`, ENU 미터로 변환)을 GCS
-`/gcs`-호환 goto 명령으로 보낸다(source="rl") -- 이게 `docs/contracts.md` §4가 말하는
-"RL이 0.5~2Hz로 계속 보낸다"는 그 지령이다. 그물 전개 시작/종료는 GCS로 보내지 않고
-`NetDeploySink`로만 알린다(gcs_bridge.py 모듈독스트링 참고 -- 액추에이터 명령 금지).
+두 클래스 모두 매 tick, 그 배의 "현재 활성 경유점"(`route[ptr]`, ENU 미터로 변환)을
+**두 채널로 나란히** GCS에 보낸다(source="rl") -- 이게 `docs/contracts.md` §4가 말하는
+"RL이 0.5~2Hz로 계속 보낸다"는 그 지령이다: (1) HTTP `POST /api/command/{id}/goto`
+(`GcsAllyLink.submit_goto`), (2) GCS 네이티브 ROS2 명령 입력
+(`GotoCmdSink`, `/gcs/cmd/{id}/goto` `sensor_msgs/NavSatFix` -- registry의
+`ros2.command.enabled: true`일 때만 GCS가 실제로 구독/반영. GCS가 `GET /api/ros2`로
+그 값을 보고하긴 하지만, (2)는 (1)과 달리 명령마다 accepted/refused verdict가 없어
+"방금 명령이 실제로 먹혔는지" 매 tick 확인할 수 없으므로 (1)을 항상 주 경로로 유지한다).
+그물 전개
+시작/종료는 GCS로 보내지 않고 `NetDeploySink`로만 알린다(gcs_bridge.py 모듈독스트링
+참고 -- 액추에이터 명령 금지).
 """
 from __future__ import annotations
 
@@ -35,7 +42,7 @@ from boatattack_sim.env import cnn_map as CM
 from boatattack_sim.env.scaling import SimScale
 
 from .bag_replay import BagEnemyReplay
-from .gcs_bridge import GcsAllyLink, GcsRequestError, NetDeploySink, WaypointSink
+from .gcs_bridge import GcsAllyLink, GcsRequestError, NetDeploySink, GotoCmdSink
 from .replay_cnn_env import ReplayCnnEnv
 from .unet_bridge import CommandedCnnEnv
 
@@ -47,8 +54,10 @@ class _GcsAllyTelemetryMixin:
     `GcsBagCnnEnv`/`GcsLiveCnnEnv` 양쪽에서 바이트 단위로 동일해야 하므로(둘 다 같은 실보트를
     같은 방식으로 관제한다) 믹스인으로 한 번만 정의한다. 이 믹스인을 쓰는 클래스는
     `self.ally_link`(`GcsAllyLink`), `self.net_sink`(`NetDeploySink`),
-    `self.waypoint_sink`(`WaypointSink`), `self.scale`(`SimScale`),
-    `self._publish_period_real`, `self._next_publish_wall`, `self._prev_pos`
+    `self.waypoint_sink`(`GotoCmdSink`), `self.scale`(`SimScale`),
+    `self._publish_period_real`, `self._next_publish_wall`, `self._prev_pos`,
+    `self._last_span_warn_wall`, `self.quorum_timeout`, `self._quorum_deadline`,
+    `self._quorum_timeout_announced`
     를 자기 `__init__`에서 준비해 둬야 한다.
     """
 
@@ -75,10 +84,40 @@ class _GcsAllyTelemetryMixin:
             # 래스터 관측·배정이 지도 밖 아군을 서로 다른 위치로 취급한다.
             lo = CM.origin(self.cfg)
             hi = lo + 2.0 * CM.extent_m(self.cfg)
+            self._warn_if_clipped("아군", sim_pos, lo, hi)
             self.a_pos[0][alive] = np.clip(sim_pos, lo, hi)
             self.a_hdg[0][alive] = snap.hdg[alive]     # 이미 nav 규약(0=N, CW+) -- 변환 불필요
         self.a_alive[0] = alive
         return True
+
+    # ── --span/--enu-origin 적정성 실측 신호 (경고만 -- 자동으로 고치지 않는다) ──
+    def _warn_if_clipped(self, label: str, raw: np.ndarray, lo: float, hi: float) -> None:
+        """`--span`이 실제 함대 퍼짐보다 작거나 `enu_origin`이 낡으면 sim 좌표가 지도
+        밖으로 나가 조용히 클리핑된다 -- 2026-09-10 세션의 그 버그(적이 지도 모서리에
+        찍힘)를 잡아낸 신호가 바로 이것이다.
+
+        ★ 2026-09-14 세션: 처음엔 이 신호로 `enu_origin`을 "아군 실위치 평균"으로
+        자동 재중심화했었다. 되돌렸다 -- 사용자 지적대로 "모선 위치를 아군이 있는
+        곳으로 계속 갱신"은 해결책이 아니라 증상을 감추는 것이다: 모선(=지도 중앙
+        기준점)은 실제로 고정된 지점을 뜻해야 하는데, 배가 어디로 표류하든 거길
+        "집"이라고 계속 재정의하면 애초에 왜 거기까지 갔는지(그날의 진짜 원인은
+        ROS2 발행 예외가 안 잡혀 프로세스 전체가 죽어 goto가 멈춘 것이었다 -- 좌표
+        문제가 아니었다)를 코드가 스스로 숨겨버린다. 그래서 지금은 경고만 내고
+        멈추지 않는다 -- `--span`을 실제 운용 반경에 맞게 충분히 크게 잡거나(고정값),
+        진짜 모선이 등록돼 있으면 `--mothership-id`로 고정하는 쪽이 맞는 해법이고,
+        그래도 클리핑이 난다면 그건 --span이 부족하다는 신호지 자동으로 고칠 값이
+        아니다. 5초에 한 번으로 스로틀."""
+        out = (raw < lo) | (raw > hi)
+        if not out.any():
+            return
+        now = time.monotonic()
+        if now - self._last_span_warn_wall < 5.0:
+            return
+        self._last_span_warn_wall = now
+        n_out = int(out.any(axis=-1).sum())
+        print(f"[gcs_bridge] ⚠ {label} {n_out}척이 --span {self.scale.span_real:g} m 박스 "
+              f"밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin/"
+              f"--mothership-id 를 조정하세요.")
 
     # ── WP 도착 + 그물 부설 진행 (ros2_unet_env.py::_advance_and_paint 와 1:1 대응) ──
     def _advance_and_paint(self) -> None:
@@ -131,7 +170,7 @@ class _GcsAllyTelemetryMixin:
         self.ptr = np.where(advance, self.ptr + 1, self.ptr)
         self.leg_netted = np.where(advance, False, self.leg_netted)
 
-    # ── GCS로 현재 활성 경유점 송신 (0.5~2Hz 지속 스트림 계약) + 경유점 2개 묶음 발행 ──
+    # ── GCS로 현재 활성 경유점 송신 (0.5~2Hz 지속 스트림 계약, HTTP + ROS2 네이티브 goto) ──
     def _publish_to_gcs(self) -> None:
         now = time.monotonic()
         if now < self._next_publish_wall:
@@ -143,6 +182,13 @@ class _GcsAllyTelemetryMixin:
                 continue                          # 위치를 모르는 배는 명령하지 않는다
             vid = self.ally_link.vehicle_ids[p]
             east, north = self.scale.sim_to_enu(self.route[0, p, ptr_all[p]])
+            # 같은 활성 목표점을 GCS 네이티브 ROS2 명령 입력(`/gcs/cmd/{id}/goto`,
+            # NavSatFix)으로도 내보낸다 -- HTTP try/except *이전*에 부른다: 이게 진짜
+            # 안전망이 되려면 HTTP 쪽 실패(TCP 타임아웃 등, 아래 continue)가 ROS2 쪽
+            # 발행까지 같이 막으면 안 된다(architect 검토, 2026-09-17 -- 이전 버전은
+            # try 블록 뒤에 있어 HTTP 실패 시 이 발행도 같이 건너뛰었음). GotoCmdSink
+            # 자체도 실패를 삼켜 이 루프를 절대 끌고 내려가지 않는다(_safe_ros2_publish).
+            self.waypoint_sink.publish(vid, float(east), float(north))
             try:
                 verdict = self.ally_link.submit_goto(vid, east=float(east), north=float(north))
             except GcsRequestError as exc:
@@ -154,24 +200,6 @@ class _GcsAllyTelemetryMixin:
             if not verdict.get("accepted", False):
                 print(f"[gcs_bridge] {vid} goto refused: "
                       f"{verdict.get('reason')}: {verdict.get('detail', '')}")
-            # goto(위 -- HTTP, 활성 경유점 1개)와 별개로, 이 배에 배정된 경유점 wp1+wp2를
-            # 한 메시지로 묶어 ROS2에도 발행한다. `self.Kw`(=cfg.transit_wp)는 route 배열의
-            # 최대 슬롯 수일 뿐 실제 배정과 다르다 -- RRT가 뽑은 실제 경로 길이 L이 Kw보다
-            # 짧으면 남는 슬롯은 마지막 점을 그대로 반복해 채운다(defense_env.py::
-            # apply_rrt_routes, "마지막 점 반복(도달 후 정지)"). 이 프로젝트의 "wp1/wp2"
-            # 개념(RUN_GUIDE.md §12, gcs_cnn_env.py 모듈독스트링)은 늘 2개이므로, Kw 전체가
-            # 아니라 앞 2개만 쓴다 -- 안 그러면 뒤쪽 중복 슬롯이 "서로 다른 경유점"인 것처럼
-            # 구독자에게 잘못 보인다(실측: Kw=6인 체크포인트에서 뒤 4개가 wp2와 완전히 같은
-            # 값으로 찍히는 걸 확인).
-            waypoints_enu = [tuple(self.scale.sim_to_enu(self.route[0, p, k]))
-                             for k in range(min(2, self.Kw))]
-            # ptr_all은 self.Kw(패딩 포함 슬롯 수, 위에서 봤듯 실제론 6까지 감) 기준으로
-            # 클립돼 있다 -- wp2 도착 후에도 arrived가 계속 True라 몇 micro-step 안에
-            # ptr이 Kw-1까지 올라간다(패딩 슬롯도 "도착"으로 잡히므로). waypoints_enu는
-            # 위에서 이미 앞 2개로 잘랐으므로, active_index도 그 길이에 맞춰 clamp해야
-            # 구독자가 waypoints[active_index]를 그대로 인덱싱해도 IndexError가 안 난다.
-            active_idx = min(int(ptr_all[p]), len(waypoints_enu) - 1)
-            self.waypoint_sink.publish(vid, waypoints_enu, active_index=active_idx)
 
     @property
     def ready(self) -> bool:
@@ -193,6 +221,22 @@ class _GcsAllyTelemetryMixin:
         return [vid for vid, alive in zip(self.ally_link.vehicle_ids, self.a_alive[0])
                 if not alive]
 
+    def _quorum_satisfied(self) -> bool:
+        """True once every ally is alive, OR `quorum_timeout` has elapsed since
+        `__init__` -- whichever comes first.
+
+        The full-quorum wait (§S5) is a real fix, not decoration: starting with a
+        partially-seen fleet lets the first decision freeze around missing allies. But
+        a hull that never actually reports (unplugged, mis-registered, real GPS never
+        acquiring a fix -- an everyday field condition, not a bug) must not hang the
+        whole run forever waiting for it. The timeout is the compromise: give stragglers
+        a real window, then treat whoever's still missing as dead and proceed with
+        the ones that answered (a_alive stays live afterwards -- if a late straggler
+        reports later, it's picked back up the normal way, this only gates *startup*)."""
+        if bool(self.a_alive[0].all()):
+            return True
+        return time.monotonic() >= self._quorum_deadline
+
 
 class GcsBagCnnEnv(_GcsAllyTelemetryMixin, ReplayCnnEnv):
     """적=로스백 리플레이(real), 아군=GCS 실텔레메트리(real)로 구동하는 CNN 점수맵 정책 환경."""
@@ -205,7 +249,7 @@ class GcsBagCnnEnv(_GcsAllyTelemetryMixin, ReplayCnnEnv):
         ally_link: GcsAllyLink,
         *,
         net_sink: Optional[NetDeploySink] = None,
-        waypoint_sink: Optional[WaypointSink] = None,
+        waypoint_sink: Optional[GotoCmdSink] = None,
         publish_hz: float = 2.0,
         ally_speed_real: float = 0.3,
         enemy_mode: str = "wave",
@@ -214,6 +258,7 @@ class GcsBagCnnEnv(_GcsAllyTelemetryMixin, ReplayCnnEnv):
         geo: tuple[float, float] | None = None,
         enu_origin: tuple[float, float] | None = None,
         net_reload_period_real: float | None = None,
+        quorum_timeout: float = 5.0,
     ):
         super().__init__(
             ckpt, bag, span_real, ally_speed_real=ally_speed_real,
@@ -226,16 +271,20 @@ class GcsBagCnnEnv(_GcsAllyTelemetryMixin, ReplayCnnEnv):
                 f"policy expects P={self.P} allies")
         self.ally_link = ally_link
         self.net_sink = net_sink or NetDeploySink()
-        self.waypoint_sink = waypoint_sink or WaypointSink()
+        self.waypoint_sink = waypoint_sink or GotoCmdSink()
         if publish_hz <= 0:
             raise ValueError("publish_hz must be > 0")
         self._publish_period_real = 1.0 / float(publish_hz)
+        self.quorum_timeout = float(quorum_timeout)
+        self._quorum_deadline = time.monotonic() + self.quorum_timeout
+        self._quorum_timeout_announced = False
         self._have_gcs = False
         self._prev_pos = self.a_pos[0].copy()
         # 실시간(wall-clock) 기준 -- `_t_real`(시뮬 시각)로 재던 초판은 --no-realtime 이나
         # LLM 재배정으로 tick 이 밀리는 동안 스로틀이 같이 멈춰 GCS 를 과다/과소 호출했다
         # (아키텍트 검토 B3). publish 는 GCS 로 나가는 실제 명령이므로 실제 시계를 쓴다.
         self._next_publish_wall = 0.0
+        self._last_span_warn_wall = 0.0
 
     # ── 운용 루프 ────────────────────────────────────────────────────
     def step(self):
@@ -250,12 +299,18 @@ class GcsBagCnnEnv(_GcsAllyTelemetryMixin, ReplayCnnEnv):
             self._inject_replay_enemies()
             return self.get_frame()                # 텔레메트리 미수신 -- 마지막 상태 유지
         if not self._have_gcs:
-            if not bool(self.a_alive[0].all()):
+            if not self._quorum_satisfied():
                 # 전 척이 다 켜지기 전엔 결정/발행을 시작하지 않는다 -- 일부만 보이는
                 # 상태에서 첫 결정이 굳어지는 문제를 피한다(replay_cnn_env.py의
-                # first_common_time_sec/§F3와 같은 원칙, 아키텍트 검토 S5).
+                # first_common_time_sec/§F3와 같은 원칙, 아키텍트 검토 S5). 단, 무기한
+                # 대기는 아니다 -- `quorum_timeout` 지나면 그 시점까지도 안 보이는 배는
+                # 죽은 것으로 간주하고 진행한다(_quorum_satisfied 참고).
                 self._inject_replay_enemies()
                 return self.get_frame()
+            if not bool(self.a_alive[0].all()) and not self._quorum_timeout_announced:
+                self._quorum_timeout_announced = True
+                print(f"[gcs_bridge] ⚠ quorum_timeout({self.quorum_timeout:g}s) 초과 -- "
+                      f"{self.missing_ally_ids()}는 죽은 것으로 간주하고 진행합니다.")
             self._have_gcs = True
             self._prev_pos = self.a_pos[0].copy()
             # Falls through to decide-then-advance below on this same tick, at
@@ -298,6 +353,7 @@ class GcsBagCnnEnv(_GcsAllyTelemetryMixin, ReplayCnnEnv):
         self._have_gcs = False
         self._prev_pos = self.a_pos[0].copy()
         self._next_publish_wall = 0.0
+        self._last_span_warn_wall = 0.0
 
 
 class GcsLiveCnnEnv(_GcsAllyTelemetryMixin, CommandedCnnEnv):
@@ -318,7 +374,7 @@ class GcsLiveCnnEnv(_GcsAllyTelemetryMixin, CommandedCnnEnv):
         enemy_link: GcsAllyLink,
         *,
         net_sink: Optional[NetDeploySink] = None,
-        waypoint_sink: Optional[WaypointSink] = None,
+        waypoint_sink: Optional[GotoCmdSink] = None,
         publish_hz: float = 2.0,
         ally_speed_real: float = 0.3,
         enemy_mode: str = "wave",
@@ -327,9 +383,11 @@ class GcsLiveCnnEnv(_GcsAllyTelemetryMixin, CommandedCnnEnv):
         geo: tuple[float, float] | None = None,
         enu_origin: tuple[float, float] | None = None,
         net_reload_period_real: float | None = None,
+        quorum_timeout: float = 5.0,
+        land_source: str | None = None,
     ):
         super().__init__(ckpt, enemy_mode=enemy_mode, device=device, geo=geo,
-                          nets_per_ship=nets_per_ship)
+                          nets_per_ship=nets_per_ship, land_source=land_source)
         self.reset(seed=0)                  # 배열 할당 + 육지 캐시 로드. 이후 물리는 안 돌린다
         if ally_link.n_allies != self.P:
             raise ValueError(
@@ -342,7 +400,7 @@ class GcsLiveCnnEnv(_GcsAllyTelemetryMixin, CommandedCnnEnv):
         self.ally_link = ally_link
         self.enemy_link = enemy_link
         self.net_sink = net_sink or NetDeploySink()
-        self.waypoint_sink = waypoint_sink or WaypointSink()
+        self.waypoint_sink = waypoint_sink or GotoCmdSink()
         if publish_hz <= 0:
             raise ValueError("publish_hz must be > 0")
         self._publish_period_real = 1.0 / float(publish_hz)
@@ -360,6 +418,9 @@ class GcsLiveCnnEnv(_GcsAllyTelemetryMixin, CommandedCnnEnv):
         self._prev_pos = self.a_pos[0].copy()
         self._next_publish_wall = 0.0
         self._last_span_warn_wall = 0.0
+        self.quorum_timeout = float(quorum_timeout)
+        self._quorum_deadline = time.monotonic() + self.quorum_timeout
+        self._quorum_timeout_announced = False
         # e_pos/e_hdg/e_alive 는 M 슬롯 고정(§9-⑨ 규약과 동일): enemy_link 척수(n)보다 많은
         # 나머지 슬롯은 절대 살아나지 않는다 -- reset() 이 부모의 스폰 로직으로 채워놓은
         # 값을 여기서 모두 지운다(적을 아예 '모른다'는 초기 상태로).
@@ -412,23 +473,6 @@ class GcsLiveCnnEnv(_GcsAllyTelemetryMixin, CommandedCnnEnv):
         self.e_alive[0, :n] = enemy.alive
         return True
 
-    def _warn_if_clipped(self, label: str, raw: np.ndarray, lo: float, hi: float) -> None:
-        """`--span`이 실제 함대 퍼짐보다 작으면 sim 좌표가 지도 밖으로 나가 조용히
-        클리핑된다 -- 2026-09-10 세션의 그 버그(적이 지도 모서리에 찍힘)를 잡아낸 신호가
-        바로 이거였다(`replay_cnn_env.py`의 --span 경고와 같은 역할, 여기서는 사전
-        추정치가 아니라 매 tick 실측을 본다). 5초에 한 번으로 스로틀."""
-        out = (raw < lo) | (raw > hi)
-        if not out.any():
-            return
-        now = time.monotonic()
-        if now - self._last_span_warn_wall < 5.0:
-            return
-        self._last_span_warn_wall = now
-        n_out = int(out.any(axis=-1).sum())
-        print(f"[gcs_bridge] ⚠ {label} {n_out}척이 --span {self.scale.span_real:g} m 박스 "
-              f"밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 "
-              f"조정하세요.")
-
     # ── 운용 루프 (GcsBagCnnEnv.step 과 동형, 적 주입만 로스백 대신 GCS) ──
     def step(self):
         if bool(self.done[0]):
@@ -441,11 +485,16 @@ class GcsLiveCnnEnv(_GcsAllyTelemetryMixin, CommandedCnnEnv):
         if not self._ingest_gcs():
             return self.get_frame()                # 텔레메트리 미수신 -- 마지막 상태 유지
         if not self._have_gcs:
-            if not bool(self.a_alive[0].all()):
-                # GcsBagCnnEnv 와 동일 원칙(§S5) -- 아군 전원이 보이기 전엔 결정/발행을
-                # 시작하지 않는다. 적은 "몇 척 보이는지"를 요구하지 않는다 -- 적이 아직
-                # 하나도 안 보여도 아군은 대형을 갖출 수 있어야 한다.
+            if not self._quorum_satisfied():
+                # GcsBagCnnEnv 와 동일 원칙(§S5, quorum_timeout 포함) -- 아군 전원이 보이기
+                # 전엔 결정/발행을 시작하지 않되, quorum_timeout 지나면 안 보이는 배는 죽은
+                # 것으로 간주하고 진행한다. 적은 "몇 척 보이는지"를 요구하지 않는다 -- 적이
+                # 아직 하나도 안 보여도 아군은 대형을 갖출 수 있어야 한다.
                 return self.get_frame()
+            if not bool(self.a_alive[0].all()) and not self._quorum_timeout_announced:
+                self._quorum_timeout_announced = True
+                print(f"[gcs_bridge] ⚠ quorum_timeout({self.quorum_timeout:g}s) 초과 -- "
+                      f"{self.missing_ally_ids()}는 죽은 것으로 간주하고 진행합니다.")
             self._have_gcs = True
             self._prev_pos = self.a_pos[0].copy()
 

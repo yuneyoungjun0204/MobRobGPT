@@ -224,7 +224,7 @@ class TestGcsBagCnnEnvWaypointSequencing(unittest.TestCase):
         def set(self, vehicle_id, active, stamp=None):
             self.events.append((vehicle_id, bool(active)))
 
-    def _build_env(self):
+    def _build_env(self, quorum_timeout=5.0):
         from commander.gcs_cnn_env import GcsBagCnnEnv
         ally_link = self._FakeAllyLink(["usv1", "usv2", "usv3"])
         sink = self._RecordingSink()
@@ -232,7 +232,8 @@ class TestGcsBagCnnEnvWaypointSequencing(unittest.TestCase):
         # makes arrive_radius exactly 1.0 real metre, and net_max_len=450 sim-m -> 2.25 m.
         env = GcsBagCnnEnv(
             CKPT, self._FakeBag(), span_real=63.0, ally_link=ally_link,
-            net_sink=sink, publish_hz=1e9, nets_per_ship=1)
+            net_sink=sink, publish_hz=1e9, nets_per_ship=1,
+            quorum_timeout=quorum_timeout)
         self.assertEqual(env.P, 3, "test assumes the shipped u-net_map.pt has P=3 allies")
         return env, ally_link, sink
 
@@ -381,6 +382,41 @@ class TestGcsBagCnnEnvWaypointSequencing(unittest.TestCase):
                          "a tick where the GCS poll itself fails must not advance "
                          "_micro_ct, even after quorum was already reached once")
 
+    def test_quorum_timeout_gives_up_waiting_and_treats_straggler_as_dead(self):
+        """A hull that never reports (unplugged, mis-registered, GPS never acquiring a
+        fix) must not hang the run forever -- once `quorum_timeout` elapses, whoever's
+        still missing is treated as dead (a_alive stays False for it) and the run
+        proceeds with the rest, printing the reason exactly once instead of repeating
+        the wait message forever."""
+        env, ally_link, sink = self._build_env(quorum_timeout=0.05)
+        ally_link.alive[:] = [True, True, False]   # usv3 never joins
+        ally_link.pos[:] = 0.0
+
+        env.step()
+        self.assertFalse(env.ready, "must not give up before quorum_timeout elapses")
+        self.assertFalse(env._quorum_timeout_announced)
+
+        import time as _time
+        _time.sleep(0.06)
+        env.step()
+        self.assertTrue(env.ready, "must proceed once quorum_timeout has elapsed")
+        self.assertEqual(env._micro_ct, 1, "the timeout-latch tick must still count")
+        self.assertTrue(env._quorum_timeout_announced)
+        self.assertFalse(bool(env.a_alive[0, 2]),
+                         "the straggler must be treated as dead, not silently alive")
+        self.assertEqual(env.missing_ally_ids(), ["usv3"])
+
+        # The announcement must fire exactly once, not on every subsequent tick.
+        announced_after_first = env._quorum_timeout_announced
+        env.step()
+        self.assertEqual(env._quorum_timeout_announced, announced_after_first)
+
+        # A late straggler is not "permanently" dead -- this only gated startup.
+        ally_link.alive[2] = True
+        env.step()
+        self.assertTrue(bool(env.a_alive[0, 2]),
+                         "a straggler that reports later must be picked back up normally")
+
 
 @unittest.skipUnless(os.path.exists(CKPT), f"checkpoint not found: {CKPT}")
 class TestGcsLiveCnnEnvEnemyFrame(unittest.TestCase):
@@ -393,7 +429,8 @@ class TestGcsLiveCnnEnvEnemyFrame(unittest.TestCase):
     `GcsAllyLink` against a real loopback HTTP stub -- not a hand-rolled fake -- so the
     test exercises the same `client.get_json` path production code takes)."""
 
-    def _build_env(self, ally_ids=("usv1", "usv2", "usv3"), target_ids=("usv4",)):
+    def _build_env(self, ally_ids=("usv1", "usv2", "usv3"), target_ids=("usv4",),
+                   quorum_timeout=5.0):
         from commander.gcs_cnn_env import GcsLiveCnnEnv
         server = _StubGcsServer()
         self.addCleanup(server.close)
@@ -402,7 +439,7 @@ class TestGcsLiveCnnEnvEnemyFrame(unittest.TestCase):
         enemy_link = GcsAllyLink(client, list(target_ids), source="rl")
         env = GcsLiveCnnEnv(
             CKPT, span_real=200.0, ally_link=ally_link, enemy_link=enemy_link,
-            publish_hz=1e9, nets_per_ship=1)
+            publish_hz=1e9, nets_per_ship=1, quorum_timeout=quorum_timeout)
         self.assertEqual(env.P, 3, "test assumes the shipped u-net_map.pt has P=3 allies")
         return env, server
 
@@ -513,6 +550,29 @@ class TestGcsLiveCnnEnvEnemyFrame(unittest.TestCase):
                      if path.startswith("/api/command/")}
         self.assertEqual(commanded, {"usv1", "usv2", "usv3"},
                          "enemy_link must never be POSTed a goto command")
+
+    def test_quorum_timeout_gives_up_waiting_and_treats_straggler_as_dead(self):
+        """Same escape hatch as the bag class's own regression above, exercised through
+        `GcsLiveCnnEnv`'s separately-implemented copy of the quorum-wait gate."""
+        env, server = self._build_env(quorum_timeout=0.05)
+        server.set_state({
+            "usv1": self._vehicle(20.0, 30.0), "usv2": self._vehicle(20.5, 30.2),
+            "usv4": self._vehicle(25.0, 35.0),
+            # usv3 missing entirely.
+        })
+
+        env.step()
+        self.assertFalse(env.ready)
+        self.assertFalse(env._quorum_timeout_announced)
+
+        import time as _time
+        _time.sleep(0.06)
+        env.step()
+        self.assertTrue(env.ready, "must proceed once quorum_timeout has elapsed")
+        self.assertTrue(env._quorum_timeout_announced)
+        self.assertFalse(bool(env.a_alive[0, 2]),
+                         "the straggler must be treated as dead, not silently alive")
+        self.assertEqual(env.missing_ally_ids(), ["usv3"])
 
 
 if __name__ == "__main__":

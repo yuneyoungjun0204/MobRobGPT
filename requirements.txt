@@ -19,6 +19,9 @@ scipy<1.14
 # OpenAI API (Assistants Beta API 사용)
 openai>=1.40,<2
 
+# Google Gemini API (commander/gemini_commander.py -- 구버전 google.generativeai 아님)
+google-genai
+
 # Ollama (로컬 LLM 지휘관)
 ollama
 pydantic>=2.0

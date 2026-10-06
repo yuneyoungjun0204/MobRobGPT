@@ -143,7 +143,8 @@ def _overlay_cells(ax, viz: dict) -> None:
 
 def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
              bg_img=None, bg_extent=None, hide_cells: bool = False,
-             info_provider=None, start_paused: bool = False) -> None:
+             info_provider=None, start_paused: bool = False,
+             hide_unassigned_wps: bool = False) -> None:
     """matplotlib 실시간 창. `run_cell_play.py` 와 동일한 렌더 파이프라인을 재사용한다.
 
     `info_provider`: 인자 없이 호출하면 `{"status":, "cmd":, "assign":, "rationale":}`
@@ -236,9 +237,15 @@ def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
                     ui["done"] = True
                     break
         fd = env.get_frame()
+        viz = env.cnn_viz() if hasattr(env, "cnn_viz") else None
+        if hide_unassigned_wps and viz is not None:
+            # 미배정 배(assign<0)는 이전 결정의 경로(별표 WP)가 남아 있어 헷갈린다 -- 그리지 않는다.
+            fd = dict(fd)
+            fd["ally_paths"] = [p if int(viz["assign"][i]) >= 0 else []
+                                for i, p in enumerate(fd["ally_paths"])]
         renderer.draw_scene(ax, fd, bg_img=bg_img, bg_extent=bg_extent)
-        if hasattr(env, "cnn_viz"):
-            _overlay_unet(ax, env.cnn_viz())
+        if viz is not None:
+            _overlay_unet(ax, viz)
         elif hasattr(env, "cell_viz") and not hide_cells:
             _overlay_cells(ax, env.cell_viz())
         status = "종료(로스백 소진 또는 --max-decisions 도달)" if ui["done"] else ("재생" if ui["running"] else "일시정지")
