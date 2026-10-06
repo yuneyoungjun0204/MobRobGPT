@@ -1,0 +1,121 @@
+[gcs_bridge] 정책 로딩: boatattack_sim/models/u-net_map.pt (감지: CNN 점수맵(U-Net))
+[gcs_bridge] datum(GET /api/config) = (36.3960663, 127.4016386) -- 경유점 위경도 발행에 씀
+[gcs_bridge] --enu-origin 미지정 -- 아군 3/3척의 현재 GCS 위치 평균 (-2.981, -1.087)(datum 기준 동/북 m, datum에서 3.2 m)을 맵 중앙(=모선)으로 사용합니다.
+[gcs_bridge] GCS `/api/state` 적선 읽기: ['usv4', 'usv5', 'usv6', 'usv7', 'usv8']
+/usr/lib/python3/dist-packages/scipy/__init__.py:146: UserWarning: A NumPy version >=1.17.3 and <1.25.0 is required for this version of SciPy (detected version 1.26.4
+  warnings.warn(f"A NumPy version >={np_minversion} and <{np_maxversion}"
+[gcs_bridge] GCS = http://127.0.0.1:8091  ally_ids = ['usv1', 'usv2', 'usv3']
+[gcs_bridge] enu_origin(맵 중앙 대응 실좌표) = (-2.981, -1.087)
+[gcs_bridge] 결정주기 = 1.39 실초, micro-step = 0.0556 실초
+[scale] S = 360 sim-m/real-m  (맵 12600 sim-m ↔ 실제 35 m)
+[scale] dt = 0.05556 s/step  ·  결정주기 = 1.389 s (25 step)
+[scale] 실제 1 픽셀 = 0.7 m
+[scale] 실제 그물 최대길이 = 1.25 m
+[scale] 실제 요격 환형 = 1.111 ~ 12.5 m
+[scale] ── 무차원 비 (학습 무대) ──
+[scale]   이동/결정 (va·T/extent)                = 0.02381
+[scale]   속도비 (ve/va)                        = 1.5
+[scale]   선회반경/extent                        = 0.006821
+[scale]   선회반경/선체길이                          = 0.1868
+[scale]   그물길이/extent                        = 0.07143
+[scale]   환형 내/외 (r_min,r_max)/extent        = 0.06349, 0.7143
+[scale]   적스폰반경/extent                       = 0.8651
+[scale]   픽셀/extent                          = 0.04
+[scale]   선체길이/extent                        = 0.03651
+[scale]   충돌반경/extent                        = 0.01825
+[scale]   도착반경/extent                        = 0.03175
+[scale]   threat 분모 (ve·max_steps/extent)    = 2.857
+[scale] ✓ 대조한 항목은 학습 무대와 정합
+[gcs_bridge] arrive_radius = 0.556 m, net_max_len = 1.25 m (실좌표, 이 --span 기준)
+[gcs_bridge] ⚠ arrive_radius가 0.556 m로 실보트 GPS 정밀도보다 작을 수 있습니다 -- 영원히 '도착' 판정을 못 받아 ptr이 전진하지 않고 그물도 시작하지 않을 위험이 있습니다. --span을 키우세요.
+뷰어 실행: space=재생/일시정지  q=종료  (재생 상태로 시작)
+[t=  0.17s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[1], C1<-USV[2], C2<-USV[0].
+[net-deploy] {"vehicle_id": "usv2", "net_deploy": true, "stamp": 1789367972.1876774}
+[net-deploy] {"vehicle_id": "usv2", "net_deploy": false, "stamp": 1789367972.194598}
+[t= 11.11s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[1], C1<-USV[2], C2<-USV[0].
+[gcs_bridge] ⚠ 아군 1척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[net-deploy] {"vehicle_id": "usv1", "net_deploy": true, "stamp": 1789368023.912488}
+[net-deploy] {"vehicle_id": "usv1", "net_deploy": false, "stamp": 1789368023.9286687}
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t= 22.22s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 1척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 1척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t= 33.33s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 1척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t= 44.44s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[net-deploy] {"vehicle_id": "usv3", "net_deploy": true, "stamp": 1789368166.8607464}
+[net-deploy] {"vehicle_id": "usv3", "net_deploy": false, "stamp": 1789368167.7790868}
+[gcs_bridge] ⚠ 아군 1척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t= 55.56s] 재배정: [휴리스틱] 클러스터 2개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1, 2].
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[net-deploy] {"vehicle_id": "usv1", "net_deploy": true, "stamp": 1789368199.7982016}
+[net-deploy] {"vehicle_id": "usv1", "net_deploy": false, "stamp": 1789368199.8551414}
+[gcs_bridge] ⚠ 아군 3척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 1척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 1척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 1척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t= 66.67s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2], C1<-USV[0], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 35 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/tkinter/__init__.py", line 1921, in __call__
+    return self.func(*args)
+  File "/usr/lib/python3.10/tkinter/__init__.py", line 839, in callit
+    func(*args)
+  File "/usr/lib/python3/dist-packages/matplotlib/backends/_backend_tk.py", line 141, in _on_timer
+    super()._on_timer()
+  File "/usr/lib/python3/dist-packages/matplotlib/backend_bases.py", line 1198, in _on_timer
+    ret = func(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/matplotlib/animation.py", line 1408, in _step
+    still_going = super()._step(*args)
+  File "/usr/lib/python3/dist-packages/matplotlib/animation.py", line 1107, in _step
+    self._draw_next_frame(framedata, self._blit)
+  File "/usr/lib/python3/dist-packages/matplotlib/animation.py", line 1126, in _draw_next_frame
+    self._draw_frame(framedata)
+  File "/usr/lib/python3/dist-packages/matplotlib/animation.py", line 1720, in _draw_frame
+    self._drawn_artists = self._func(framedata, *self._args)
+  File "/home/yune/MobRobGPT/run_replay_infer.py", line 235, in update
+    if max_reached() or not advance_one_micro():
+  File "/home/yune/MobRobGPT/run_gcs_bridge.py", line 444, in advance_one_micro
+    env.step()
+  File "/home/yune/MobRobGPT/commander/gcs_cnn_env.py", line 462, in step
+    self._publish_to_gcs()
+  File "/home/yune/MobRobGPT/commander/gcs_cnn_env.py", line 174, in _publish_to_gcs
+    self.waypoint_sink.publish(vid, waypoints_enu, active_index=active_idx)
+  File "/home/yune/MobRobGPT/commander/gcs_bridge.py", line 328, in publish
+    pub.publish(msg)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/publisher.py", line 70, in publish
+    self.__publisher.publish(msg)
+rclpy._rclpy_pybind11.RCLError: Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389

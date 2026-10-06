@@ -448,7 +448,7 @@ class GcsLiveCnnEnv(_GcsAllyTelemetryMixin, CommandedCnnEnv):
         run_gcs_bridge.py 의 결정 루프 전체가 죽는다.
         """
         try:
-            state = self.ally_link.client.get_json("/api/state")
+            state = self._poll_state()
         except Exception as exc:                       # pragma: no cover -- network edge
             print(f"[gcs_bridge] /api/state poll failed: {exc}")
             return False
@@ -472,6 +472,11 @@ class GcsLiveCnnEnv(_GcsAllyTelemetryMixin, CommandedCnnEnv):
             self.e_hdg[0, :n][enemy.alive] = enemy.hdg[enemy.alive]
         self.e_alive[0, :n] = enemy.alive
         return True
+
+    def _poll_state(self):
+        """아군·적 스냅샷이 공유할 원천 상태 1회 조회(GCS `/api/state`). 서브클래스가
+        다른 텔레메트리 원천(예: 시뮬레이터 ROS2 Odometry)으로 바꿀 때 이것만 갈아끼운다."""
+        return self.ally_link.client.get_json("/api/state")
 
     # ── 운용 루프 (GcsBagCnnEnv.step 과 동형, 적 주입만 로스백 대신 GCS) ──
     def step(self):

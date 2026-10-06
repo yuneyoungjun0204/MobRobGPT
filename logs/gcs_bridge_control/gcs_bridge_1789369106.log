@@ -1,0 +1,33 @@
+[gcs_bridge] 정책 로딩: boatattack_sim/models/u-net_map.pt (감지: CNN 점수맵(U-Net))
+[gcs_bridge] datum(GET /api/config) = (36.3960219, 127.4015614) -- 경유점 위경도 발행에 씀
+[gcs_bridge] --enu-origin 미지정 -- 아군 3/3척의 현재 GCS 위치 평균 (-1.373, -1.21)(datum 기준 동/북 m, datum에서 1.8 m)을 맵 중앙(=모선)으로 사용합니다.
+[gcs_bridge] GCS `/api/state` 적선 읽기: ['usv4', 'usv5', 'usv6', 'usv7', 'usv8']
+/usr/lib/python3/dist-packages/scipy/__init__.py:146: UserWarning: A NumPy version >=1.17.3 and <1.25.0 is required for this version of SciPy (detected version 1.26.4
+  warnings.warn(f"A NumPy version >={np_minversion} and <{np_maxversion}"
+[gcs_bridge] GCS = http://127.0.0.1:8091  ally_ids = ['usv1', 'usv2', 'usv3']
+[gcs_bridge] enu_origin(맵 중앙 대응 실좌표) = (-1.373, -1.21)
+[gcs_bridge] 결정주기 = 3.17 실초, micro-step = 0.127 실초
+[scale] S = 157.5 sim-m/real-m  (맵 12600 sim-m ↔ 실제 80 m)
+[scale] dt = 0.127 s/step  ·  결정주기 = 3.175 s (25 step)
+[scale] 실제 1 픽셀 = 1.6 m
+[scale] 실제 그물 최대길이 = 2.857 m
+[scale] 실제 요격 환형 = 2.54 ~ 28.57 m
+[scale] ── 무차원 비 (학습 무대) ──
+[scale]   이동/결정 (va·T/extent)                = 0.02381
+[scale]   속도비 (ve/va)                        = 1.5
+[scale]   선회반경/extent                        = 0.006821
+[scale]   선회반경/선체길이                          = 0.1868
+[scale]   그물길이/extent                        = 0.07143
+[scale]   환형 내/외 (r_min,r_max)/extent        = 0.06349, 0.7143
+[scale]   적스폰반경/extent                       = 0.8651
+[scale]   픽셀/extent                          = 0.04
+[scale]   선체길이/extent                        = 0.03651
+[scale]   충돌반경/extent                        = 0.01825
+[scale]   도착반경/extent                        = 0.03175
+[scale]   threat 분모 (ve·max_steps/extent)    = 2.857
+[scale] ✓ 대조한 항목은 학습 무대와 정합
+[gcs_bridge] arrive_radius = 1.27 m, net_max_len = 2.86 m (실좌표, 이 --span 기준)
+뷰어 실행: space=재생/일시정지  q=종료  (재생 상태로 시작)
+[t=  0.25s] 재배정: [휴리스틱] 클러스터 2개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[1], C1<-USV[2, 0].
+XIO:  fatal IO error 0 (Success) on X server ":1"
+      after 1921 requests (1921 known processed) with 34 events remaining.

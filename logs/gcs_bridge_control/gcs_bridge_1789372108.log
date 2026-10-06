@@ -1,0 +1,52 @@
+[gcs_bridge] 정책 로딩: boatattack_sim/models/u-net_map.pt (감지: CNN 점수맵(U-Net))
+[gcs_bridge] datum(GET /api/config) = (36.3960915, 127.4016412) -- 경유점 위경도 발행에 씀
+[gcs_bridge] --enu-origin 미지정 -- 아군 3/3척의 현재 GCS 위치 평균 (-35.241, -28.563)(datum 기준 동/북 m, datum에서 45.4 m)을 맵 중앙(=모선)으로 사용합니다.
+[gcs_bridge] GCS `/api/state` 적선 읽기: ['usv4', 'usv5', 'usv6', 'usv7', 'usv8']
+/usr/lib/python3/dist-packages/scipy/__init__.py:146: UserWarning: A NumPy version >=1.17.3 and <1.25.0 is required for this version of SciPy (detected version 1.26.4
+  warnings.warn(f"A NumPy version >={np_minversion} and <{np_maxversion}"
+[gcs_bridge] GCS = http://127.0.0.1:8091  ally_ids = ['usv1', 'usv2', 'usv3']
+[gcs_bridge] enu_origin(맵 중앙 대응 실좌표) = (-35.241, -28.563)
+[gcs_bridge] 결정주기 = 39.7 실초, micro-step = 1.59 실초
+[scale] S = 12.6 sim-m/real-m  (맵 12600 sim-m ↔ 실제 1000 m)
+[scale] dt = 1.587 s/step  ·  결정주기 = 39.68 s (25 step)
+[scale] 실제 1 픽셀 = 20 m
+[scale] 실제 그물 최대길이 = 35.71 m
+[scale] 실제 요격 환형 = 31.75 ~ 357.1 m
+[scale] ── 무차원 비 (학습 무대) ──
+[scale]   이동/결정 (va·T/extent)                = 0.02381
+[scale]   속도비 (ve/va)                        = 1.5
+[scale]   선회반경/extent                        = 0.006821
+[scale]   선회반경/선체길이                          = 0.1868
+[scale]   그물길이/extent                        = 0.07143
+[scale]   환형 내/외 (r_min,r_max)/extent        = 0.06349, 0.7143
+[scale]   적스폰반경/extent                       = 0.8651
+[scale]   픽셀/extent                          = 0.04
+[scale]   선체길이/extent                        = 0.03651
+[scale]   충돌반경/extent                        = 0.01825
+[scale]   도착반경/extent                        = 0.03175
+[scale]   threat 분모 (ve·max_steps/extent)    = 2.857
+[scale] ✓ 대조한 항목은 학습 무대와 정합
+[gcs_bridge] arrive_radius = 15.9 m, net_max_len = 35.7 m (실좌표, 이 --span 기준)
+[t=  1.59s] 재배정: [휴리스틱] 클러스터 2개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[1], C1<-USV[2, 0].
+[assigned] {"vehicle_id": "usv1", "assigned": false, "cluster_id": null, "stamp": 1789372150.167831}
+[assigned] {"vehicle_id": "usv2", "assigned": false, "cluster_id": null, "stamp": 1789372150.167928}
+[assigned] {"vehicle_id": "usv3", "assigned": false, "cluster_id": null, "stamp": 1789372150.167975}
+[assigned] {"vehicle_id": "usv1", "assigned": true, "cluster_id": 1, "stamp": 1789372190.039986}
+[assigned] {"vehicle_id": "usv2", "assigned": true, "cluster_id": 0, "stamp": 1789372190.0400963}
+[assigned] {"vehicle_id": "usv3", "assigned": true, "cluster_id": 1, "stamp": 1789372190.040168}
+[assigned] {"vehicle_id": "usv1", "assigned": false, "cluster_id": null, "stamp": 1789372269.780355}
+[assigned] {"vehicle_id": "usv3", "assigned": false, "cluster_id": null, "stamp": 1789372269.7804668}
+[assigned] {"vehicle_id": "usv1", "assigned": true, "cluster_id": 1, "stamp": 1789372309.6532345}
+[assigned] {"vehicle_id": "usv3", "assigned": true, "cluster_id": 1, "stamp": 1789372309.6533978}
+[waypoints] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[waypoints] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[waypoints] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[waypoints] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[waypoints] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[waypoints] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[waypoints] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[waypoints] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[waypoints] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[waypoints] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[waypoints] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[waypoints] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389

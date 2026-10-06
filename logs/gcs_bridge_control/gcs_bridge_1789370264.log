@@ -1,0 +1,334 @@
+[gcs_bridge] 정책 로딩: boatattack_sim/models/u-net_map.pt (감지: CNN 점수맵(U-Net))
+[gcs_bridge] datum(GET /api/config) = (36.3960915, 127.4016412) -- 경유점 위경도 발행에 씀
+[gcs_bridge] --enu-origin 미지정 -- 아군 3/3척의 현재 GCS 위치 평균 (-0.709, -0.751)(datum 기준 동/북 m, datum에서 1.0 m)을 맵 중앙(=모선)으로 사용합니다.
+[gcs_bridge] GCS `/api/state` 적선 읽기: ['usv4', 'usv5', 'usv6', 'usv7', 'usv8']
+/usr/lib/python3/dist-packages/scipy/__init__.py:146: UserWarning: A NumPy version >=1.17.3 and <1.25.0 is required for this version of SciPy (detected version 1.26.4
+  warnings.warn(f"A NumPy version >={np_minversion} and <{np_maxversion}"
+[gcs_bridge] GCS = http://127.0.0.1:8091  ally_ids = ['usv1', 'usv2', 'usv3']
+[gcs_bridge] enu_origin(맵 중앙 대응 실좌표) = (-0.709, -0.751)
+[gcs_bridge] 결정주기 = 3.17 실초, micro-step = 0.127 실초
+[scale] S = 157.5 sim-m/real-m  (맵 12600 sim-m ↔ 실제 80 m)
+[scale] dt = 0.127 s/step  ·  결정주기 = 3.175 s (25 step)
+[scale] 실제 1 픽셀 = 1.6 m
+[scale] 실제 그물 최대길이 = 2.857 m
+[scale] 실제 요격 환형 = 2.54 ~ 28.57 m
+[scale] ── 무차원 비 (학습 무대) ──
+[scale]   이동/결정 (va·T/extent)                = 0.02381
+[scale]   속도비 (ve/va)                        = 1.5
+[scale]   선회반경/extent                        = 0.006821
+[scale]   선회반경/선체길이                          = 0.1868
+[scale]   그물길이/extent                        = 0.07143
+[scale]   환형 내/외 (r_min,r_max)/extent        = 0.06349, 0.7143
+[scale]   적스폰반경/extent                       = 0.8651
+[scale]   픽셀/extent                          = 0.04
+[scale]   선체길이/extent                        = 0.03651
+[scale]   충돌반경/extent                        = 0.01825
+[scale]   도착반경/extent                        = 0.03175
+[scale]   threat 분모 (ve·max_steps/extent)    = 2.857
+[scale] ✓ 대조한 항목은 학습 무대와 정합
+[gcs_bridge] arrive_radius = 1.27 m, net_max_len = 2.86 m (실좌표, 이 --span 기준)
+[t=  0.25s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2], C1<-USV[0], C2<-USV[1].
+[t= 25.40s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2], C1<-USV[0], C2<-USV[1].
+[t= 50.79s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2], C1<-USV[0], C2<-USV[1].
+[net-deploy] {"vehicle_id": "usv1", "net_deploy": true, "stamp": 1789370327.832237}
+[net-deploy] {"vehicle_id": "usv1", "net_deploy": false, "stamp": 1789370337.4045672}
+[t= 76.19s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[t=101.59s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[t=126.98s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[t=152.38s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 1척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 1척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 2척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=177.78s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2], C1<-USV[1], C2<-USV[0].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=203.17s] 재배정: [휴리스틱] 클러스터 2개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2, 0], C1<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=228.57s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=253.97s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=279.37s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=304.76s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=330.16s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=355.56s] 재배정: [휴리스틱] 클러스터 1개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0, 1, 2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=380.95s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2], C1<-USV[1], C2<-USV[0].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=406.35s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2], C1<-USV[1], C2<-USV[0].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=431.75s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2], C1<-USV[1], C2<-USV[0].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=457.14s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2], C1<-USV[1], C2<-USV[0].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=482.54s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2], C1<-USV[1], C2<-USV[0].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=507.94s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2], C1<-USV[1], C2<-USV[0].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=533.33s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2], C1<-USV[1], C2<-USV[0].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=558.73s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2], C1<-USV[1], C2<-USV[0].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=584.13s] 재배정: [휴리스틱] 클러스터 1개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[2, 0, 1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=609.52s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=634.92s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=660.32s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=685.71s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=711.11s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=736.51s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=761.90s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=787.30s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[1], C2<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=812.70s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=838.10s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=863.49s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=888.89s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=914.29s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=939.68s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=965.08s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=990.48s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=1015.87s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=1041.27s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=1066.67s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=1092.06s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=1117.46s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=1142.86s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=1168.25s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=1193.65s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=1219.05s] 재배정: [휴리스틱] 클러스터 2개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0, 1], C1<-USV[2].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=1244.44s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=1269.84s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=1295.24s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[t=1320.63s] 재배정: [휴리스틱] 클러스터 3개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[0], C1<-USV[2], C2<-USV[1].
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+[gcs_bridge] ⚠ 아군 3척이 --span 80 m 박스 밖 -- 지도 모서리로 클리핑되고 있습니다. --span 을 키우거나 --enu-origin 을 조정하세요.
+Traceback (most recent call last):
+  File "/home/yune/MobRobGPT/run_gcs_bridge.py", line 577, in <module>
+    else:
+  File "/home/yune/MobRobGPT/run_gcs_bridge.py", line 559, in main
+    # 가정한다(run_replay_infer.py의 기존 호출처럼 world_size==sim 프레임일 때만
+  File "/home/yune/MobRobGPT/run_gcs_bridge.py", line 452, in advance_one_micro
+    assign = env._assign[0].tolist()
+  File "/home/yune/MobRobGPT/commander/gcs_cnn_env.py", line 462, in step
+    if not out.any():
+  File "/home/yune/MobRobGPT/commander/gcs_cnn_env.py", line 174, in _publish_to_gcs
+    self._next_publish_wall = now + self._publish_period_real
+  File "/home/yune/MobRobGPT/commander/gcs_bridge.py", line 347, in publish
+    브라우저는 ROS2 토픽을 직접 구독할 수 없으므로, gcs 웹 UI(index.html)의 시각화는
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/publisher.py", line 70, in publish
+    self.__publisher.publish(msg)
+rclpy._rclpy_pybind11.RCLError: Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389

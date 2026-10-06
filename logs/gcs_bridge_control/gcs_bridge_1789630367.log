@@ -1,0 +1,98 @@
+[gcs_bridge] 정책 로딩: boatattack_sim/models/u-net_map.pt (감지: CNN 점수맵(U-Net))
+[gcs_bridge] datum(GET /api/config) = (36.396111, 127.401622) -- 경유점 위경도 발행에 씀
+[gcs_bridge] --enu-origin 미지정 -- 아군 3/3척의 현재 GCS 위치 평균 (-5.371, -1.372)(datum 기준 동/북 m, datum에서 5.5 m)을 맵 중앙(=모선)으로 사용합니다.
+[gcs_bridge] GCS `/api/state` 적선 읽기: ['usv4', 'usv5']
+/usr/lib/python3/dist-packages/scipy/__init__.py:146: UserWarning: A NumPy version >=1.17.3 and <1.25.0 is required for this version of SciPy (detected version 1.26.4
+  warnings.warn(f"A NumPy version >={np_minversion} and <{np_maxversion}"
+[gcs_bridge] GCS = http://127.0.0.1:8091  ally_ids = ['usv1', 'usv2', 'usv3']
+[gcs_bridge] enu_origin(맵 중앙 대응 실좌표) = (-5.371, -1.372)
+[gcs_bridge] 결정주기 = 1.59 실초, micro-step = 0.0635 실초
+[scale] S = 315 sim-m/real-m  (맵 12600 sim-m ↔ 실제 40 m)
+[scale] dt = 0.06349 s/step  ·  결정주기 = 1.587 s (25 step)
+[scale] 실제 1 픽셀 = 0.8 m
+[scale] 실제 그물 최대길이 = 1.429 m
+[scale] 실제 요격 환형 = 1.27 ~ 14.29 m
+[scale] ── 무차원 비 (학습 무대) ──
+[scale]   이동/결정 (va·T/extent)                = 0.02381
+[scale]   속도비 (ve/va)                        = 1.5
+[scale]   선회반경/extent                        = 0.006821
+[scale]   선회반경/선체길이                          = 0.1868
+[scale]   그물길이/extent                        = 0.07143
+[scale]   환형 내/외 (r_min,r_max)/extent        = 0.06349, 0.7143
+[scale]   적스폰반경/extent                       = 0.8651
+[scale]   픽셀/extent                          = 0.04
+[scale]   선체길이/extent                        = 0.03651
+[scale]   충돌반경/extent                        = 0.01825
+[scale]   도착반경/extent                        = 0.03175
+[scale]   threat 분모 (ve·max_steps/extent)    = 2.857
+[scale] ✓ 대조한 항목은 학습 무대와 정합
+[gcs_bridge] arrive_radius = 0.635 m, net_max_len = 1.43 m (실좌표, 이 --span 기준)
+[gcs_bridge] ⚠ arrive_radius가 0.635 m로 실보트 GPS 정밀도보다 작을 수 있습니다 -- 영원히 '도착' 판정을 못 받아 ptr이 전진하지 않고 그물도 시작하지 않을 위험이 있습니다. --span을 키우세요.
+[t=  0.25s] 재배정: [휴리스틱] 클러스터 1개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[1, 0, 2].
+[assigned] {"vehicle_id": "usv1", "assigned": false, "cluster_id": null, "stamp": 1789630372.5803776}
+[assigned] {"vehicle_id": "usv2", "assigned": false, "cluster_id": null, "stamp": 1789630372.5804756}
+[assigned] {"vehicle_id": "usv3", "assigned": false, "cluster_id": null, "stamp": 1789630372.5805187}
+[assigned] {"vehicle_id": "usv1", "assigned": true, "cluster_id": 0, "stamp": 1789630374.1650038}
+[assigned] {"vehicle_id": "usv2", "assigned": true, "cluster_id": 0, "stamp": 1789630374.1652002}
+[assigned] {"vehicle_id": "usv3", "assigned": true, "cluster_id": 0, "stamp": 1789630374.1652665}
+[net-deploy] {"vehicle_id": "usv2", "net_deploy": true, "stamp": 1789630379.0805829}
+[net-deploy] {"vehicle_id": "usv2", "net_deploy": false, "stamp": 1789630383.7423396}
+[t= 12.70s] 재배정: [휴리스틱] 클러스터 1개 커버, 투입 3/3척 (예비 0척). 지목: C0<-USV[1, 0, 2].
+[net-deploy] {"vehicle_id": "usv2", "net_deploy": true, "stamp": 1789630384.8526273}
+[net-deploy] {"vehicle_id": "usv2", "net_deploy": false, "stamp": 1789630387.7894278}
+[net-deploy] {"vehicle_id": "usv2", "net_deploy": true, "stamp": 1789630389.4474704}
+[net-deploy] {"vehicle_id": "usv2", "net_deploy": false, "stamp": 1789630393.4063299}
+[t= 25.40s] 재배정: [휴리스틱] 클러스터 1개 커버, 투입 2/3척 (예비 1척). 지목: C0<-USV[0, 2].
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[assigned] {"vehicle_id": "usv2", "assigned": false, "cluster_id": null, "stamp": 1789630398.2581751}
+[assigned] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[net-deploy] {"vehicle_id": "usv1", "net_deploy": true, "stamp": 1789630398.7057667}
+[net-deploy] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[net-deploy] {"vehicle_id": "usv3", "net_deploy": true, "stamp": 1789630398.7060487}
+[net-deploy] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[net-deploy] {"vehicle_id": "usv1", "net_deploy": false, "stamp": 1789630401.2599761}
+[net-deploy] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[net-deploy] {"vehicle_id": "usv3", "net_deploy": false, "stamp": 1789630401.8349152}
+[net-deploy] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[net-deploy] {"vehicle_id": "usv1", "net_deploy": true, "stamp": 1789630403.7473629}
+[net-deploy] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[net-deploy] {"vehicle_id": "usv3", "net_deploy": true, "stamp": 1789630403.9386091}
+[net-deploy] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[goto-cmd] ⚠ ROS2 발행 실패(무시하고 계속함 -- HTTP goto는 이 실패와 무관하게 계속 나갑니다): Failed to publish: publisher's context is invalid, at ./src/rcl/publisher.c:389
