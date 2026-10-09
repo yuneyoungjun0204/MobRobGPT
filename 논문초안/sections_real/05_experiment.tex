@@ -2,33 +2,50 @@
 \section{실험 설계}
 \label{sec:experiment}
 
-실험의 목적은 두 계층의 기여를 분리하여 계층별로 식별하는 것이다. 이를 위해 배정 축과
+실험의 목적은 두 계층의 기여를 분리하여 식별하는 것이다. 이를 위해 배정 축과
 기동 축을 각각 이분한 $2\times2$ 조건 행렬을 두고, 모든 조건을 같은 시드 집합으로 수집해
-시드 대응 차이로 판정한다. 이 절은 그 재현에 필요한 환경·학습 실행·조건·판정 기준을 한곳에
-모은다.
+시드 대응 차이로 판정한다.
 
 \subsection{실험 환경}
 \label{sec:env}
 
 시뮬레이터·관측 래스터화·평가 하네스는 자체 구현이며 공개한다(Data availability 참조).
 교전 설정값은 Table~\ref{tab:scenario}, 지표는 Table~\ref{tab:metrics}를 따르고, 두 계층
-모두 25\,step 주기로 결정하며 지휘관 재계획도 배치 설정과 같이 매 결정마다 수행한다. 학습·평가·
-언어모델 서빙은 NVIDIA RTX 4070(12\,GB) 단일 GPU 한 대에서 이루어졌고, 지연 측정 때는
-시뮬레이터·정책 추론·언어모델이 같은 GPU를 공유하였다(\S\ref{sec:res_latency}). 로컬
-지휘관(Qwen2.5 7B·14B)은 Ollama로 서빙하며 14B는 Q4\_K\_M 양자화·문맥 16{,}384 토큰이고,
-클라우드 지휘관(Gemini 3.5 Flash-Lite)은 상용 API를 쓴다. 세 모델 모두 온도 0, 같은
-프롬프트, 같은 JSON 스키마의 구조적 출력(\S\ref{sec:schema})을 사용하며, 스키마 검증에
-실패한 응답은 휴리스틱 배정으로 대체한다(폴백률은 세 지휘관 모두 0.007 이하).
+모두 25\,step 주기로 결정하며 지휘관 재계획도 매 결정마다 수행한다. 지휘관은 로컬
+모델(Qwen2.5 7B·14B)과 클라우드 모델(Gemini 3.5 Flash-Lite)이며, 세 모델 모두 온도 0, 같은
+프롬프트, 같은 JSON 스키마의 구조적 출력(\ref{sec:schema}절)을 사용한다.
+
+%  ★ 언리얼 엔진 검증 환경의 언급과 도판(fig_ue_env)은 필수다 --- 분량을 줄일 때도
+%    지우지 말 것. 모델 성능을 이 환경에서 검증한다.
+학습은 질점 운동학 시뮬레이터에서 수행하고, 학습된 정책의 성능은 선체 거동과 충돌을 물리
+엔진으로 다루는 언리얼 엔진 환경(Fig.~\ref{fig:ue_env})에서 검증한다. \ref{sec:results}절의
+통계 비교는 같은 시드 집합을 조건마다 되풀이 수집해야 하므로 질점 시뮬레이터에서 수행하였다.
+
+\begin{figure*}[tp]
+\centering
+\includegraphics[width=0.92\textwidth]{fig_ue_env.png}
+\caption{언리얼 엔진 기반 검증 환경. 위: 교전에 쓰는 세 에셋(그물벽, 아군 방어정, 적 자폭
+         USV). 아래: 모선 방어 운용 화면과 적 자폭 USV 의 폭발 장면. 학습된 정책의 성능은 이
+         환경에서 물리 기반으로 검증하며, 학습에는 쓰지 않는다.}
+\label{fig:ue_env}
+\end{figure*}
+
+\paragraph{시뮬레이터 충실도}
+결과의 적용 범위는 시뮬레이터의 생략에 좌우되므로, 물리·판정 모델과 그 단순화를
+Table~\ref{tab:simfidelity}에 모았다. 실선 동역학~\citep{fossen2011marine} 대신 쓴 질점 운동학, 규칙 기반의 반응형 적, 설치 후
+고정되는 그물벽과 접촉 즉시 포획, 잡음 없는 완전 관측은 모두 방어 쪽에 유리한 가정이다.
+따라서 포획률은 상한에 가깝게 읽어야 하고, 조건 간 상대 비교는 네 조건이 같은 가정을
+공유하므로 유효하다.
+
+\input{tables/tab_simfidelity}
 
 \subsection{학습 실행}
 \label{sec:protocol}
 
-학습은 실해역 6곳(Fig.~\ref{fig:sites}; 육지 비율 0--7.5\,\%, 요격 구역 잠식 0--6\,\%,
-최근접 육지 여유 1.6\,km--$\infty$)을 에피소드마다 돌려가며 진행하여 정책이 한 해안선의
-형상을 외우지 않게 했고, 평가는 그중 통영 매물도 서측 한 곳에서
-한다. 총 800 업데이트($G=8$, 후보 평가 구간 180\,step)를 돌리며 200 업데이트마다 greedy
-평가를 두고, \textbf{그 최고점(600 업데이트, 포획률 0.805; 휴리스틱 기준선 0.744)의
-가중치}를 채택하였다 --- 학습 곡선은 매 업데이트 새로 표집한 전장의 난이도로 진동하므로
+학습은 실해역 6곳(Fig.~\ref{fig:sites})을 에피소드마다 돌려가며 진행하여 정책이 한
+해안선의 형상을 외우지 않게 했고, 평가는 그중 한 곳(통영 매물도 서측)에서 한다. 총 800 업데이트(설정은 Table~\ref{tab:hparams})를 돌리며 200 업데이트마다 greedy
+평가를 두고, \textbf{그 최고점의 가중치}를 채택하였다 --- 600 업데이트, 포획률 0.805 로 휴리스틱 기준선
+0.744 를 넘는다. 학습 곡선은 매 업데이트 새로 표집한 전장의 난이도로 진동하므로
 채택 판정은 고정 프로토콜의 greedy 평가로 한다.
 
 \begin{figure}[!tbp]
@@ -38,56 +55,69 @@
 \label{fig:sites}
 \end{figure}
 
+\input{tables/tab_hparams}
+
 \subsection{조건과 수집}
 \label{sec:paired}
 
-\begin{table*}[tp]
+\begin{table}[tp]
 \centering
 \caption{$2\times2$ 조건 행렬. 조건 사이에 달라지는 것은 두 스위치뿐이며, 체크포인트·환경
          설정·난수 시드는 모두 동일하다.}
 \label{tab:conditions}
 \footnotesize
-\begin{tabular}{llp{0.42\linewidth}}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llp{0.34\linewidth}}
 \toprule
 조건 & 배정 $\times$ 기동 & 무엇을 측정하는가 \\
 \midrule
 \texttt{heur\_heur} & 휴리스틱 $\times$ 휴리스틱 & 기준선(baseline) \\
-\texttt{heur\_unet} & 휴리스틱 $\times$ U-Net    & \textbf{기동 계층의 순수 기여}
-                                                   --- LLM을 쓰지 않는다 \\
+\texttt{heur\_unet} & 휴리스틱 $\times$ U-Net    & \textbf{기동 계층의 순수 기여}(LLM 미사용) \\
 \texttt{llm\_heur}  & LLM $\times$ 휴리스틱      & \textbf{전략 계층의 순수 기여} \\
 \texttt{llm\_unet}  & LLM $\times$ U-Net         & 제안 체계(상호작용 포함) \\
 \bottomrule
 \end{tabular}
-\end{table*}
+\end{table}
 
-휴리스틱 배정과 기동은 \S\ref{sec:heuristic}의 기준 방법이며 학습 정책과 같은 행동공간을
+휴리스틱 배정과 기동은 \ref{sec:heuristic}절의 기준 방법이며 학습 정책과 같은 행동공간을
 거치므로 네 조건은 직접 비교 가능하다(Table~\ref{tab:conditions}). 전략 계층에는 능력
-수준이 다른 세 모델 --- Qwen2.5 7B, Qwen2.5 14B(로컬), Gemini 3.5 Flash-Lite(클라우드) ---
-을 두어 총 8조건이 된다. 모든 조건은 동일한 시드 집합(0--29)과 세 포메이션을 사용하며,
+수준이 다른 세 모델, 즉 로컬 Qwen2.5 7B·14B 와 클라우드 Gemini 3.5 Flash-Lite 를
+두어 총 8조건이 된다. 모든 조건은 동일한 시드 집합(0--29)과 세 포메이션을 사용하며,
 8조건 $\times$ 3포메이션 $\times$ 30시드 $=$ 720 에피소드를 수집하였다.
+
+기동 정책의 갱신 규칙 자체를 검증하기 위해, 같은 액터·관측·행동공간·보상·행동복제 초기화
+위에서 갱신 규칙만 MAPPO~\citep{yu2022mappo}(중앙 크리틱 + PPO clip)로 바꾼 정책을 학습 시드
+3개로 학습하였다(\ref{sec:res_algo}절). 환경 step 예산은 GRPO 채택 런과 같게 맞추고, 학습률·epoch·clip 은
+예비 런에서 가장 높았던 값을 썼다. 같은 greedy 평가로 최고점을 채택하고, 세 정책을
+\texttt{heur\_unet} 과 같은 프로토콜로 평가해 GRPO 와 시드 대응 비교한다.
 
 \subsection{판정 기준과 계측}
 \label{sec:stats}
 
-조건 $X$ 와 기준선 $Y$ 의 시드 $k$ 지표값을 $x_k$, $y_k$ 라 할 때 대응 차이와 효과크기는
+조건 $X$ 와 기준선 $Y$ 의 시드 $k$($k = 1, \dots, n_{\mathrm{s}}$, $n_{\mathrm{s}} = 30$)
+지표값을 $x_k$, $y_k$, 대응 차이 $d_k$ 의 표준편차를 $s_d$ 라 할 때 차이의 평균과 효과크기는
 \begin{equation}
 d_k = x_k - y_k, \qquad
 \bar{d} = \frac{1}{n_{\mathrm{s}}}\sum_{k} d_k, \qquad
 \dz = \frac{\bar{d}}{s_d}
 \label{eq:paired}
 \end{equation}
-이며($n_{\mathrm{s}} = 30$, $s_d$ 는 $d_k$ 의 표준편차), $\bar{d}$ 의 95\,\% 신뢰구간은
-BCa 부트스트랩~\citep{efron1993bootstrap, diciccio1996bca}($B = 9999$)으로 구한다. 구간이
-0을 포함하면 기준선과 다르다고 말하지 않는다. 지표 10개를 동시에 검정하므로 Bonferroni
-보정 구간($\alpha' = 0.05/10$, 99.5\,\%)을 함께 보고한다. 두 계층의 상호작용은
-\begin{align}
-\mathrm{Int} =\;& (\texttt{llm\_unet} - \texttt{llm\_heur}) \nonumber\\
-                &- (\texttt{heur\_unet} - \texttt{heur\_heur})
+이며, $\bar{d}$ 의 95\,\% 신뢰구간은
+편향 보정·가속(bias-corrected and accelerated, BCa) 부트스트랩~\citep{efron1993bootstrap,
+diciccio1996bca}($B = 9999$)으로 구한다. 구간이
+0을 포함하면 기준선과 다르다고 말하지 않으며, 지표 10개의 다중비교에는 Bonferroni 보정
+구간(99.5\,\%)을 병기한다. 두 계층의 상호작용은 배정 축 $a \in \{\mathrm{H}, \mathrm{L}\}$
+(휴리스틱, LLM)과 기동 축 $m \in \{\mathrm{H}, \mathrm{U}\}$(휴리스틱, U-Net)로 조건을
+$(a, m)$ 으로 쓰고, 시드 $k$ 의 지표값 $x_k^{am}$ 에 대해
+\begin{equation}
+\mathrm{Int}_k = \big(x_k^{\mathrm{LU}} - x_k^{\mathrm{LH}}\big)
+               - \big(x_k^{\mathrm{HU}} - x_k^{\mathrm{HH}}\big)
 \label{eq:interaction}
-\end{align}
-로 판정한다($>0$ 상승, $\approx 0$ 가산, $<0$ 상쇄).
+\end{equation}
+의 평균과 신뢰구간을 식~\eqref{eq:paired}와 같은 절차로 구해 판정한다($>0$ 상승,
+$\approx 0$ 가산, $<0$ 상쇄).
 
 포획률은 체계 전체의 지표라 지휘관 계층의 기여를 가리므로, 계획 산출 시점에 확인 가능한
 양을 따로 계측한다: 응답 지연, 폴백률(언어모델 실패로 휴리스틱이 대체한 비율), 커버리지
 (활성 무리 중 배정된 비율), churn(재계획 간 담당을 바꾼 방어정 비율), 교차 배정(방어정--담당
-무리 선분이 서로 교차하는 쌍의 수). 세 지표는 에피소드 안의 재계획에 걸쳐 평균한다.
+무리 선분이 서로 교차하는 쌍의 수). 커버리지·churn·교차 배정은 에피소드 안의 재계획에 걸쳐 평균한다.

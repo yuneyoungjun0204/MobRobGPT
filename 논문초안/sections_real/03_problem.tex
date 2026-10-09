@@ -37,20 +37,21 @@
  & 총 선회량        & $\downarrow$ & $\sum_{p=1}^{P} \sum_{t} \lvert \Delta\psi_{p,t} \rvert$ & 누적 방위 변화량(궤적 부드러움) \\
 \midrule
 \multirow{3}{*}{교전 품질}
- & 포획 이격거리    & $\uparrow$   & $\frac{1}{N_\mathrm{cap}} \sum_{k} \lVert \mathbf{z}_k - \mathbf{m} \rVert$ & 포획 지점의 모선 이격 --- 공간축 조기 제압 \\
- & 평균 포획 시각   & $\downarrow$ & $\frac{1}{N_\mathrm{cap}} \sum_{k} t_k$ & 포획이 일어난 시각 --- 시간축 조기 제압 \\
+ & 포획 이격거리    & $\uparrow$   & $\frac{1}{N_\mathrm{cap}} \sum_{k} \lVert \mathbf{z}_k - \mathbf{m} \rVert$ & 포획 지점의 모선 이격(공간축 조기 제압) \\
+ & 평균 포획 시각   & $\downarrow$ & $\frac{1}{N_\mathrm{cap}} \sum_{k} t_k$ & 포획이 일어난 시각(시간축 조기 제압) \\
  & 전개 시 적 거리  & $\downarrow$ & $\frac{1}{N_\mathrm{net}} \sum_{d} \min_{m \in \mathcal{A}} \lVert \mathbf{a}_d - \mathbf{e}_m \rVert$ & 그물 전개를 시작한 순간 최근접 적까지 거리 \\
 \bottomrule
 \end{tabular}
 \end{table*}
 
 교전 해역 중앙에 고가치 모선 한 척이 있고, 가장자리에서 적 USV $M$척이 모선을 향해
-돌진한다. 적은 무작위로 흩어져 오지 않고 세 가지 공격 포메이션 --- 집중, 양동, 파상 ---
+돌진한다. 적은 무작위로 흩어져 오지 않고 집중, 양동, 파상의 세 가지 공격 포메이션
 가운데 하나를 취한다(Fig.~\ref{fig:formations}; 정의는 아래). 방어정 $P$척은
-적선보다 느리며, 각각 한정된 수의 그물벽을 전개할 수 있다. 구체적인 값은
-Table~\ref{tab:scenario}에 정리하였다.
+적선보다 느리며, 각각 한정된 수의 그물벽을 전개할 수 있다. 설정값은 관측 픽셀 한 변
+$\ell$ 을 단위로 Table~\ref{tab:scenario}에 정리하였다. 관측·행동·보상이 모두 $\ell$ 로
+정규화되므로(\ref{sec:obs}절) 시나리오를 정하는 것은 물리 치수가 아니라 이 비율들이다.
 
-방어정은 적을 따라가는 대신 적이 지나갈 자리를 예측하여 선점해야 한다. 그물벽은 두
+방어정은 적이 지나갈 자리를 미리 예측하여 선점해야 한다. 그물벽은 두
 좌표를 잇는 선분으로 정의되며, 방어정이 그 선분을 따라 이동하면서 전개한다. 물리적으로는
 방어정 후미의 전개 장치가 부유식 그물을 해면에 풀어 놓고, 그 위를 지나는 적 USV의
 프로펠러가 그물에 얽혀 추진을 잃는 것을 포획으로 본다(Fig.~\ref{fig:netconcept}). 전개된 그물은
@@ -61,7 +62,7 @@ Table~\ref{tab:scenario}에 정리하였다.
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.7\columnwidth]{fig3.png}
-\caption{후미 투하식 부유 그물에 의한 포획 개념 --- 그물 위를 지나는 적 USV의 프로펠러가
+\caption{후미 투하식 부유 그물에 의한 포획 개념: 그물 위를 지나는 적 USV의 프로펠러가
          얽혀 추진을 잃는다.}
 \label{fig:netconcept}
 \end{figure}
@@ -83,9 +84,10 @@ Table~\ref{tab:scenario}에 정리하였다.
       셋으로 갈라지므로 가용 방어정을 모두 투입해야 하며, 어느 방어정을 어느 무리에 붙이는
       배정과 그 경로의 교차 여부가 결과를 좌우한다.
 \item \textbf{파상(wave)}: 적이 3개 단(rank)으로 나뉘어 단마다 방위를 조금씩 달리하며
-      거리차를 두고 순차적으로 도달한다. 앞 단을 막은 자원이 뒤 단에도 쓰일 수 있어야 하므로 그물벽을 \emph{어느
-      자리에} 놓는지가 다음 단의 차단 가능성을 좌우하며, 앞 단에 소모된 그물벽을 대신할
-      능동적 재배치가 방어율을 결정한다.
+      거리차를 두고 순차적으로 도달한다. 앞 단을 막는 데 쓴 그물벽은 그 자리에 남고 방어정의
+      그물 보유량은 한정되어 있으므로, 뒤 단이 오기 전에 방어정이 다음 접근로로 이동하여 남은
+      그물을 다시 전개해야 한다. 따라서 그물벽을 \emph{어느 자리에} 놓아 여러 단을 겸해
+      막을지, 그리고 단 사이의 짧은 시간에 얼마나 빨리 재배치할지가 방어율을 결정한다.
 \end{itemize}
 
 \subsection{평가 지표}

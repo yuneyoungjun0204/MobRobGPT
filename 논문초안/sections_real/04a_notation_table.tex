@@ -1,0 +1,43 @@
+%============================================================ 제안 체계의 기호표 (Table)
+% EAAI 관행(문제 정식화 절의 번호 붙은 Notations 표, 예: 10.1016/j.engappai.2023.106585)을 따라
+% §4 첫머리에 두고 §4.1 첫 문단에서 참조한다. 각 기호는 본문의 첫 등장 자리에서 정의하며
+% 이 표는 찾아보기다. 범위는 §4 의 기호로 한정(§5 통계의 d_z 등은 제외).
+% 라틴 문자 → 그리스 문자 순의 알파벳 배열(묶음 헤더 없음, 2026-09-20 사용자 요청).
+%  ★ 기호를 추가하려면 본문에 실제로 그 기호가 있는지 먼저 확인할 것.
+%    표에만 있고 본문에 없는 기호는 독자를 찾아 헤매게 만든다.
+% 배치: 2단 양단 걸침 table*. §4 가 시작하는 쪽 하단([!b])에 앉힌다(dblfloatfix).
+\begin{table*}[!b]
+\caption{제안 체계(\ref{sec:method}절)의 기호. 각 기호는 처음 쓰이는 자리에서 정의하며 이 표는
+         찾아보기다. 혼동되기 쉬운 수량은 서로 다른 문자를 쓴다(무리 수 $C$, 경유점 수 $K$,
+         학습의 그룹 후보 수 $G$). 설정값은 Table~\ref{tab:scenario}와 각 정의 위치의 본문에 있다.}
+\label{tab:nomenclature}
+% 다른 표와 같은 \footnotesize 로 둔다. \small 로 두면 자연 폭이 커져 \resizebox 가 발동하고,
+% 그러면 글자가 오히려 더 작아진다.
+\centering\footnotesize
+% 판면보다 넓을 때만 줄인다.
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{%
+\begin{tabular}{@{}ll@{\hspace{1.6em}}ll@{}}
+\toprule
+\textbf{기호} & \textbf{뜻} & \textbf{기호} & \textbf{뜻} \\
+\midrule
+$A_k$            & 후보 $k$ 의 그룹 상대 이득                 & $\hat{\mathbf{r}}$ & 모선 $\to$ 요격점 단위 벡터 \\
+$\mathbf{a}_p$   & 방어정 $p$ 의 위치                         & $r_{\mathrm{dup}}$ & 경유점 중복 배제 반경 \\
+$C$, $\hat{C}$   & 무리 수 상한, 활성 무리 수                 & $s_{p,i}$      & 방어정 $p$ 가 픽셀 $i$ 에 준 점수 \\
+$\mathbf{c}_j$, $n_j$ & 무리 $j$ 의 중심, 척수                & $\mathbf{t}_k$ & $k$ 번째 목표점 (연속 좌표) \\
+$d_{pj}$         & 방어정 $p$ $\to$ 무리 $j$ 요격점 거리      & $\mathbf{u}_k$, $\boldsymbol{\sigma}_o$ & 부화소 오프셋과 그 표준편차 \\
+$E$, $\ell$      & 관측 반폭, 픽셀 크기                       & $\mathcal{V}^{(k)}_p$ & $k$ 번째 선택 시점의 후보 픽셀 집합 \\
+$\mathbf{f}_i$   & 픽셀 $i$ 의 키 벡터                        & $w_n$          & 유효 월드 마스크 \\
+$G$              & 학습의 그룹 후보 수                        & $\beta$        & 배정 유지 보너스 (식~\ref{eq:sticky}) \\
+$g_{(q)}$        & 정렬한 적선 방위의 $q$ 번째 간격           & $(\boldsymbol{\gamma}_{\mathrm{F}},\boldsymbol{\beta}_{\mathrm{F}})$ & FiLM 배율·이동 계수 \\
+$H$              & 후보 평가 창 길이                          & $\gamma$       & 퍼텐셜 성형 할인 계수 \\
+$\mathbf{I}$     & 요격점                                     & $\delta_{\mathrm{gap}}$ & 무리 분할 방위 임계 \\
+$K$              & 방어정 1척이 지목하는 경유점 수            & $\eta_t$, $\lambda_{\mathrm{H}}(t)$ & 학습률·엔트로피 계수 스케줄 \\
+$L_{\mathrm{net}}$ & 그물벽 최대 길이                         & $\vartheta_m$  & 모선에서 본 적선 $m$ 의 방위 \\
+$M$              & 적 USV 수                                  & $\iota(\cdot)$ & 월드 $\to$ 픽셀 인덱스 사상 (식~\ref{eq:world2pix}) \\
+$\mathbf{o}_p$   & 방어정 $p$ 의 자체 상태 벡터               & $\lambda_{\mathrm{L}}$ & 잉여 방어정의 층 분리 증분 \\
+$P$              & 방어정 수                                  & $\tau_j$       & 무리 $j$ 의 위협도 \\
+$\mathbf{q}_p$   & 방어정 $p$ 의 질의 벡터                    & $\Phi$         & 위협 근접도 퍼텐셜 \\
+$R_k$            & 후보 $k$ 의 팀 보상                        &                &  \\
+\bottomrule
+\end{tabular}}
+\end{table*}
