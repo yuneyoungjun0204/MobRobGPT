@@ -1,0 +1,33 @@
+%============================================================ 제안 체계의 기호표 (압축판)
+%  §4 가 산문화되면서 사라진 기호를 솎아냈다. 표에만 있고 본문에 없는 기호는 독자를 찾아
+%  헤매게 만들므로, 기호를 더하려면 본문에 실제로 그 기호가 있는지 먼저 확인할 것.
+\begin{table*}[tp]
+\caption{제안 체계(\ref{sec:method}절)의 기호}
+\label{tab:nomenclature}
+\centering\footnotesize
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{%
+\begin{tabular}{@{}ll@{\hspace{1.6em}}ll@{}}
+\toprule
+\textbf{기호} & \textbf{뜻} & \textbf{기호} & \textbf{뜻} \\
+\midrule
+$A_k$                 & 후보 $k$ 의 그룹 상대 이득           & $r_{\mathrm{dup}}$      & 경유점 중복 배제 반경 \\
+$\mathbf{a}_p$        & 방어정 $p$ 의 위치                & $s_{p,i}$               & 방어정 $p$ 가 픽셀 $i$ 에 준 점수 \\
+$C$, $\hat{C}$        & 무리 수 상한, 활성 무리 수            & $\mathbf{t}_k$          & $k$ 번째 목표점 (연속 좌표) \\
+$\mathbf{c}_j$, $n_j$ & 무리 $j$ 의 중심, 척수             & $\mathcal{V}_p$         & 방어정 $p$ 의 유효 픽셀 집합 \\
+$d_{pj}$              & 방어정 $p$ $\to$ 무리 $j$ 요격점 거리 & $w_n$                   & 유효 월드 마스크 \\
+$E$, $\ell$           & 관측 반폭, 픽셀 크기                & $\mathbf{x}_i$          & 픽셀 $i$ 의 중심 좌표 \\
+$\mathbf{f}_i$        & 픽셀 $i$ 의 키 벡터               & $\beta$                 & 배정 유지 보너스 (식~\ref{eq:sticky}) \\
+$G$                   & 학습의 그룹 후보 수                 & $\gamma$                & 퍼텐셜 성형 할인 계수 \\
+$g_{(q)}$             & 정렬한 적선 방위의 $q$ 번째 간격        & $\delta_{\mathrm{gap}}$ & 무리 분할 방위 임계 \\
+$H$                   & 후보 평가 창 길이                  & $\vartheta_m$           & 모선에서 본 적선 $m$ 의 방위 \\
+$\mathbf{I}$          & 요격점                         & $(\iota_x, \iota_y)$    & 월드 $\to$ 픽셀 인덱스 (식~\ref{eq:world2pix}) \\
+$K$                   & 방어정 1척이 지목하는 경유점 수          & $\lambda_{\mathrm{I}}$  & 요격점의 모선 쪽 치우침 비율 \\
+$L_{\mathrm{net}}$    & 그물벽 최대 길이                   & $\lambda_{\mathrm{L}}$  & 잉여 방어정의 층 분리 증분 \\
+$M$                   & 적 USV 수                     & $\tau_j$                & 무리 $j$ 의 위협도 \\
+$n_{\max}$            & 방어정 1척당 그물 보유량              & $\Phi$                  & 위협 근접도 퍼텐셜 \\
+$\mathbf{o}_p$        & 방어정 $p$ 의 자체 상태 벡터          & $R_k$                   & 후보 $k$ 의 팀 보상 \\
+$P$                   & 방어정 수                       & $R_w$                   & 교전 해역 반폭 \\
+$\mathbf{q}_p$        & 방어정 $p$ 의 질의 벡터             &                         &  \\
+\bottomrule
+\end{tabular}}
+\end{table*}

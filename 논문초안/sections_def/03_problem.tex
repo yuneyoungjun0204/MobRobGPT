@@ -1,0 +1,79 @@
+%============================================================ 3. 문제 정의 (압축판)
+\section{문제 정의와 평가 지표}
+\label{sec:problem}
+
+\subsection{교전 시나리오}
+\label{sec:scenario}
+\input{sections_def/tab_scenario_def}
+
+\begin{table*}[!b]
+\centering
+\caption{평가 지표 10종(화살표는 개선 방향)}
+\label{tab:metrics}
+\footnotesize
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{llcp{0.27\linewidth}p{0.37\linewidth}}
+\toprule
+관점 & 지표 & 방향 & 정의 & 뜻 \\
+\midrule
+\multirow{2}{*}{방어 성과}
+ & 포획률           & $\uparrow$   & $\capr = N_\mathrm{cap} / (N_\mathrm{cap} + N_\mathrm{brc})$ & 교전이 결판난 적선 중 포획된 비율 \\
+ & 돌파 수          & $\downarrow$ & $N_\mathrm{brc}$ & 모선까지 도달한 적선 수 \\
+\midrule
+\multirow{2}{*}{안전}
+ & 충돌률           & $\downarrow$ & $N_\mathrm{col} / P$ & 방어정 1척당 아군 상호·모선 충돌 건수 \\
+ & 그물 걸림        & $\downarrow$ & $N_\mathrm{tng}$ & 아군이 설치된 그물에 얽힌 횟수 \\
+\midrule
+\multirow{2}{*}{자원 효율}
+ & 포획당 그물      & $\downarrow$ & $N_\mathrm{net} / N_\mathrm{cap}$ & 적 1척 포획에 소모한 그물 수 \\
+ & 포획당 이동거리  & $\downarrow$ & $\sum_{p=1}^{P} D_p \,/\, N_\mathrm{cap}$ & 적 1척 포획당 팀 총 이동거리 \\
+\midrule
+기동 비용
+ & 총 선회량        & $\downarrow$ & $\sum_{p=1}^{P} \sum_{t} \lvert \Delta\psi_{p,t} \rvert$ & 누적 방위 변화량(궤적 부드러움) \\
+\midrule
+\multirow{3}{*}{교전 품질}
+ & 포획 이격거리    & $\uparrow$   & $\frac{1}{N_\mathrm{cap}} \sum_{k} \lVert \mathbf{z}_k - \mathbf{m} \rVert$ & 포획 지점의 모선 이격(공간축 조기 제압) \\
+ & 평균 포획 시각   & $\downarrow$ & $\frac{1}{N_\mathrm{cap}} \sum_{k} t_k$ & 포획이 일어난 시각(시간축 조기 제압) \\
+ & 전개 시 적 거리  & $\downarrow$ & $\frac{1}{N_\mathrm{net}} \sum_{d} \min_{m \in \mathcal{A}} \lVert \mathbf{a}_d - \mathbf{e}_m \rVert$ & 그물 전개를 시작한 순간 최근접 적까지 거리 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+교전 해역 중앙에 고가치 모선 한 척이 있고, 가장자리에서 적 USV $M$척이 모선을 향해
+돌진한다. 적은 집중·양동·파상의 세 공격 포메이션 가운데 하나를
+취한다(Fig.~\ref{fig:formations}). 방어정 $P$척은 각각 한정된 수의 그물벽을 전개할 수
+있다. 체계는 스케일 불변이므로 아래는 한 기준 인스턴스다. 교전 해역은 한 변
+$12.6\unit{km}$ 의 정사각 해역이고, 적선은 $9.0\unit{m/s}$, 방어정은
+$6.0\unit{m/s}$ 로 적이 1.5배 빠르며, 두 계층 모두 $25\unit{s}$ 마다 결정한다
+(Table~\ref{tab:scenario}). 관측·행동·보상은 모두 관측 픽셀 한 변 $\ell = 252\unit{m}$ 로
+정규화한다(\ref{sec:obs}절).
+
+방어정은 적이 지나갈 자리를 미리 선점해야 한다. 그물벽은 두 좌표를 잇는 선분이고, 방어정이
+그 선분을 따라 이동하면서 후미의 전개 장치로 부유식 그물을 해면에 풀어 놓는다. 그 위를 지나는
+적 USV가 추진을 잃는 것을 포획으로 본다(Fig.~\ref{fig:netconcept}). 전개된 그물은 해면에
+고정되지 않아 시간이 지날수록 차단 효과가 줄고, 미리 전개하면 적에게 노출되어 회피의 여지를
+준다. 그물벽을 적의 도달 직전, 적에 가까운 위치에 두는 것이 유리하다고 가정한다.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.62\columnwidth]{fig3.png}
+\caption{후미 투하식 부유 그물의 포획 개념}
+\label{fig:netconcept}
+\end{figure}
+
+\begin{itemize}[leftmargin=*, itemsep=3pt, topsep=3pt]
+\item 집중(concentrated): 적 전 병력이 한 방위에서 동시에 접근한다. 차단할
+      접근로가 하나라 소수의 방어정으로도 대응된다.
+\item 양동(diversionary): 적이 세 방위로 나뉘어 동시에 접근한다. 가용 방어정을 모두
+      투입해야 하므로 어느 배가 어느 무리를 맡는 배정이 결과를 좌우한다.
+\item 파상(wave): 적이 3개 단(rank)으로 나뉘어 방위를 조금씩 달리하며 거리차를 두고
+      순차 도달한다. 앞 단에 쓴 그물벽은 그 자리에 남고 보유량은 한정되므로, 그물벽을
+      어느 자리에 놓아 여러 단을 겸해 막을지가 관건이다.
+\end{itemize}
+
+\subsection{평가 지표}
+\label{sec:metrics}
+
+방어 성과는 다섯 관점의 10개 지표로 에피소드마다 잰다(Table~\ref{tab:metrics}). 자원 효율은
+교전하지 않은 조건이 가장 효율적으로 보이는 것을 막기 위해 총량이 아니라 포획당 비율로
+두었고, 교전 품질은 거리축과 시간축으로 나누어 모선에서 먼 포획과 이른 포획을 함께 본다.

@@ -1,0 +1,108 @@
+%============================================================ 5. 실험 설계 (압축판)
+%  모델명은 이 절에서 한 번만 밝히고, 이후 본문은 능력 수준(소형·중형·상위)으로 지칭한다.
+%  능력 임계 주장이 특정 모델 세대나 서빙 방식에 묶이지 않게 하려는 의도다.
+%  발표판은 절을 둘로만 둔다: (1) 환경과 학습 실행, (2) 조건·판정·계측.
+\section{실험 설계}
+\label{sec:experiment}
+
+두 계층의 기여를 분리하기 위해 배정 축과 기동 축을 각각 이분한 $2\times2$ 조건 행렬을 두고,
+시드 대응 차이로 판정한다.
+
+\subsection{환경과 학습 실행}
+\label{sec:env}
+\label{sec:protocol}
+
+교전 설정값은 Table~\ref{tab:scenario}, 지표는 Table~\ref{tab:metrics}를 따르고, 지휘관
+재계획은 매 결정마다 수행한다. 지휘관으로는 능력 수준이 다른 소형 Qwen2.5 7B, 중형
+Qwen2.5 14B, 상위 Gemini 3.5 Flash-Lite 를 온도 0, 같은 프롬프트, 같은 구조적
+출력(\ref{sec:schema}절)으로 쓰며, 이하 본문은 이들을 능력 수준으로 지칭한다.
+
+시뮬레이터의 물리·판정 모델과 단순화는 Table~\ref{tab:simfidelity}에 모았다. 실선
+동역학~\citep{fossen2011marine} 대신 쓴 질점 운동학, 규칙 기반의 적, 잡음 없는 완전 관측은 모두
+방어에 유리하므로 포획률은 상한이며, 네 조건이 같은 가정을 공유하므로 조건 간 상대 비교로만
+판정한다.
+
+\inputshortcap{시뮬레이터의 물리·판정 모델과 단순화}{tables/tab_simfidelity}
+
+%  ★ 언리얼 엔진 검증 환경의 언급과 도판(fig_ue_env)은 필수다 --- 분량을 줄일 때도
+%    지우지 말 것. 모델 성능을 이 환경에서 검증한다.
+학습은 질점 운동학 시뮬레이터에서 수행하고, 학습된 정책의 성능은 선체 거동과 충돌을 물리
+엔진으로 다루는 언리얼 엔진 환경(Fig.~\ref{fig:ue_env})에서 검증한다. \ref{sec:results}절의
+통계 비교는 같은 시드 집합을 조건마다 되풀이 수집해야 하므로 질점 시뮬레이터에서 수행하였다.
+
+\begin{figure*}[tp]
+\centering
+\includegraphics[width=0.92\textwidth]{fig_ue_env.png}
+\caption{언리얼 엔진 기반 시뮬레이터에서의 정성 검증}
+\label{fig:ue_env}
+\end{figure*}
+
+
+학습은 한 해안선 형상에 과적합하지 않도록 실해역 6곳(Fig.~\ref{fig:sites})을 에피소드마다
+돌려가며 진행하고, 평가는 그중 통영 매물도 서측에서 한다. 학습 설정은
+Table~\ref{tab:hparams}에 모았으며, 주기적 greedy 평가의 최고점 가중치를 채택하였다.
+
+\begin{figure}[!tbp]
+\centering
+\includegraphics[width=0.88\columnwidth]{fig14.png}
+\caption{학습 해역 6곳(별표 모선, 파선 원 요격 구역)}
+\label{fig:sites}
+\end{figure}
+
+\inputshortcap{기동 정책 학습 설정}{tables/tab_hparams}
+
+\subsection{조건, 판정 기준, 계측}
+\label{sec:paired}
+\label{sec:stats}
+
+\begin{table}[!htb]
+\centering
+\caption{$2\times2$ 조건 행렬(조건 사이 차이는 두 스위치뿐)}
+\label{tab:conditions}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llp{0.34\linewidth}}
+\toprule
+조건 & 배정 $\times$ 기동 & 무엇을 측정하는가 \\
+\midrule
+\texttt{heur\_heur} & 휴리스틱 $\times$ 휴리스틱 & 기준선(baseline) \\
+\texttt{heur\_unet} & 휴리스틱 $\times$ U-Net    & 기동 계층의 순수 기여(LLM 미사용) \\
+\texttt{llm\_heur}  & LLM $\times$ 휴리스틱      & 전략 계층의 순수 기여 \\
+\texttt{llm\_unet}  & LLM $\times$ U-Net         & 제안 체계(상호작용 포함) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+휴리스틱 배정과 기동은 \ref{sec:heuristic}절의 기준 방법이며 학습 정책과 같은 행동공간을
+거치므로 네 조건은 직접 비교 가능하다(Table~\ref{tab:conditions}). 전략 계층에 세 모델을 두고
+모든 조건이 같은 시드 집합과 세 포메이션을 공유하도록 하여 720 에피소드를 수집하였다.
+
+갱신 규칙 자체를 가르기 위해, 같은 액터·관측·행동공간·보상·행동복제 초기화 위에서 갱신 규칙만
+MAPPO~\citep{yu2022mappo}로 바꾼 정책을 시드 3개로 학습하고, 같은 step 예산과 같은 프로토콜로
+평가한다(\ref{sec:res_algo}절).
+
+조건과 기준선의 시드 $k$ 지표값을 $x_k$, $y_k$, 시드 수를 $n_{\mathrm{s}}$, 대응 차이 $d_k$ 의
+표준편차를 $s_d$ 라 하면 차이의 평균과 효과크기는
+\begin{equation}
+d_k = x_k - y_k, \qquad
+\bar{d} = \frac{1}{n_{\mathrm{s}}}\sum_{k} d_k, \qquad
+\dz = \frac{\bar{d}}{s_d}
+\label{eq:paired}
+\end{equation}
+이며, $\bar{d}$ 의 95\,\% 신뢰구간은 편향 보정·가속(bias-corrected and accelerated, BCa)
+부트스트랩~\citep{efron1993bootstrap, diciccio1996bca}($B = 9999$)으로 구한다. 구간이 0을
+포함하면 기준선과 다르다고 말하지 않으며, 지표 10개의 다중비교에는 Bonferroni 보정
+구간(99.5\,\%)을 병기한다. 두 계층의 상호작용은 배정 축(H 휴리스틱, L 언어모델)과 기동
+축(H 휴리스틱, U U-Net)으로 쓴 조건 $(a, m)$ 의 지표값 $x_k^{am}$ 에서
+\begin{equation}
+\mathrm{Int}_k = \big(x_k^{\mathrm{LU}} - x_k^{\mathrm{LH}}\big)
+               - \big(x_k^{\mathrm{HU}} - x_k^{\mathrm{HH}}\big)
+\label{eq:interaction}
+\end{equation}
+의 평균과 신뢰구간을 식~\eqref{eq:paired}와 같은 절차로 구해 판정한다($>0$ 상승,
+$\approx 0$ 가산, $<0$ 상쇄).
+
+포획률은 체계 전체의 지표라 지휘관 계층의 기여를 가리므로, 계획 산출 시점에 확인 가능한 양을
+따로 계측한다: 응답 지연, 폴백률(언어모델 실패로 휴리스틱이 대체한 비율), 커버리지(활성 무리
+중 배정된 비율), churn(재계획 간 담당을 바꾼 방어정 비율), 교차 배정(방어정--담당 무리 선분이
+서로 교차하는 쌍의 수). 뒤의 세 양은 재계획에 걸쳐 평균한다.

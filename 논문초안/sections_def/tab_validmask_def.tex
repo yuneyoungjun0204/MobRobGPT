@@ -1,0 +1,32 @@
+%============================================================ 유효 마스크·픽셀 지목 설정값 (국방발표 판)
+%  §4.4.3 본문에 흩어져 있던 수치를 모은 표. 길이는 체계가 스케일 불변이므로 관측
+%  픽셀 한 변 ell 기준의 비율로 적는다(기준 인스턴스의 m 값은 시나리오 표). 본문에는 기호와 논지만 남기고 값은 전부 여기에 둔다.
+%  값 출처: boatattack_sim/env/config.py (cell_r_min/r_max, cnn_gate_r, cnn_gate_bear,
+%           cnn_valid_min, cnn_nets, cnn_dup_r, net_max_len), 유효 비율은 학습 체크포인트 실측.
+\begin{table}[htbp]
+\centering
+\caption{유효 마스크와 픽셀 지목의 설정값(\ref{sec:validmask}절)}
+\label{tab:validmask_param}
+\footnotesize
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{%
+\begin{tabular}{llr}
+\toprule
+구분 & 기호 / 항목 & 값 \\
+\midrule
+\multirow{4}{*}{유효 픽셀 조건}
+ & 요격 환형 안·바깥 반경 $r_{\min}$, $r_{\max}$ & $1.6\,\ell$ / $18\,\ell$ \\
+ & 요격점 반경 조건 $r_{\mathrm{g}}$             & $12\,\ell$ \\
+ & 무리 방위 조건 $\vartheta_{\mathrm{g}}$        & $60^\circ$ \\
+ & 유효 픽셀 수 하한                              & $150$ 칸 \\
+\midrule
+\multirow{3}{*}{픽셀 지목}
+ & 방어정 1척당 경유점 수 $K$                     & $2$ \\
+ & 두 점 간격 하한 $r_{\mathrm{dup}}$             & $0.8\,\ell$ \\
+ & 두 점 간격 상한                                & $1.5\,L_{\mathrm{net}}$ \\
+\midrule
+실측
+ & 결정당 평균 유효 비율                          & $10.5\,\%$ \\
+\bottomrule
+\end{tabular}
+}
+\end{table}

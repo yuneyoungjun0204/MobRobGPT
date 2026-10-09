@@ -1,0 +1,162 @@
+%% ★ 국방발표 판 --- 본문은 sections_def/ 의 압축판을 읽는다. 저널 투고판
+%%   (USV_swarm_defense_EAAI_KR_real.tex, sections_real/)은 손대지 않는다.
+%%   변경 없는 파일(주제어·선언문·참고문헌·tables/)은 sections_real 을 공유한다.
+%% ★ 도판은 figs_snak/real/ 을 real 판과 공유한다 --- 파일명을 바꾸면 real 판이 깨지므로
+%%   재번호하지 않고, 발표판에서 안 쓰는 번호는 건너뛴다(본문 그림 번호는 LaTeX 가 등장
+%%   순서대로 다시 매긴다). 도판은 기동 계층·체계 전체의 주장에만 둔다.
+% !TEX program = xelatex
+%==============================================================================
+%  자폭 USV 군집 방어 — EAAI 투고용 한글 원고 (full paper)
+%
+%  이 파일은 SNAK 요약본(USV_swarm_defense_paper_CNN.tex)과 **별개**다.
+%  요약본은 방법 소개가 전부이고 결과 절이 없다. 이 원고는 EAAI(Engineering
+%  Applications of Artificial Intelligence)의 관례에 맞춰 검증을 무게중심으로 둔다:
+%  관련연구·문제정의·실험설계·결과·고찰·한계가 전부 신규다.
+%
+%  조판: 2단. 큰 표(전 지표 10행×6열)와 가로로 긴 결과 도판은 table*/figure* 로
+%       양단 걸침 처리한다. 표제·초록은 twocolumn[...] 으로 양단에 낸다.
+
+%
+%  컴파일: xelatex 3회 (상호참조 해결)
+%       xelatex USV_swarm_defense_EAAI_KR.tex
+%
+%  ★ 표는 손으로 쓰지 않는다. tools/make_paper_tables.py 가 results/eval_merged/
+%    의 CSV 에서 tables/*.tex 를 굽고 여기서 \input 한다. 평가를 다시 돌리면
+%    표가 자동으로 맞는다. 표 안의 숫자를 직접 고치면 원자료와 어긋난다.
+%==============================================================================
+\documentclass[10pt,twocolumn]{article}
+
+%------------------------------------------------------------------ 용지·판면
+\usepackage[papersize={210mm,297mm}, left=20mm, right=20mm,
+            top=22mm, bottom=22mm, columnsep=7mm]{geometry}
+
+%------------------------------------------------------------------ 한글 글꼴
+\usepackage{kotex}
+\usepackage{fontspec}
+% TeX Gyre Termes 는 TeX Live 에 항상 포함된다(시스템 폰트 의존 없음).
+% 한글은 함초롬바탕 — fc-list 로 설치 확인함. 없는 PC 에서는 {Batang} 으로 바꾼다.
+\setmainfont{TeX Gyre Termes}[Ligatures=TeX]
+% ★ 함초롬 계열에는 이탤릭 자형이 없다. AutoFakeSlant 를 주지 않으면 본문의
+%   \emph{강조} 한글이 조용히 정체로 떨어진다(로그: TU/HCRBatang(0)/m/it undefined).
+%   본문에서 \emph 로 논지를 구분하므로 반드시 필요하다.
+\setmainhangulfont{HCR Batang}[AutoFakeBold=2.0, AutoFakeSlant=0.2]
+\setsanshangulfont{HCR Dotum}[AutoFakeBold=2.0, AutoFakeSlant=0.2]
+
+%------------------------------------------------------------------ 패키지
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}          % \toprule 등 — tables/*.tex 가 요구한다
+\usepackage{array}
+\usepackage{multirow}          % 지표 표의 관점 열 병합
+\usepackage{rotating}          % 부록의 전면 가로 도판(sidewaysfigure*)
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+% ── float 배치 완화 ──────────────────────────────────────────────────────
+%   twocolumn 에서 figure* 는 정의된 쪽에 못 들어가고 다음 쪽 상단으로만 간다. 양단
+%   그림이 연달아 나오면 큐가 막혀 절 끝(또는 문서 끝)까지 밀린다 — 실제로 §4 본문
+%   (5–11쪽)의 그림 11장이 21–27쪽에 떨어졌다. 아래 세 가지로 푼다.
+\usepackage{dblfloatfix}        % figure* 를 쪽 하단에도 허용 + 순서 꼬임 방지
+\renewcommand{\topfraction}{0.92}
+\renewcommand{\bottomfraction}{0.70}
+\renewcommand{\dbltopfraction}{0.92}
+\renewcommand{\textfraction}{0.05}
+\renewcommand{\floatpagefraction}{0.75}
+\renewcommand{\dblfloatpagefraction}{0.75}
+\setcounter{topnumber}{3}
+\setcounter{dbltopnumber}{3}
+\setcounter{totalnumber}{5}
+\setcounter{topnumber}{3}
+\setcounter{dbltopnumber}{3}
+\setcounter{totalnumber}{5}
+\usepackage[section]{placeins}  % 절이 바뀌면 남은 float 를 먼저 흘려보낸다
+\raggedbottom                   % 2단에서 단 바닥을 억지로 맞추느라 제목 사이 여백이 늘어나는 것을 막는다
+\usepackage{xcolor}
+\usepackage{setspace}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+%% ★ 발표판: 표 밑 주석(각 표의 minipage 블록)을 싣지 않는다. tables/*.tex 는 자동
+%%   생성물이라 손대지 않고 여기서 환경 자체를 비운다. 되살리려면 아래 두 줄을 지운다.
+%%   (이 원고의 minipage 사용처가 표 주석뿐임을 확인하고 적용하였다.)
+\usepackage{environ}
+\RenewEnviron{minipage}[1]{}
+\usepackage{enumitem}
+
+% 한글 원고이므로 abstract 환경의 표제를 한글로. (article 클래스 기본은 "Abstract".)
+\renewcommand{\abstractname}{초\;\;록}
+
+\graphicspath{{figs_snak/real/}}   % ★ real 판: 이 폴더의 fig1~fig19 만 쓴다. 옛 파일이 남으면
+                                   %   일부러 빌드가 실패하게 두었다(폴백 경로 없음).
+
+\captionsetup{font=small, labelfont=bf, skip=6pt}
+\captionsetup[table]{position=above}
+\setstretch{1.06}
+\setlength{\parskip}{2pt}
+
+% 본문에서 반복되는 표기
+\newcommand{\capr}{\mathrm{CR}}                     % 포획률
+\newcommand{\dz}{d_z}
+% \ensuremath 로 감싸 본문·수식 어디서나 쓸 수 있게 한다. 감싸지 않으면 본문에서
+% "\mathrm allowed only in math mode" 로 컴파일이 깨진다.
+% 자동 생성 표(tables/*.tex)는 투고판과 공유하므로 손대지 않는다. 발표판은 캡션만
+% 짧은 명사구로 덮어써서 읽는다 --- 표를 다시 구워도 이 캡션은 유지된다.
+\newcommand{\shortcaptext}{}
+\newcommand{\inputshortcap}[2]{%
+  \begingroup
+  \renewcommand{\shortcaptext}{#1}%
+  \let\origcaption\caption
+  \renewcommand{\caption}[1]{\origcaption{\shortcaptext}}%
+  \input{#2}%
+  \endgroup}
+
+\newcommand{\unit}[1]{\ensuremath{\,\mathrm{#1}}}
+
+%==============================================================================
+
+% 단 폭(≈232pt)보다 긴 식은 TeX 가 번호를 다음 줄로 내린다. 그런 식만 글자 크기를 한 단계
+% (\small, 0.9배) 또는 두 단계(\footnotesize, 0.8배) 줄여 번호가 같은 줄에 남게 한다.
+% 어느 식이 밀리는지는 scratchpad/eqcheck.py 로 전수 측정했다(2026-09-16).
+\newenvironment{equationsmall}{\small\begin{equation}}{\end{equation}}
+\newenvironment{equationfn}{\footnotesize\begin{equation}}{\end{equation}}
+
+\begin{document}
+
+\title{\bfseries 군집 자폭 수상 드론 방어를 위한\\
+LLM 기반 지휘체계와 U-Net 점수맵 기반\\
+다중 에이전트 협력 강화학습}
+
+\author{윤영준\thanks{충남대학교} \and 방현태\footnotemark[1] \and
+        전유라\thanks{한국과학기술원} \and 김덕환\footnotemark[2] \and
+        윤원근\footnotemark[1]}
+\date{}
+% 2단 조판에서 표제·초록은 양단 걸침으로 낸다. 좁은 단에 초록이 들어가면
+% 문단이 잘게 쪼개져 읽히지 않는다.
+\twocolumn[\begin{@twocolumnfalse}
+\maketitle
+\input{sections_def/00_abstract}
+\input{sections_real/00d_keywords_legacy}
+%% 하이라이트는 넣지 않는다 --- Elsevier 전용 요소이고, 이 자작 2단 조판본은
+%% 국내 논문 형식의 기준 원고다. EAAI 투고본(USV_swarm_defense_EAAI.tex)에는
+%% elsarticle 의 highlights 환경으로 들어가고, 별도 제출 파일은
+%% tools/make_highlights.py 가 논문초안/highlights.{txt,tex} 로 뽑는다.
+\vspace{8pt}
+\end{@twocolumnfalse}]
+\input{sections_def/01_intro}
+\input{sections_def/02_related}
+\input{sections_def/03_problem}
+% 기호표(Table, tab:nomenclature): §4.1 첫 문단이 참조한다. 2단 table* 는 선언된 쪽에
+% 놓일 수 없어 §4 안에서 선언하면 한 쪽 뒤로 밀리므로, §3 끝(앞 쪽 본문)에서 선언해
+% §4 가 시작하는 쪽 하단([!b])에 앉힌다.
+%% 기호표는 발표판에서 싣지 않는다 --- 각 기호를 본문 첫 등장 자리에서 정의한다.
+%% \input{sections_def/04a_notation_table}
+\input{sections_def/04_method}
+\input{sections_def/05_experiment}
+\input{sections_def/06_results}
+\input{sections_def/07_discussion}
+\input{sections_def/10_declarations}
+\input{sections_def/refs}
+% 영문 초록은 국내 논문 관례대로 맨 뒤.
+% 2026-09-16 제외 --- 국문 원고 끝의 영문 초록은 싣지 않는다(영문판은 00b 파일에 보존).
+% \input{sections_real/00b_abstract_en}
+
+\end{document}
