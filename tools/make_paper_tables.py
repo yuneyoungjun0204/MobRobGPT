@@ -28,9 +28,9 @@ import boatattack_sim.eval.stats as S  # noqa: E402
 #: 본문에서 쓰는 지휘관. 능력 순서 고정 — 표의 행 순서가 곧 주장의 순서다.
 MODELS = ("qwen2.5-7b", "qwen2.5-14b", "gemini-3.5-flash-lite")
 MODEL_KO = {
-    "qwen2.5-7b": "Qwen2.5 7B (로컬)",
-    "qwen2.5-14b": "Qwen2.5 14B (로컬)",
-    "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite (클라우드)",
+    "qwen2.5-7b": "Qwen2.5 7B",
+    "qwen2.5-14b": "Qwen2.5 14B",
+    "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite",
 }
 COND_KO = {
     "heur_heur": "휴리스틱 배정 + 휴리스틱 기동 (baseline)",
@@ -81,7 +81,8 @@ def _sig_bonf(x, b) -> str:
 
 
 def _wrap(body: str, caption: str, label: str, colspec: str, header: str,
-          note: str = "", wide: bool = False, tight: bool = False) -> str:
+          note: str = "", wide: bool = False, tight: bool = False,
+          placement: str = "t") -> str:
     """표 조각 하나. `wide=True` 면 table* (2단 조판에서 양단 걸침).
 
     ★ 본문이 2단이므로 열이 많은 표는 좁은 단에 안 들어간다. 이 선택을 여기 두는 이유:
@@ -102,7 +103,7 @@ def _wrap(body: str, caption: str, label: str, colspec: str, header: str,
          + note + "\n\\end{minipage}\n") if note else ""
     return (
         "% 자동 생성 — tools/make_paper_tables.py. 손으로 고치지 말 것.\n"
-        f"\\begin{{{env}}}[t]\n\\centering\n"
+        f"\\begin{{{env}}}[{placement}]\n\\centering\n"
         f"\\caption{{{caption}}}\n\\label{{{label}}}\n"
         "\\footnotesize\n"
         f"{tc}{fit_a}"
@@ -113,27 +114,25 @@ def _wrap(body: str, caption: str, label: str, colspec: str, header: str,
 
 
 # ── 표 0: 시나리오 파라미터 (체크포인트 config 에서 직접) ───────────────────
-#: (config 키, 한국어 이름, 단위, 포맷). None 키는 파생값 — 아래에서 따로 계산한다.
-SCENARIO = (
-    ("n_enemies",   "적 USV 수 $M$",            "척",   "{:.0f}"),
-    ("n_allies",    "방어정 수 $P$",            "척",   "{:.0f}"),
-    ("enemy_speed", "적 속력",                  "m/s",  "{:.1f}"),
-    ("ally_speed",  "방어정 속력",              "m/s",  "{:.1f}"),
-    ("world_size",  "교전 해역 한 변",          "m",    "{:.0f}"),
-    ("net_max_len", "그물벽 최대 길이",         "m",    "{:.0f}"),
-    ("cnn_extent",  "관측 격자 반폭",           "m",    "{:.0f}"),
-    ("cnn_grid_n",  "관측 격자 해상도",         "칸",   "{:.0f}"),
+#: 개수형 항목 (config 키, 한국어 이름, 포맷). 길이·속력은 아래에서 픽셀 단위로 파생한다.
+SCENARIO_COUNTS = (
+    ("n_enemies",   "적 USV 수 $M$",        "{:.0f}"),
+    ("n_allies",    "방어정 수 $P$",        "{:.0f}"),
     # ★ 무리 수는 $C$ 다. $K$ 는 경유점 수(식 2·3), $G$ 는 학습의 그룹 후보 수 —
     #   boatattack_sim/eval/paper_names.py 머리말과 본문 기호표(tab:nomenclature) 참조.
-    ("n_clusters",  "적 무리 최대 수 $C$",      "개",   "{:.0f}"),
+    ("n_clusters",  "적 무리 최대 수 $C$",  "{:.0f}"),
 )
 
 
 def tab_scenario(ckpt_path, out, nets_eval=3):
-    """시나리오 표를 **학습 체크포인트 config 에서 직접** 굽는다.
+    """시나리오 표를 **학습 체크포인트 config 에서 직접**, **격자 단위**로 굽는다.
 
     왜 손으로 안 쓰는가: 초안에는 그물벽 길이가 150 m 로 적혀 있었으나 실제 config 는
     450 m 였다(3배 오차). 이런 상수는 한 번 잘못 적히면 아무도 다시 확인하지 않는다.
+
+    ★ 왜 격자 단위인가: 관측·행동·보상이 모두 픽셀 한 변 ℓ = 2E/n_g 로 정규화되므로
+      (§4.1 불변성) 시나리오를 결정하는 것은 m 값이 아니라 ℓ 에 대한 비율이다. 표에는
+      비율만 적고, 물리 척도(ℓ, 결정 주기)는 각주에 기준 인스턴스로 한 번만 적는다.
 
     ★ nets_per_ship 주의 — 학습 config 는 1 이지만 평가·배포는 3 이다. 정책은 결정마다
       그물벽 '하나'(픽셀 2개 → 선분 1개)를 놓으므로 결정당 행동공간이 보유량과 무관하고,
@@ -143,26 +142,37 @@ def tab_scenario(ckpt_path, out, nets_eval=3):
     ck = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     cfg = ck["config"]
     d = cfg if isinstance(cfg, dict) else vars(cfg)
+    n_g = int(d["cnn_grid_n"])
+    px = 2.0 * float(d["cnn_extent"]) / n_g                     # ℓ [m]
+    period_s = float(d["decision_period"]) * float(d.get("dt", 1.0))
+    v_e, v_a = float(d["enemy_speed"]), float(d["ally_speed"])
+    arena_px = float(d["world_size"]) / px
     rows = []
-    for key, ko, unit, fmt in SCENARIO:
-        if key not in d:
-            continue
-        rows.append(f"{ko} & {fmt.format(float(d[key]))} & {unit} \\\\\n")
-    px = 2.0 * float(d["cnn_extent"]) / float(d["cnn_grid_n"])
-    rows.append(f"관측 픽셀 한 변 & {px:.0f} & m \\\\\n")
-    rows.append(f"방어정당 그물 (학습 / 평가) & {int(d['nets_per_ship'])} / {nets_eval} & 장 \\\\\n")
+    for key, ko, fmt in SCENARIO_COUNTS:
+        rows.append(f"{ko} & {fmt.format(float(d[key]))} \\\\\n")
+    rows.append(f"관측 격자 $n_{{\\mathrm{{g}}}} \\times n_{{\\mathrm{{g}}}}$ (모선 중심) & ${n_g} \\times {n_g}$ \\\\\n")
+    rows.append(f"교전 해역 한 변 & ${arena_px:.0f}\\,\\ell$ \\\\\n")
+    rows.append(f"속력비 $v_e / v_a$ & {v_e / v_a:.1f} \\\\\n")
+    rows.append(f"결정 주기당 이동거리 (적 / 방어정) & ${v_e * period_s / px:.2f}\\,\\ell$ / ${v_a * period_s / px:.2f}\\,\\ell$ \\\\\n")
+    rows.append(f"그물벽 최대 길이 $L_{{\\mathrm{{net}}}}$ & ${float(d['net_max_len']) / px:.1f}\\,\\ell$ \\\\\n")
+    rows.append(f"방어정당 그물 (학습 / 평가) & {int(d['nets_per_ship'])} / {nets_eval} \\\\\n")
     n_par = sum(v.numel() for v in ck["model"].values() if hasattr(v, "numel"))
-    rows.append(f"정책 파라미터 수 & {n_par:,} & 개 \\\\\n")
+    rows.append(f"정책 파라미터 수 & {n_par:,} \\\\\n")
 
     tex = _wrap(
         "".join(rows),
-        "교전 시나리오와 관측 설정. 값은 학습 체크포인트의 설정에서 직접 읽었다.",
-        "tab:scenario", "lrl",
-        "항목 & 값 & 단위 \\\\",
-        "방어정 속력이 적 속력보다 낮다 --- 추격이 성립하지 않으므로 접근 회랑의 선제 "
-        "차단이 유일한 대응이다. 그물 보유량은 학습 시 1장, 평가·배포 시 3장이다: "
+        "교전 시나리오와 관측 설정 (길이는 관측 픽셀 한 변 $\\ell$ 단위)",
+        "tab:scenario", "lr",
+        "항목 & 값 \\\\",
+        "관측·행동·보상이 모두 픽셀 한 변 $\\ell = 2E/n_{\\mathrm{g}}$ 로 정규화되므로"
+        "(\\S\\ref{sec:obs}) 시나리오는 위의 비율로 정해지고, 물리 척도는 $\\ell$ 과 결정 "
+        f"주기 두 값이 준다. 본 실험의 기준 인스턴스는 $\\ell = {px:.0f}\\unit{{m}}$, 결정 주기 "
+        f"{period_s:.0f}\\,s 이며 본문의 m 값은 이 인스턴스 기준이다. 값은 학습 체크포인트의 "
+        "설정에서 직접 읽었다. 방어정이 적보다 느려 추격이 성립하지 않으므로 접근 회랑의 "
+        "선제 차단이 유일한 대응이다. 그물 보유량은 학습 시 1장, 평가·배포 시 3장이다: "
         "정책은 결정마다 그물벽 하나를 놓으므로 결정당 행동공간이 보유량과 무관하고, "
-        "1장으로 학습한 정책이 재학습 없이 3장 설정에서 동작한다.")
+        "1장으로 학습한 정책이 재학습 없이 3장 설정에서 동작한다.",
+        placement="htbp")
     _write(out, "tab_scenario.tex", tex)
 
 
@@ -178,7 +188,7 @@ def tab_main(df, out):
         #   각 칸을 따로 이스케이프해 돌려준다.
         line = f"{_cond_cols(c)} & {m.mean:.3f} [{m.lo:.3f}, {m.hi:.3f}]"
         if c == "heur_heur":
-            line += " & --- & --- \\\\\n"
+            line += " & -- & -- \\\\\n"
         else:
             d = S.paired_diff(v, base)
             line += (f" & {d.mean:+.3f} [{d.lo:+.3f}, {d.hi:+.3f}]{_sig(d)}"
@@ -192,7 +202,7 @@ def tab_main(df, out):
         "tab:main", "llccc",
         "지휘관(배정) & 기동 & 포획률 [95\\,\\% CI] & $\\Delta$ vs baseline & $d_z$ \\\\",
         "$^{*}$ 신뢰구간이 0 을 포함하지 않음. $d_z$ 는 대응표본 효과크기. "
-        "첫 두 열이 $2\\times2$ 설계의 두 축이다 --- 같은 지휘관 행 두 개를 비교하면 "
+        "첫 두 열이 $2\\times2$ 설계의 두 축이다. 같은 지휘관 행 두 개를 비교하면 "
         "기동 계층의 기여가, 같은 기동 열을 비교하면 지휘관의 기여가 나온다. "
         "Qwen2.5 는 로컬(단일 RTX 4070) 서빙, Gemini 는 클라우드 API 다.",
         wide=True, tight=True)
@@ -228,8 +238,8 @@ def tab_effectsize(df, out, treatment="llm_unet@gemini-3.5-flash-lite"):
         "지표 & 방향 & baseline & 제안 & $\\Delta$ & $d_z$ \\\\",
         "방향 $\\uparrow$ = 높을수록 좋음, $\\downarrow$ = 낮을수록 좋음. "
         "$^{*}$ 95\\,\\% 신뢰구간이 0 을 포함하지 않음. "
-        "$^{\\dagger}$ 지표 10개에 대한 Bonferroni 보정(99.5\\,\\% 구간)에서도 0 을 배제함 "
-        "--- 즉 단검이 없는 행은 보정을 견디지 못한다.",
+        "$^{\\dagger}$ 지표 10개에 대한 Bonferroni 보정(99.5\\,\\% 구간)에서도 0 을 배제함"
+        "(단검이 없는 행은 보정을 견디지 못한다).",
         wide=True)
     _write(out, "tab_effectsize.tex", tex)
 
@@ -249,7 +259,7 @@ def tab_ceiling(df, out, treatment="llm_unet@gemini-3.5-flash-lite"):
     tex = _wrap(
         "".join(rows),
         "포메이션별 천장 효과. 집중 포메이션은 baseline 이 이미 0.997 이라 "
-        "개선 여지가 0.003 뿐이다 --- 이 포메이션 단독으로 결론을 내면 안 된다.",
+        "개선 여지가 0.003 뿐이므로 이 포메이션 단독으로 결론을 내면 안 된다.",
         "tab:ceiling", "lcccc",
         "포메이션 & baseline & 남은 여유 & 제안 & $\\Delta$ \\\\",
         "$^{*}$ 신뢰구간이 0 을 포함하지 않음.")
@@ -279,8 +289,7 @@ def tab_maneuver(df, out):
     tex = _wrap(
         "".join(rows),
         "기동 계층(U-Net 점수맵 + GRPO)의 단독 기여. 두 조건 모두 배정은 휴리스틱이며 "
-        "\\textbf{LLM 을 전혀 사용하지 않는다} --- 따라서 이 결과는 외부 API 에 의존하지 "
-        "않고 재현 가능하다. 파상 포메이션에서 가장 크다.",
+        "\\textbf{LLM 을 전혀 사용하지 않는다}. 기여는 파상 포메이션에서 가장 크다.",
         "tab:maneuver", "lcccc",
         "포메이션 & 휴리스틱 기동 & U-Net 기동 & $\\Delta$ [95\\,\\% CI] & $d_z$ \\\\",
         "$^{*}$ 신뢰구간이 0 을 포함하지 않음. 전체 행은 3개 포메이션 통합.",
@@ -300,18 +309,21 @@ def tab_interaction(df, out, backend="gemini-3.5-flash-lite"):
         additive = not (i.lo > 0 or i.hi < 0)
         n_tot += 1
         n_add += int(additive)
-        verdict = "가산" if additive else ("상승" if i.mean > 0 else "상쇄")
+        # ★ '판정' 열(가산/상쇄)은 두지 않는다 --- 바로 왼쪽 신뢰구간이 말하는 바의
+        #   반복이고, 10행 중 9행이 같은 글자라 정보가 없다. 유의한 행만 표식으로 세운다.
+        mark = "" if additive else "$^{*}$"
         rows.append(f"{_esc(ko)} & {t.mean:+.{nd}f} & "
-                    f"{i.mean:+.{nd}f} [{i.lo:+.{nd}f}, {i.hi:+.{nd}f}] & {verdict} \\\\\n")
+                    f"{i.mean:+.{nd}f} [{i.lo:+.{nd}f}, {i.hi:+.{nd}f}]{mark} \\\\\n")
     tex = _wrap(
         "".join(rows),
         "2$\\times$2 상호작용 분해 (Gemini 지휘관). "
-        f"{n_tot}개 지표 중 \\textbf{{{n_add}개}}에서 상호작용 신뢰구간이 0 을 포함한다 "
-        "--- 두 계층의 기여는 \\textbf{가산적}이다.",
-        "tab:interaction", "lccc",
-        "지표 & 총효과 & 상호작용 [95\\,\\% CI] & 판정 \\\\",
+        f"{n_tot}개 지표 중 \\textbf{{{n_add}개}}에서 상호작용이 유의하지 않으므로 "
+        "두 계층의 기여는 \\textbf{가산적}이다.",
+        "tab:interaction", "lcc",
+        "지표 & 총효과 & 상호작용 [95\\,\\% CI] \\\\",
         "상호작용 $=$ (LLM+U-Net $-$ LLM+휴리스틱) $-$ (휴리스틱+U-Net $-$ baseline). "
-        "신뢰구간이 0 을 포함하면 두 계층이 서로를 돕지도 잡아먹지도 않는다.",
+        "표식 $^{*}$ 은 유의한 상호작용이며, 나머지는 두 계층이 서로를 돕지도 잡아먹지도 "
+        "않는다는 뜻이다.",
         wide=True)
     _write(out, "tab_interaction.tex", tex)
 
@@ -320,7 +332,7 @@ def tab_interaction(df, out, backend="gemini-3.5-flash-lite"):
 def tab_planquality(df, llm_df, out):
     col = "model" if "model" in llm_df.columns else "backend"
     piv = S.pivot_by_seed(df, "capture_rate")
-    rows = []
+    rows, fb = [], []
     for m in MODELS:
         g = llm_df[llm_df[col].astype(str) == m]
         if g.empty:
@@ -329,20 +341,26 @@ def tab_planquality(df, llm_df, out):
             return g[k].astype(float).dropna().mean() if k in g.columns else np.nan
         key = f"llm_heur@{m}"
         cap = piv[key].dropna().mean() if key in piv.columns else np.nan
-        rows.append(f"{MODEL_KO.get(m, m)} & {mv('latency_s'):.2f} & "
+        # ★ 열은 §6.2.3 의 논증에 쓰이는 것만 둔다. 폴백률은 세 모델 모두 0 에 가까워
+        #   변별력이 없으므로 각주의 한 문장으로 옮겼고, 응답 지연은 tab:latency_tail 이
+        #   분포까지 준다.
+        rows.append(f"{MODEL_KO.get(m, m)} & "
                     f"{mv('coverage'):.3f} & {mv('churn'):.3f} & "
-                    f"{mv('crossings'):.3f} & {mv('fallback'):.3f} & {cap:.3f} \\\\\n")
+                    f"{mv('crossings'):.3f} & {cap:.3f} \\\\\n")
+        fb.append(mv('fallback'))
     tex = _wrap(
         "".join(rows),
         "지휘관 계획 품질과 성능. 계획 품질은 시뮬레이션 결과와 독립적으로, "
         "계획이 산출된 시점에 측정한다. \\textbf{7B 는 커버리지가 가장 높은데 "
-        "포획률은 가장 낮다} --- 실패 원인은 미배정이 아니다.",
-        "tab:planquality", "lcccccc",
-        "지휘관 & 지연 (s) & 커버리지 $\\uparrow$ & churn $\\downarrow$ & "
-        "교차 $\\downarrow$ & 폴백 $\\downarrow$ & 포획률 $\\uparrow$ \\\\",
+        "포획률은 가장 낮다}. 실패 원인은 미배정이 아니다.",
+        "tab:planquality", "lcccc",
+        "지휘관 & 커버리지 $\\uparrow$ & churn $\\downarrow$ & "
+        "교차 $\\downarrow$ & 포획률 $\\uparrow$ \\\\",
         "커버리지 $=$ 배정된 활성 클러스터 비율. churn $=$ 재계획 간 담당이 바뀐 배의 비율. "
         "교차 $=$ 두 방어정의 요격 경로가 교차한 비율. 포획률은 기동 계층을 "
-        "휴리스틱으로 고정한 조건(LLM 지휘관 + 휴리스틱 기동)의 값이다.",
+        "휴리스틱으로 고정한 조건(LLM 지휘관 + 휴리스틱 기동)의 값이다. "
+        f"세 모델 모두 언어모델 호출이 실패해 휴리스틱이 대신 배정한 비율은 "
+        f"{max(fb):.3f} 이하였으므로, 배정은 사실상 전부 언어모델이 낸 것이다.",
         wide=True, tight=True)
     _write(out, "tab_planquality.tex", tex)
 
@@ -363,7 +381,7 @@ def _cond_cols(c: str) -> str:
 def _cond_ko(c: str) -> str:
     base, _, tag = c.partition("@")
     ko = COND_KO.get(base, base)
-    return f"{ko} --- {MODEL_KO.get(tag, tag)}" if tag else ko
+    return f"{ko}({MODEL_KO.get(tag, tag)})" if tag else ko
 
 
 def _conds_ordered(df):

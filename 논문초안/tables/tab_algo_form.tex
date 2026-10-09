@@ -1,0 +1,23 @@
+% 자동 생성 — tools/make_paper_tables.py. 손으로 고치지 말 것.
+\begin{table}[t]
+\centering
+\caption{포메이션별 포획률 --- 휴리스틱 기동 대비 MAPPO·GRPO 의 시드 대응 차이(괄호).}
+\label{tab:algo_form}
+\footnotesize
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{%
+\begin{tabular}{lccc}
+\toprule
+포메이션 & 휴리스틱 & MAPPO & GRPO(채택) \\
+\midrule
+집중 & 0.997 & 0.991 (-0.006) & 0.997 (+0.000) \\
+양동 & 0.787 & 0.730 (-0.057$^{*}$) & 0.753 (-0.033) \\
+파상 & 0.750 & 0.857 (+0.107$^{*}$) & 0.907 (+0.157$^{*}$) \\
+\textbf{전체} & 0.844 & 0.859 (+0.015) & 0.886 (+0.041$^{*}$) \\
+\bottomrule
+\end{tabular}
+}
+\\[3pt]
+\begin{minipage}{\linewidth}\footnotesize
+$^{*}$ 휴리스틱 대비 95\,\% 구간이 0 을 배제.
+\end{minipage}
+\end{table}

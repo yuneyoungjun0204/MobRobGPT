@@ -1,0 +1,29 @@
+% 자동 생성 — tools/make_paper_tables.py. 손으로 고치지 말 것.
+\begin{table*}[t]
+\centering
+\caption{같은 픽셀 행동공간 위의 학습 알고리즘 비교. 배정은 모두 휴리스틱이며 기동 정책의 액터·보상·초기화·환경 step 예산이 같고 갱신 규칙만 다르다. MAPPO 는 학습 시드 3런의 에피소드별 평균, $\Delta$ 는 GRPO $-$ MAPPO 의 시드 대응 차이.}
+\label{tab:algo}
+\footnotesize
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+지표 & 휴리스틱 & MAPPO & GRPO(채택) & $\Delta$ [95\,\% CI] & $d_z$ \\
+\midrule
+포획률 $\uparrow$ & 0.844 & 0.859 & 0.886 & +0.026 [-0.003, +0.056] & +0.31 \\
+돌파 수 $\downarrow$ & 1.56 & 1.41 & 1.14 & -0.26 [-0.57, +0.03] & -0.31 \\
+충돌률(척당) $\downarrow$ & 0.130 & 0.138 & 0.119 & -0.020 [-0.047, +0.004] & -0.27 \\
+그물 걸림 $\downarrow$ & 0.82 & 0.70 & 0.62 & -0.08 [-0.23, +0.05] & -0.20 \\
+포획당 그물 $\downarrow$ & 0.737 & 0.733 & 0.568 & -0.165 [-0.213, -0.116]$^{*}$$^{\dagger}$ & -1.19 \\
+포획당 이동거리 (m) $\downarrow$ & 825 & 813 & 896 & +82 [+40, +139]$^{*}$$^{\dagger}$ & +0.59 \\
+총 선회량 (rad) $\downarrow$ & 1625 & 1541 & 1464 & -77 [-158, +17] & -0.31 \\
+포획 이격거리 (m) $\uparrow$ & 1511 & 1523 & 1678 & +154 [+112, +202]$^{*}$$^{\dagger}$ & +1.21 \\
+평균 포획 시각 (step) $\downarrow$ & 430 & 430 & 418 & -12 [-19, -5]$^{*}$$^{\dagger}$ & -0.58 \\
+전개 시 적 거리 (m) $\downarrow$ & 1499 & 1525 & 1425 & -100 [-154, -51]$^{*}$$^{\dagger}$ & -0.68 \\
+\bottomrule
+\end{tabular}
+}
+\\[3pt]
+\begin{minipage}{\linewidth}\footnotesize
+$^{*}$ 95\,\% 구간이 0 을 배제. $^{\dagger}$ Bonferroni 보정(99.5\,\%)에서도 배제. MAPPO 런별 포획률 0.876, 0.838, 0.864. 3개 포메이션 통합(각 조건 30시드).
+\end{minipage}
+\end{table*}

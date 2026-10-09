@@ -30,6 +30,7 @@
 """
 from __future__ import annotations
 
+import glob
 import os
 
 import matplotlib
@@ -934,6 +935,36 @@ def radar_profile(df, *, formation: str = "ALL") -> "pd.DataFrame":
     return (signed - lo) / span
 
 
+def _radar_axes(ax, keys, ang):
+    """폴라 축 공통 스타일 --- 북쪽 시작·시계 방향, 0--1 눈금, 영문 축 라벨."""
+    ax.set_theta_zero_location("N")
+    ax.set_theta_direction(-1)
+    ax.set_ylim(0, 1)
+    ax.set_rgrids([0.25, 0.5, 0.75, 1.0], labels=["", "0.5", "", "1"], angle=18,
+                  fontsize=5.5, color="#8A8A8A")
+    ax.set_thetagrids(np.degrees(ang), [RADAR_LABEL[k] for k in keys], fontsize=5.8)
+    ax.tick_params(axis="x", pad=3)
+    # 긴 라벨이 원 테두리를 물지 않도록 오른쪽 반원은 왼끝, 왼쪽 반원은 오른끝을 축에 맞춘다.
+    for a, lab in zip(ang, ax.get_xticklabels()):
+        deg = np.degrees(a) % 360
+        lab.set_ha("center" if deg in (0.0, 180.0) else ("left" if deg < 180 else "right"))
+    ax.grid(color=_GRID, linewidth=0.45)
+    ax.spines["polar"].set_color(_GRID)
+    ax.spines["polar"].set_linewidth(0.6)
+
+
+def _radar_draw(ax, prof, keys, ang, conds, style):
+    """조건별 닫힌 다각형 + 채움 + 꼭짓점."""
+    ang_c = np.concatenate([ang, ang[:1]])
+    for c in conds:
+        col, lab = style[c]
+        v = prof.loc[c, keys].to_numpy(dtype=float)
+        v_c = np.concatenate([v, v[:1]])
+        ax.plot(ang_c, v_c, color=col, linewidth=1.3, zorder=3, label=lab)
+        ax.fill(ang_c, v_c, color=col, alpha=0.16, zorder=2)
+        ax.scatter(ang, v, s=9, color=col, edgecolor="white", linewidth=0.4, zorder=4)
+
+
 def fig_radar_maneuver(df, *, conds=("heur_heur", "heur_unet"), figsize=None):
     """2x2 레이다: (a) 전체 (b) 집중 (c) 양동 (d) 파상. 각 패널에 휴리스틱·U-Net 두 다각형.
 
@@ -945,7 +976,6 @@ def fig_radar_maneuver(df, *, conds=("heur_heur", "heur_unet"), figsize=None):
     keys = [k for k, _ko, _lb, _nd in PN.METRICS]
     n = len(keys)
     ang = np.linspace(0, 2 * np.pi, n, endpoint=False)
-    ang_c = np.concatenate([ang, ang[:1]])
     style = {"heur_heur": (OI["grey"], "Heuristic maneuver"),
              "heur_unet": (OI["blue"], "U-Net score-map maneuver")}
 
@@ -955,32 +985,93 @@ def fig_radar_maneuver(df, *, conds=("heur_heur", "heur_unet"), figsize=None):
     for ax, letter, form in zip(axs.ravel(), "abcd", RADAR_FORMS):
         prof = radar_profile(df, formation=form)
         profiles[form] = prof
-        ax.set_theta_zero_location("N")
-        ax.set_theta_direction(-1)
-        ax.set_ylim(0, 1)
-        ax.set_rgrids([0.25, 0.5, 0.75, 1.0], labels=["", "0.5", "", "1"], angle=18,
-                      fontsize=5.5, color="#8A8A8A")
-        ax.set_thetagrids(np.degrees(ang), [RADAR_LABEL[k] for k in keys], fontsize=5.8)
-        ax.tick_params(axis="x", pad=3)
-        # 긴 라벨이 원 테두리를 물지 않도록 오른쪽 반원은 왼끝, 왼쪽 반원은 오른끝을 축에 맞춘다.
-        for a, lab in zip(ang, ax.get_xticklabels()):
-            deg = np.degrees(a) % 360
-            lab.set_ha("center" if deg in (0.0, 180.0) else ("left" if deg < 180 else "right"))
-        ax.grid(color=_GRID, linewidth=0.45)
-        ax.spines["polar"].set_color(_GRID)
-        ax.spines["polar"].set_linewidth(0.6)
-        for c in conds:
-            col, lab = style[c]
-            v = prof.loc[c, keys].to_numpy(dtype=float)
-            v_c = np.concatenate([v, v[:1]])
-            ax.plot(ang_c, v_c, color=col, linewidth=1.3, zorder=3, label=lab)
-            ax.fill(ang_c, v_c, color=col, alpha=0.16, zorder=2)
-            ax.scatter(ang, v, s=9, color=col, edgecolor="white", linewidth=0.4, zorder=4)
+        _radar_axes(ax, keys, ang)
+        _radar_draw(ax, prof, keys, ang, conds, style)
         _panel_label(ax, letter, dx=-0.22, dy=1.06)
     h, l = axs[0, 0].get_legend_handles_labels()
     fig.legend(h, l, loc="lower center", ncol=2, bbox_to_anchor=(0.5, 0.0), frameon=False,
                fontsize=7)
     return fig, profiles
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# P10. 학습 알고리즘 비교 --- 같은 픽셀 행동공간 위의 GRPO 대 MAPPO
+# ════════════════════════════════════════════════════════════════════════════
+#: 업데이트 1회가 소비하는 환경 step. GRPO 는 후보 G개 × 반사실 창 + 실제 결정 1회,
+#  MAPPO 는 롤아웃 T 결정 × 결정 주기. 학습 곡선의 가로축을 이 단위로 맞춘다.
+GRPO_STEPS_PER_UPDATE = 24 * (8 * 180 + 25)      # 챔피언 run_20260819-203248
+MAPPO_STEPS_PER_UPDATE = 24 * 32 * 25
+ALGO_STYLE = {"heur_heur": (OI["grey"], "Heuristic maneuver"),
+              "heur_mappo": (OI["vermil"], "MAPPO (same action space)"),
+              "heur_unet": (OI["blue"], "GRPO (adopted)")}
+
+
+def _evals(run_dir: str):
+    import pandas as pd
+    return pd.read_csv(os.path.join(run_dir, "evals.csv"))
+
+
+def fig_algo_compare(df, grpo_run: str, mappo_runs, *, figsize=None, learning_curve=False):
+    """10 지표 프로파일 3다각형(휴리스틱·MAPPO·GRPO). 논문판은 레이다 1단 그림.
+
+    learning_curve=True 면 (a) greedy 평가 포획률 학습 곡선(가로축 환경 step)을 왼쪽에 붙인
+    2단 그림이 된다 --- 두 알고리즘의 greedy 포획률이 갈리지 않아 본문에서는 뺐다(2026-09-17).
+    df 는 본 평가 8조건 + heur_mappo 행이 합쳐진 프레임(정규화 기준을 Fig. 레이다와 같게).
+    """
+    use_paper_style()
+    keys = [k for k, _ko, _lb, _nd in PN.METRICS]
+    ang = np.linspace(0, 2 * np.pi, len(keys), endpoint=False)
+    prof = radar_profile(df, formation="ALL")
+    if not learning_curve:
+        if figsize is None:
+            figsize = (W1, W1 * 1.02)
+        fig = plt.figure(figsize=figsize)
+        axr = fig.add_subplot(1, 1, 1, projection="polar")
+        fig.subplots_adjust(left=0.14, right=0.86, top=0.90, bottom=0.17)
+        legend_kw = dict(fontsize=6.0, columnspacing=1.0, handlelength=1.6)
+    else:
+        if figsize is None:
+            figsize = (W2, W2 * 0.50)
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(1, 2, width_ratios=[1.15, 1.0], left=0.09, right=0.93,
+                              top=0.90, bottom=0.24, wspace=0.55)
+        ax = fig.add_subplot(gs[0, 0])
+        axr = fig.add_subplot(gs[0, 1], projection="polar")
+        _plot_algo_curve(ax, grpo_run, mappo_runs)
+        _panel_label(ax, "a", dx=-0.16, dy=1.02)
+        _panel_label(axr, "b", dx=-0.28, dy=1.06)
+        legend_kw = dict(fontsize=6.5)
+
+    _radar_axes(axr, keys, ang)
+    _radar_draw(axr, prof, keys, ang, ("heur_heur", "heur_mappo", "heur_unet"), ALGO_STYLE)
+    h, l = axr.get_legend_handles_labels()
+    fig.legend(h, l, loc="lower center", ncol=3, bbox_to_anchor=(0.5, 0.0), frameon=False,
+               **legend_kw)
+    return fig, prof
+
+
+def _plot_algo_curve(ax, grpo_run: str, mappo_runs):
+    """greedy 평가 포획률 학습 곡선(가로축 환경 step): GRPO 채택 런 + MAPPO 시드 범위."""
+    g = _evals(grpo_run)
+    xg = g["upd"].to_numpy() * GRPO_STEPS_PER_UPDATE / 1e6
+    ax.plot(xg, g["eval_cap"], color=OI["blue"], marker="o", ms=3.2, lw=1.2,
+            label=ALGO_STYLE["heur_unet"][1], zorder=4)
+    k_best = int(g["eval_cap"].idxmax())
+    ax.scatter([xg[k_best]], [g["eval_cap"].iloc[k_best]], marker="*", s=70, color=OI["blue"],
+               edgecolor="white", linewidth=0.5, zorder=5)
+    ms = [_evals(r) for r in mappo_runs]
+    upd = ms[0]["upd"].to_numpy()
+    ys = np.stack([m.set_index("upd").loc[upd, "eval_cap"].to_numpy() for m in ms])
+    xm = upd * MAPPO_STEPS_PER_UPDATE / 1e6
+    ax.fill_between(xm, ys.min(0), ys.max(0), color=OI["vermil"], alpha=0.18, lw=0, zorder=2)
+    ax.plot(xm, ys.mean(0), color=OI["vermil"], marker="s", ms=2.8, lw=1.2,
+            label=ALGO_STYLE["heur_mappo"][1], zorder=3)
+    base = float(g["baseline"].dropna().iloc[0]) if "baseline" in g else None
+    if base is not None:
+        ax.axhline(base, color=OI["grey"], ls="--", lw=0.9, label=ALGO_STYLE["heur_heur"][1], zorder=1)
+    ax.set_xlabel("Environment steps (M)")
+    ax.set_ylabel("Greedy capture rate")
+    _ygrid(ax)
 
 
 def save_paper_figs(df, llm_df=None, outdir: str = "논문_그래프/8_논문판",
@@ -996,6 +1087,16 @@ def save_paper_figs(df, llm_df=None, outdir: str = "논문_그래프/8_논문판
                     outdir, "figP3_interaction"))
     out.append(save(fig_ladder(df, seed=seed), outdir, "figP4_ladder"))
     out.append(save(fig_radar_maneuver(df)[0], outdir, "figP9_radar_maneuver"))
+    algo_csv = "results/ablation/algo_episodes.csv"
+    mappo_runs = sorted(glob.glob("results/ablation/mappo_s*/evals.csv"))
+    if os.path.exists(algo_csv) and mappo_runs:
+        import pandas as pd
+        extra = pd.read_csv(algo_csv)
+        extra = extra[extra["condition"] == "heur_mappo"]
+        dfa = pd.concat([df, extra], ignore_index=True)
+        out.append(save(fig_algo_compare(dfa, "results/train_run_20260819-203248",
+                                         [os.path.dirname(r) for r in mappo_runs])[0],
+                        outdir, "figP10_algo_compare"))
     if llm_df is not None and len(llm_df):
         out.append(save(fig_plan_quality(df, llm_df, seed=seed),
                         outdir, "figP5_plan_quality"))

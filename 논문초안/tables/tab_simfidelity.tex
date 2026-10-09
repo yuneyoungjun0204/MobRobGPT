@@ -1,0 +1,31 @@
+% 시뮬레이터 충실도 --- 값은 평가 환경(체크포인트 복원 SimConfig + CommandedCnnEnv 오버라이드)에서 직접 읽었다.
+%  근거: boatattack_sim/env/{config,simulator,defense_env,kinematics,grid}.py, commander/unet_bridge.py
+%  ★ 서술 규칙(2026-10-08): 두 열 모두 명사구·값 나열로 적고 평서문을 쓰지 않는다. 설명·근거는
+%    본문 몫이고 이 표는 설정값만 싣는다. 항목이 여럿이면 세미콜론으로 끊는다.
+%    Table~\ref{tab:scenario} 와 겹치는 값(결정 주기, 관측·행동 격자, 픽셀 한 변, 그물 보유량)은
+%    싣지 않는다. 속력은 투고판 Table~\ref{tab:scenario} 가 ℓ 비율로만 적으므로 여기 남긴다.
+%    제어기 내부 상수(비례 이득, 코사인 감속)와 구현 세부는 공개 코드 몫이라 싣지 않는다.
+\begin{table*}[tp]
+\centering
+\caption{시뮬레이터의 물리·판정 모델과 단순화(\S\ref{sec:limitations})}
+\label{tab:simfidelity}
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lp{0.52\linewidth}p{0.24\linewidth}}
+\toprule
+요소 & 모델과 설정값 & 단순화 \\
+\midrule
+시간 & $\Delta t = 1\unit{s}$; 에피소드 상한 2{,}000\,step & 결정 주기 고정 \\
+방어정 운동 & 정속 6.0\,m/s; 최대 선회 $8^\circ$/step; 경유점 도착 반경 200\,m & 관성·조류·파랑 없는 질점 운동학 \\
+적 운동 & 정속 9.0\,m/s; 모선 방위 추종 $+$ 사인 위빙; 최대 선회 $5^\circ$/step & 학습·통신 없는 규칙 기반 \\
+적 회피 & 전방 500\,m 의 설치 그물·육지에 $\pm32^\circ$ 측면 조향 & 배치 패턴을 학습하지 않는 지역적 반응 \\
+스폰 & 집중·양동 반경 5{,}450\,m; 파상 4{,}000\,m 부터 1{,}000\,m 간격 3단; 방위는 시드별 무작위 & 도메인 랜덤화 없는 고정 구조 \\
+그물벽 & 두 픽셀을 잇는 선분, 최대 450\,m; 이동하며 전개 & 설치 후 고정, 표류·유실 없음 \\
+포획·돌파 & 포획 $=$ 설치 그물 칸 진입; 돌파 $=$ 모선 260\,m 진입 & 얽힘 지연·부분 손상 없음 \\
+충돌 & 방어정 상호 115\,m, 모선 300\,m, 육지, 설치 그물 진입; 해당 방어정 비활성화 & 접촉 즉시 완전 상실 \\
+공간 격자 & 물리·충돌·그물 격자 $200\times200$, 63\,m/칸 & 관측·행동 격자는 이보다 4배 거침 \\
+관측 & 전 선박의 위치·헤딩·잔여 그물 완전 관측 & 센서 잡음·지연·탐지 실패 없음 \\
+육지 & OpenStreetMap 해안선 래스터; 학습 6곳(Fig.~\ref{fig:sites}), 평가 통영 매물도 서측 & 수심·조석 없음 \\
+\bottomrule
+\end{tabular}
+\end{table*}

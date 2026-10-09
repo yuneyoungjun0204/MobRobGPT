@@ -1,0 +1,47 @@
+% 학습 하이퍼파라미터 --- 채택 런(train_run_20260819-203248)과 시드 3개 재현 런(tools/train_diag.py)이 같은 값을 쓴다.
+%  근거: tools/train_diag.py 기본값(채택 런 로그 헤더 주석), boatattack_sim/env/config.py GRPOCfg·SimConfig
+\begin{table}[tp]
+\centering
+\caption{기동 정책 학습 설정. 수식 기호는 \S\ref{sec:method}를 따른다.}
+\label{tab:hparams}
+\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\setlength{\tabcolsep}{3pt}
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{%
+\begin{tabular}{llr}
+\toprule
+구분 & 항목 & 값 \\
+\midrule
+\multirow{4}{*}{환경}
+ & 병렬 전장 수 $N$ & 24 \\
+ & 학습 포메이션 & 집중·양동·파상 순환 \\
+ & 척당 그물 (학습 / 평가) & 1 / 3 \\
+ & 학습 해역 & 실해역 6곳 순환 \\
+\midrule
+\multirow{5}{*}{GRPO}
+ & 그룹 크기 $G$ (휴리스틱 포함) & 8 \\
+ & 롤아웃 창 $H$ & 180\,step \\
+ & 이득 정규화 & 휴리스틱 기준·그룹 표준편차 \\
+ & 분산 임계 $\epsilon_{\mathrm{var}}$ & $10^{-6}$ \\
+ & 크레딧 배분 & 결합(joint) \\
+\midrule
+\multirow{5}{*}{최적화}
+ & 옵티마이저 & Adam \\
+ & 총 업데이트 $T$ & 800 \\
+ & 학습률 $\eta_0 \to \eta_{\min}$, 코사인 & $10^{-4} \to 5\times10^{-6}$ \\
+ & 엔트로피 계수 $\lambda_0 \to \kappa\lambda_0$, 선형 & $0.01 \to 0.001$ \\
+ & 기울기 노름 클립 $g_{\max}$ & 1.0 \\
+\midrule
+\multirow{3}{*}{BC 초기화}
+ & 갱신 수 / 학습률 & 300 / $3\times10^{-4}$ \\
+ & 라벨 가우시안 $\sigma_{\mathrm{BC}}$ & 0.8\,px (202\,m) \\
+ & 목표 & 기하 휴리스틱(\S\ref{sec:heuristic}) \\
+\midrule
+\multirow{3}{*}{평가·채택}
+ & greedy 평가 주기 (채택 런 / 재현 런) & 200 / 100 업데이트 \\
+ & 채택 기준 & 평가 최고점 (600, 0.805) \\
+ & 재현 런 시드 & 0, 1, 2 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
