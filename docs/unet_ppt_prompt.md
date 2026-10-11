@@ -5,7 +5,7 @@
 >
 > 출처 — 이 문서의 모든 수치는 아래에서만 왔다. 저장소 접근 없이도 이 문서만으로 발표자료가 나온다.
 > `boatattack_sim/model/cnn_actor.py` · `docs/unet_model_deploy.md` ·
-> `논문초안/USV_swarm_defense_paper_CNN.tex` · `boatattack_sim/env/config.py`
+> `논문초안/_archive/USV_swarm_defense_paper_CNN.tex` · `boatattack_sim/env/config.py`
 
 ---
 

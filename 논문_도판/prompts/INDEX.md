@@ -124,7 +124,7 @@ offset' 으로, (2) 점수맵과 오프셋 머리 사이에 픽셀 선택 단계
 
 ## ⚠ `.tex` 와의 불일치 (미해결)
 
-`논문초안/USV_swarm_defense_paper_CNN.tex` 는 지금 **이전 6장 구조**로 배선돼 있다
+`논문초안/_archive/USV_swarm_defense_paper_CNN.tex` 는 지금 **이전 6장 구조**로 배선돼 있다
 (`fig1_concept` ~ `fig6_grpo`). 이번 12장 세트와 파일명·번호·label 이 어긋난다.
 
 풀페이퍼로 확장할 때 `.tex` 의 figure 블록을 위 12장 순서로 다시 배선해야 한다.

@@ -24,7 +24,7 @@ style: |
     - llm_commander_ppt.md : 지휘관 계층 배정 로직 심화편 (전술 원칙 9개, HOLD, 포메이션)
 
   출처 (모든 수치의 근거. 창작 금지)
-    - 논문초안/USV_swarm_defense_paper_CNN.tex   ← 체계 서술·지표 정의
+    - 논문초안/_archive/USV_swarm_defense_paper_CNN.tex   ← 체계 서술·지표 정의
     - docs/unet_model_deploy.md §1               ← 체크포인트 확정 스펙
     - boatattack_sim/env/config.py               ← 시뮬 기본값
 

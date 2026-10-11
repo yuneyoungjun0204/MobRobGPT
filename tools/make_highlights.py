@@ -13,12 +13,12 @@
         영문  논문초안/sections/00b_abstract_en.tex       (English Abstract 절 안)
 
 출력
-    논문초안/highlights.txt   투고 시스템에 붙여 넣는 평문 (영문이 먼저 — 영문 저널이다)
-    논문초안/highlights.tex   1쪽 PDF 로 굽는 독립 문서 (첨부용)
+    논문초안/투고부속/highlights.txt   투고 시스템에 붙여 넣는 평문 (영문이 먼저 — 영문 저널이다)
+    논문초안/투고부속/highlights.tex   1쪽 PDF 로 굽는 독립 문서 (첨부용)
 
 사용:
     python tools/make_highlights.py
-    xelatex -output-directory=논문초안 논문초안/highlights.tex   # PDF 가 필요하면
+    xelatex -output-directory=논문초안/투고부속 논문초안/투고부속/highlights.tex   # PDF 가 필요하면
 """
 from __future__ import annotations
 
@@ -106,7 +106,7 @@ def main() -> int:
                 + "".join(f"- {x}\n" for x in ko)
                 + "\n※ 이 파일은 tools/make_highlights.py 가 원고에서 생성한다. "
                   "직접 고치지 말 것 — 다음 실행에서 덮어쓴다.\n")
-    good = emit(os.path.join(a.paper, "highlights.txt"), txt_body, a.check)
+    good = emit(os.path.join(a.paper, "투고부속", "highlights.txt"), txt_body, a.check)
 
     # ── ② 독립 문서 ─────────────────────────────────────────────────────────
     def esc(s: str) -> str:
@@ -142,7 +142,7 @@ def main() -> int:
         + "".join(f"\\item {esc(x)}\n" for x in ko) +
         "\\end{itemize}\n\n"
         "\\end{document}\n")
-    good = emit(os.path.join(a.paper, "highlights.tex"), tex_body, a.check) and good
+    good = emit(os.path.join(a.paper, "투고부속", "highlights.tex"), tex_body, a.check) and good
 
     # 길이를 알린다 --- 상한 자체는 미확인 기준이므로 판정하지 않고 값만 보인다.
     print("\n항목 길이(공백 포함):")

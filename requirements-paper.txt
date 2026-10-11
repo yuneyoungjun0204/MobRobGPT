@@ -1,0 +1,16 @@
+# 논문 파이프라인 의존성 (논문초안/ 빌드·도판·표·HWP 변환)
+#   python -m venv .venv
+#   .venv/Scripts/python -m pip install -r requirements-paper.txt
+# 시스템 도구는 따로: xelatex(TeX Live), 한컴오피스 한글(tex2hwp 의 COM 자동화)
+
+pypandoc_binary        # pandoc 바이너리 동봉 --- tools/tex2hwp 가 LaTeX → JSON AST 에 쓴다
+pywin32                # 한글 COM 자동화 (tools/tex2hwp/hwp.py)
+pymupdf                # fitz --- tools/build_paper.sh 쪽수 계산, PDF 미리보기
+numpy
+matplotlib
+pandas
+scipy<1.14
+pillow
+python-dotenv
+scienceplots>=2.1
+tueplots>=0.0.17

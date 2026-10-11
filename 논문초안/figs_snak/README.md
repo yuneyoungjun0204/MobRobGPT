@@ -2,6 +2,11 @@
 
 `.tex` 의 `\graphicspath{{figs_snak/}}` 가 이 폴더를 가리킨다.
 
+- `real/` — EAAI_KR_real · 국방발표 판이 쓰는 fig1~figN (`\graphicspath{{figs_snak/real/}}`)
+- `_unused/` — 어떤 본문에도 연결되지 않은 잡파일(카톡 캡처, 구버전 도판)
+
+> 아래는 구판(`_archive/USV_swarm_defense_paper_CNN.tex`) 시절 안내다.
+
 현재 들어 있는 6개 PNG 는 **자리표시용 플레이스홀더**다. 화면에 "PLACEHOLDER" 라고
 찍혀 있으므로 교체를 잊으면 바로 눈에 띈다. 생성한 실제 도판을 같은 이름으로 덮어쓰면 된다.
 
@@ -19,4 +24,4 @@
 비율이 다르면 `.tex` 의 `width=` 는 유지되고 높이만 달라져 플로트 배치가 흔들린다.
 비율은 맞춰서 생성하는 편이 안전하다.
 
-컴파일: `xelatex USV_swarm_defense_paper_CNN.tex` 2회.
+컴파일 방법은 `../README.md` 참조.

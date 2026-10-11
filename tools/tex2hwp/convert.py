@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,7 +30,21 @@ from .flatten import flatten
 from .hwp import Hwp
 
 MASTER = "USV_swarm_defense_국방발표"
-PANDOC = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Pandoc", "pandoc.exe")
+
+
+def _find_pandoc() -> str:
+    """환경변수 PANDOC → venv 의 pypandoc_binary 번들 → PATH → 사용자 설치(%LOCALAPPDATA%) 순."""
+    if os.environ.get("PANDOC"):
+        return os.environ["PANDOC"]
+    try:
+        import pypandoc       # pip install pypandoc_binary --- pandoc 바이너리가 휠에 들어 있다
+        return pypandoc.get_pandoc_path()
+    except (ImportError, OSError):
+        pass
+    return shutil.which("pandoc") or os.path.join(os.environ.get("LOCALAPPDATA", ""), "Pandoc", "pandoc.exe")
+
+
+PANDOC = _find_pandoc()
 TEXT_W = 150.0     # 본문 폭(mm): B5 182 - 좌우 여백 14.5×2 = 153, 약간의 여유
 COL_W = 72.0       # 2단 원고의 단 폭 그림을 1단 판면에 옮길 때의 폭(mm)
 WIDE_K = 0.70      # 판면 폭 그림(figure*)은 1단 판면에서 이 비율로 줄인다(분량 절약)
@@ -388,10 +403,6 @@ class Writer:
         # 한글 표의 열 폭은 셀 안 여백(좌우 1.8 mm)을 따로 더한다 --- 내용 폭만 나눠 준다
         content = total - 3.6 * ncol
         widths = [content * w / sum(weights) for w in weights]
-        aligns = []
-        for spec in colspecs:
-            a = spec[0]["t"]
-            aligns.append({"AlignLeft": 1, "AlignRight": 2, "AlignCenter": 3}.get(a, 3))
 
         cap = en.TAB_CAP.get(label)
         if cap is None:
@@ -422,7 +433,8 @@ class Writer:
 
         for r in range(nrow):
             for c in range(ncol):
-                self.h.para_shape(AlignType=3 if r < nhead else aligns[c], LineSpacing=120,
+                # 칸은 머리행·본문 모두 가운데 정렬(원고의 l/r 열 지정은 따르지 않는다)
+                self.h.para_shape(AlignType=3, LineSpacing=120,
                                   Indentation=0, LeftMargin=0)
                 self.h.char_shape(height=800, bold=1 if r < nhead else 0)
                 if grid[r][c]:
