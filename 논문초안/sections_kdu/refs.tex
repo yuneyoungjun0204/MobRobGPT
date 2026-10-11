@@ -1,0 +1,123 @@
+%  ★ 15쪽판: 국방발표 판 목록에서 본문 인용을 덜어낸 11편을 더 뺐다(관련연구 압축과 연동).
+%============================================================ 참고문헌 (국방발표 판)
+%  저널판(sections_real/refs.tex)에서 본문 인용이 없는 두 항목(silver2016alphago,
+%  sutton2018rl)만 덜어낸 사본이다. 수동 thebibliography 라 인용되지 않은 항목도
+%  목록에 찍히므로, 발표판에서는 독자가 따라갈 수 없는 항목을 두지 않는다.
+%  ★ 저널판 참고문헌을 고치면 이 파일도 함께 맞출 것.
+%============================================================ 참고문헌
+%  natbib + 수동 thebibliography.
+%  bibitem 의 대괄호에 "저자(연도)", 중괄호에 인용 키를 적는다. 그러면 본문의
+%  citep 가 (저자, 연도) 로 조판된다.
+%  (주석에 중괄호 예시를 쓰지 않는다 — 정합성 검사 스크립트가 실제 항목으로 오인한다.)
+%
+%  ★ 정렬 규칙: 이 목록의 **물리적 순서가 곧 번호**다(수동 thebibliography).
+%    번호 스타일이면 최초 인용 순, 저자-연도 스타일이면 알파벳 순이어야 한다.
+%    손으로 끼워 넣지 말고 python tools/sort_refs.py 로 재배열할 것.
+%    (한때 번호 스타일인데 알파벳순으로 실려 30개 번호가 전부 어긋나 있었다.)
+%
+%  ★ 원칙: 실재를 확신하는 문헌만 싣는다. 확신 없는 인용은 넣지 않는다.
+%    (초안의 사실성 원칙 A.3 을 그대로 따른다.)
+\begin{thebibliography}{99}
+\footnotesize
+\setlength{\itemsep}{2pt}
+
+\bibitem[Ahuja et al.(2007)]{ahuja2007wta}
+Ahuja, R.K., Kumar, A., Jha, K.C. and Orlin, J.B., 2007.
+Exact and Heuristic Algorithms for the Weapon-Target Assignment Problem.
+\textit{Operations Research}, 55(6), pp.1136--1146.
+
+\bibitem[Wang et al.(2021)]{wang2021cuas}
+Wang, J., Liu, Y. and Song, H., 2021.
+Counter-Unmanned Aircraft System(s) (C-UAS): State of the Art, Challenges, and
+Future Trends.
+\textit{IEEE Aerospace and Electronic Systems Magazine}, 36(3), pp.4--29.
+
+\bibitem[Sutea(2026)]{sutea2026fiber}
+Sutea, V., 2026.
+\textit{Fiber-optic drones have emerged as critical kit for both Russia and
+Ukraine}. Atlantic Council UkraineAlert, 24 February 2026.
+
+\bibitem[Rumbaugh(2024)]{rumbaugh2024cost}
+Rumbaugh, W., 2024.
+\textit{Cost and Value in Air and Missile Defense Intercepts}.
+Washington, DC: Center for Strategic and International Studies (CSIS) Commentary,
+13 February 2024.
+
+\bibitem[Zhang et al.(2025)]{zhang2025encircle}
+Zhang, C., Zeng, R., Lin, B., Zhang, Y., Xie, W. and Zhang, W., 2025.
+Multi-USV cooperative target encirclement through learning-based distributed
+transferable policy and experimental validation.
+\textit{Ocean Engineering}, 318, 120124.
+
+\bibitem[Rashid et al.(2018)]{rashid2018qmix}
+Rashid, T., Samvelyan, M., Schroeder de Witt, C., Farquhar, G., Foerster, J. and
+Whiteson, S., 2018.
+QMIX: Monotonic Value Function Factorisation for Deep Multi-Agent Reinforcement
+Learning.
+\textit{International Conference on Machine Learning (ICML)}, pp.4295--4304.
+
+\bibitem[Foerster et al.(2018)]{foerster2018coma}
+Foerster, J., Farquhar, G., Afouras, T., Nardelli, N. and Whiteson, S., 2018.
+Counterfactual Multi-Agent Policy Gradients.
+\textit{AAAI Conference on Artificial Intelligence}, pp.2974--2982.
+
+\bibitem[Yu et al.(2022)]{yu2022mappo}
+Yu, C., Velu, A., Vinitsky, E., Gao, J., Wang, Y., Bayen, A. and Wu, Y., 2022.
+The Surprising Effectiveness of PPO in Cooperative Multi-Agent Games.
+\textit{Advances in Neural Information Processing Systems 35 (NeurIPS)}.
+
+\bibitem[Shao et al.(2024)]{shao2024deepseekmath}
+Shao, Z., Wang, P., Zhu, Q., Xu, R., Song, J., Bi, X., Zhang, H., Zhang, M.,
+Li, Y.K., Wu, Y. and Guo, D., 2024.
+DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models.
+\textit{arXiv preprint arXiv:2402.03300}.
+
+\bibitem[Ronneberger et al.(2015)]{ronneberger2015unet}
+Ronneberger, O., Fischer, P. and Brox, T., 2015.
+U-Net: Convolutional Networks for Biomedical Image Segmentation.
+\textit{Medical Image Computing and Computer-Assisted Intervention (MICCAI)},
+pp.234--241.
+
+\bibitem[Perez et al.(2018)]{perez2018film}
+Perez, E., Strub, F., de Vries, H., Dumoulin, V. and Courville, A., 2018.
+FiLM: Visual Reasoning with a General Conditioning Layer.
+\textit{AAAI Conference on Artificial Intelligence}, pp.3942--3951.
+
+\bibitem[Vinyals et al.(2015)]{vinyals2015pointer}
+Vinyals, O., Fortunato, M. and Jaitly, N., 2015.
+Pointer Networks.
+\textit{Advances in Neural Information Processing Systems 28 (NeurIPS)}.
+
+\bibitem[Vaswani et al.(2017)]{vaswani2017attention}
+Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N.,
+Kaiser, {\L}. and Polosukhin, I., 2017.
+Attention Is All You Need.
+\textit{Advances in Neural Information Processing Systems 30 (NeurIPS)}.
+
+\bibitem[Huang et al.(2022)]{huang2022zeroshot}
+Huang, W., Abbeel, P., Pathak, D. and Mordatch, I., 2022.
+Language Models as Zero-Shot Planners: Extracting Actionable Knowledge for
+Embodied Agents.
+\textit{International Conference on Machine Learning (ICML)}, pp.9118--9147.
+
+\bibitem[Ahn et al.(2022)]{ahn2022saycan}
+Ahn, M., Brohan, A., Brown, N., et al., 2022.
+Do As I Can, Not As I Say: Grounding Language in Robotic Affordances.
+\textit{Conference on Robot Learning (CoRL)}.
+
+\bibitem[OpenAI(2026)]{openai2026function}
+OpenAI, 2026. \textit{Function calling}. [Online]
+Available at: \texttt{https://developers.openai.com/api/docs/guides/function-calling}
+[Accessed 9 August 2026].
+
+\bibitem[Ng et al.(1999)]{ng1999shaping}
+Ng, A.Y., Harada, D. and Russell, S., 1999.
+Policy Invariance Under Reward Transformations: Theory and Application to
+Reward Shaping.
+\textit{International Conference on Machine Learning (ICML)}, pp.278--287.
+
+\bibitem[Efron and Tibshirani(1993)]{efron1993bootstrap}
+Efron, B. and Tibshirani, R.J., 1993.
+\textit{An Introduction to the Bootstrap}. New York: Chapman \& Hall.
+
+\end{thebibliography}

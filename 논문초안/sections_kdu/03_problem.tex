@@ -1,0 +1,73 @@
+%============================================================ 3. 문제 정의 (압축판)
+\section{문제 정의와 평가 지표}
+\label{sec:problem}
+
+\subsection{교전 시나리오}
+\label{sec:scenario}
+\input{sections_kdu/tab_scenario_def}
+
+
+
+교전 해역 중앙에 고가치 모선 한 척이 있고, 가장자리에서 적 USV $M$척이 모선을 향해
+돌진한다. 적은 집중·양동·파상의 세 공격 포메이션 가운데 하나를
+취한다(Fig.~\ref{fig:formations}). 방어정 $P$척은 각각 한정된 수의 그물벽을 전개할 수
+있다. 체계는 스케일 불변이며, 기준 인스턴스에서 적은 방어정보다 1.5배 빠르고 두 계층 모두
+$25\unit{s}$ 마다 결정한다(Table~\ref{tab:scenario}). 관측·행동·보상은 모두 관측 픽셀 한 변
+$\ell$ 로 정규화한다.
+
+그물벽은 두 좌표를 잇는 선분이고, 방어정이 그 선분을 따라 이동하며 후미의 전개 장치로 부유식
+그물을 풀어 놓으면 그 위를 지나는 적 USV가 추진을 잃는다(Fig.~\ref{fig:netconcept}). 그물은
+시간이 지날수록 차단 효과가 줄고 일찍 펴면 회피의 여지를 주므로, 적의 도달 직전에 적에 가까운
+위치에 두는 것이 유리하다.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.62\columnwidth]{fig3.png}
+\caption{후미 투하식 부유 그물의 포획 개념}
+\label{fig:netconcept}
+\end{figure}
+
+집중(concentrated)은 전 병력이 한 방위에서 접근해 차단할 접근로가 하나이고, 양동(diversionary)은
+세 방위로 나뉘어 동시에 접근하므로 어느 배가 어느 무리를 맡는 배정이 결과를 좌우하며,
+파상(wave)은 3개 단(rank)이 방위를 조금씩 달리해 순차 도달하므로 보유량이 한정된 그물벽을 어디에
+놓아 여러 단을 겸해 막을지가 관건이다.
+
+\subsection{평가 지표}
+\label{sec:metrics}
+
+방어 성과는 다섯 관점의 10개 지표로 에피소드마다 잰다(Table~\ref{tab:metrics}). 자원 효율은
+교전하지 않은 조건이 가장 효율적으로 보이는 것을 막기 위해 총량이 아니라 포획당 비율로
+두었고, 교전 품질은 거리축과 시간축으로 나누어 모선에서 먼 포획과 이른 포획을 함께 본다.
+
+\begin{table*}[!b]
+\centering
+\caption{평가 지표 10종}
+\label{tab:metrics}
+\footnotesize
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{llp{0.30\linewidth}p{0.30\linewidth}}
+\toprule
+관점 & 지표 & 정의 & 뜻 \\
+\midrule
+\multirow{2}{*}{방어 성과}
+ & 포획률           & $\capr = N_\mathrm{cap} / (N_\mathrm{cap} + N_\mathrm{brc})$ & 결판난 적선 중 포획 비율 \\
+ & 돌파 수          & $N_\mathrm{brc}$ & 모선에 도달한 적선 수 \\
+\midrule
+\multirow{2}{*}{안전}
+ & 충돌률           & $N_\mathrm{col} / P$ & 방어정당 아군·모선 충돌 \\
+ & 그물 걸림        & $N_\mathrm{tng}$ & 아군 그물에 얽힌 횟수 \\
+\midrule
+\multirow{2}{*}{자원 효율}
+ & 포획당 그물      & $N_\mathrm{net} / N_\mathrm{cap}$ & 포획 1건당 그물 소모 \\
+ & 포획당 이동거리  & $\sum_{p=1}^{P} D_p \,/\, N_\mathrm{cap}$ & 포획 1건당 팀 이동거리 \\
+\midrule
+기동 비용
+ & 총 선회량        & $\sum_{p=1}^{P} \sum_{t} \lvert \Delta\psi_{p,t} \rvert$ & 누적 방위 변화(궤적 평활도) \\
+\midrule
+\multirow{3}{*}{교전 품질}
+ & 포획 이격거리    & $\frac{1}{N_\mathrm{cap}} \sum_{k} \lVert \mathbf{z}_k - \mathbf{m} \rVert$ & 포획 지점의 모선 거리 \\
+ & 평균 포획 시각   & $\frac{1}{N_\mathrm{cap}} \sum_{k} t_k$ & 포획이 일어난 시각 \\
+ & 전개 시 적 거리  & $\frac{1}{N_\mathrm{net}} \sum_{d} \min_{m \in \mathcal{A}} \lVert \mathbf{a}_d - \mathbf{e}_m \rVert$ & 그물 전개 시 최근접 적 거리 \\
+\bottomrule
+\end{tabular}
+\end{table*}

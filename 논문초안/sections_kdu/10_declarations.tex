@@ -1,0 +1,18 @@
+%============================================================ 자료 공개 (국방발표 판)
+%  저널판(sections_real/10_declarations.tex)의 Elsevier 전용 블록 세 가지 --- CRediT 기여
+%  명세, 이해관계 선언, 생성형 AI 선언 --- 은 투고 제작 시스템이 요구하는 형식 요소이므로
+%  발표판에서는 싣지 않는다. 재현에 필요한 자료 공개만 남긴다.
+\section*{사사}
+
+\textcolor{red}{\textbf{[발표 전 확인 필요]}} 본 연구는 \textcolor{red}{[지원 기관·과제명·과제번호]}의
+지원을 받아 수행되었다.
+
+\section*{자료 공개}
+\addcontentsline{toc}{section}{자료 공개}
+
+재현에 필요한 자료는 720 에피소드의 에피소드별 지표(\texttt{episodes.csv}), 계획 호출
+계측값(\texttt{llm\_metrics.csv}), 기동 계층 체크포인트(\texttt{u-net\_map.pt})와 시뮬레이터
+전체이며, 본문의 모든 표와 그림은 앞의 두 파일에서 기계적으로 생성된다.
+\textcolor{red}{[공개 URL 기입 필요]} 상용 API 지휘관 모델의 수치는 버전 갱신에 따라 달라질 수
+있으나, 언어모델을 쓰지 않는 조건(\texttt{heur\_heur}, \texttt{heur\_unet})은 이 위험 없이
+재현된다.

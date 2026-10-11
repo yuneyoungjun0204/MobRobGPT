@@ -270,6 +270,20 @@ $a^{(k)}_{n,p}$ 라 하면, 정책경사 손실은 유효 월드의 모든 후�
 $10\,\%$ 까지 선형으로, 총 800 업데이트의 같은 예산 축 위에서 함께 줄인다. 나머지 상수는
 Table~\ref{tab:hparams}에 모았다.
 
+\begin{figure*}[tbp]
+\centering
+\includegraphics[width=\textwidth]{fig12_h3.png}
+\caption{학습 경과(회색 시드별, 파란 실선 시드 평균): (a) 정책 엔트로피, (b) 근사 KL 발산,
+         (c) 행동 복제 초기점 대비 파라미터 이동}
+\label{fig:convergence}
+\end{figure*}
+
+같은 설정을 시드 3개로 반복해 학습 경과를 기록하였다(Fig.~\ref{fig:convergence}). 갱신 전후
+정책 사이의 근사 KL은 처음 100 업데이트 평균 $1.4\times10^{-2}$ 에서 마지막 100 업데이트
+$1.5\times10^{-4}$ 로 두 자릿수 줄고, 파라미터 이동은 후반에 포화하며, 정책 엔트로피는
+$2.42$ 에서 $2.06$\,nat 로 내려가 400 업데이트 이후 평탄하다. 학습이 끝난 800 업데이트에서
+세 시드의 greedy 포획률은 모두 휴리스틱 기준선 $0.749$ 를 넘는다.
+
 \subsubsection{보상 설계}
 \label{sec:reward}
 
