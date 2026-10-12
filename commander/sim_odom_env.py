@@ -17,6 +17,8 @@ from typing import Callable, Optional
 
 import numpy as np
 
+from boatattack_sim.env.scaling import SimScale
+
 from .gcs_cnn_env import GcsLiveCnnEnv
 from .sim_odom_ros2 import SimNetTriggerSink, SimShipView, SimWaypointSink
 
@@ -55,6 +57,7 @@ class SimOdomCnnEnv(GcsLiveCnnEnv):
         quorum_timeout: float = 5.0,
         land_source: str | None = "none",
     ):
+        self._net_reload_auto = net_reload_period_real is None
         super().__init__(
             ckpt, span_real, ally_view, enemy_view,
             net_sink=net_sink or SimNetTriggerSink(sim_id_fn=sim_id_fn),
@@ -68,6 +71,19 @@ class SimOdomCnnEnv(GcsLiveCnnEnv):
         self.sim_id_fn = sim_id_fn
         if land_source == "none" and bool(np.any(self.land_map)):
             raise RuntimeError("land_source='none' 인데 land_map 이 비어있지 않습니다.")
+
+    def set_span(self, span_real: float) -> None:
+        """실미터 span 을 교체한다(--span auto: 모델·창은 아군만으로 먼저 띄우고 적 출현 후 확정).
+
+        `SimScale` 은 운용 중 흔들리면 안 되므로 첫 step() 전에만 부른다.
+        """
+        if self._micro_ct != 0:
+            raise RuntimeError("set_span 은 첫 step() 전에만 부를 수 있습니다.")
+        self.scale = SimScale(self.cfg, span_real=float(span_real),
+                              v_ally_real=self.scale.v_ally_real, enu_origin=self.scale.enu_origin)
+        if self._net_reload_auto:
+            self.net_reload_period_real = max(1, self.cfg.nets_per_ship) * self.scale.period_real * 6.0
+            self._next_reload_real = self._t_real + self.net_reload_period_real
 
     # ── 원천: GCS HTTP 대신 Odometry 스냅샷(뷰가 직접 읽으므로 공유 상태 불필요) ──
     def _poll_state(self):

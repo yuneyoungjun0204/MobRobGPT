@@ -112,7 +112,7 @@ class ROS2CnnEnv(CommandedCnnEnv):
         route_t = np.take_along_axis(self.route, ptr_c[:, :, None, None], axis=2)[:, :, 0, :]
         self.net_end = route_t.copy()
         arrived = (np.hypot(self.a_pos[..., 0] - route_t[..., 0],
-                            self.a_pos[..., 1] - route_t[..., 1]) <= cfg.arrive_radius)
+                            self.a_pos[..., 1] - route_t[..., 1]) <= self.arrive_r())
 
         # ① 그물 시작 — 현재 leg 의 net_mask 가 켜졌고 아직 안 깐 배 (_micro 와 동일 조건)
         cur_net = np.take_along_axis(self.net_mask, ptr_c[..., None], axis=2)[..., 0]   # [N,P]

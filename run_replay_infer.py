@@ -144,7 +144,10 @@ def _overlay_cells(ax, viz: dict) -> None:
 def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
              bg_img=None, bg_extent=None, hide_cells: bool = False,
              info_provider=None, start_paused: bool = False,
-             hide_unassigned_wps: bool = False) -> None:
+             hide_unassigned_wps: bool = False,
+             mode_label: str = "실제 적(로스백) + 가상 아군(시뮬)",
+             window_title: str | None = None,
+             hud_extra=None, real_ticks: bool = True) -> None:
     """matplotlib 실시간 창. `run_cell_play.py` 와 동일한 렌더 파이프라인을 재사용한다.
 
     `info_provider`: 인자 없이 호출하면 `{"status":, "cmd":, "assign":, "rationale":}`
@@ -153,6 +156,14 @@ def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
     단일-패널 레이아웃(이 함수의 원래 동작, `run_replay_infer.py` 자체 실행 시)을
     그대로 유지한다 -- 이 함수는 run_gcs_bridge.py도 재사용하므로, 한쪽 호출부의
     요구(정보패널)가 다른 쪽(단순 리플레이 뷰어)의 기존 동작을 바꾸면 안 된다.
+
+    `mode_label`: HUD 와 창 제목에 쓰는 데이터 원천 설명(호출부마다 다르다 — 예:
+    "시뮬레이터 아군·적 (ROS2 Odometry)"). `window_title`: 창 제목(None 이면 mode_label 로 만든다).
+    `hud_extra`: 인자 없이 호출하면 HUD 끝에 붙일 짧은 문자열을 돌려주는 콜백(선택, 예: phase).
+    `real_ticks`: env 에 `scale`(SimScale)이 있으면 축 눈금을 모선 기준 실미터로 표시한다.
+
+    HUD 는 이 뷰어가 직접 그린다 — `draw_scene` 의 기본 HUD/도움말은 가상 시뮬 UI 용이라
+    (스텝 수 t·포획 수가 이 모드에선 늘지 않고, m/k/n/r 키는 여기서 동작하지 않는다) 끈다.
     """
     import warnings
     import matplotlib
@@ -189,22 +200,55 @@ def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
 
     ui = {"running": not start_paused, "done": False}
 
+    import time as _time
+    import numpy as np
+    from matplotlib.ticker import FuncFormatter
+
     policy_label = "셀선택" if hasattr(env, "cell_viz") else "CNN 점수맵(U-Net)"
+    BG, FG, DIM, OK = "#0d1b2a", "#E0E6ED", "#8FA3B8", "#00E676"
     ax_info = None
     if info_provider is None:
         fig, ax = plt.subplots(figsize=(9.5, 9))
-        fig.subplots_adjust(left=0.05, right=0.98, top=0.95, bottom=0.06)
+        fig.subplots_adjust(left=0.07, right=0.98, top=0.95, bottom=0.05)
     else:
-        # run_commander_ui.py와 같은 좌표계 -- 두 창을 나란히 봐도 같은 자리에 씬/정보패널이
-        # 온다. 이 함수를 호출하는 쪽(run_gcs_bridge.py)이 매 프레임 info dict를 만들어 준다.
+        # 씬(왼쪽)+정보패널(오른쪽). run_commander_ui.py 는 위(대형 버튼)·아래(명령 입력창) 띠를
+        # 쓰지만 이 뷰어엔 그 위젯이 없으므로 띠를 비워두지 않고 씬을 세로 전체로 키운다.
         import textwrap
         fig = plt.figure(figsize=(13.5, 9.0))
-        ax = fig.add_axes((0.03, 0.11, 0.58, 0.80))
-        ax_info = fig.add_axes((0.635, 0.11, 0.35, 0.80))
+        ax = fig.add_axes((0.045, 0.045, 0.58, 0.905))
+        ax_info = fig.add_axes((0.65, 0.045, 0.335, 0.905))
+    fig.patch.set_facecolor(BG)      # HUD(제목)·눈금·정보패널이 밝은 글자라 배경을 어둡게 통일
     try:
-        fig.canvas.manager.set_window_title(f"로스백 리플레이 — {policy_label} 정책 (실제 적 + 가상 아군)")
+        fig.canvas.manager.set_window_title(window_title or f"{mode_label} — {policy_label} 정책")
     except Exception:
         pass
+    fig.text(0.045, 0.012, "space 재생/일시정지   q 종료", color=DIM, fontsize=8.5,
+             ha="left", va="bottom")
+    t_wall0 = _time.monotonic()
+
+    scale = getattr(env, "scale", None) if real_ticks else None
+    if scale is not None:
+        _half = float(env.cfg.world_size) / 2.0
+        _S = float(scale.S)
+        _ox, _oy = (float(c) for c in scale.enu_origin)
+        # 모선(맵 중앙) 기준 실미터 — enu_origin 이 (0,0)이 아닌 경우도 실좌표 그대로 보이게.
+        _fx = FuncFormatter(lambda v, _p: f"{(v - _half) / _S + _ox:.0f}")
+        _fy = FuncFormatter(lambda v, _p: f"{(v - _half) / _S + _oy:.0f}")
+
+        def _nice_ticks(o: float) -> list[float]:
+            """실미터 기준 1-2-5 단위 깔끔한 눈금(약 6~10개) → sim 좌표 위치."""
+            span_r = float(env.cfg.world_size) / _S
+            raw = span_r / 8.0
+            mag = 10.0 ** np.floor(np.log10(raw))
+            step = next(m * mag for m in (1, 2, 5, 10) if m * mag >= raw)
+            lo, hi = o - span_r / 2.0, o + span_r / 2.0
+            reals = np.arange(np.ceil(lo / step) * step, hi + 1e-9, step)
+            return [(r - o) * _S + _half for r in reals]
+        _xt, _yt = _nice_ticks(_ox), _nice_ticks(_oy)
+
+    def _mmss(sec: float) -> str:
+        m, s_ = divmod(max(0.0, float(sec)), 60.0)
+        return f"{int(m):02d}:{s_:04.1f}"
 
     def draw_info_panel():
         info = info_provider()
@@ -226,7 +270,7 @@ def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
             "* Rationale",
             textwrap.fill(str(info.get("rationale", "")), width=32),
         ]
-        ax_info.text(0.0, 1.0, "\n".join(lines), va="top", ha="left",
+        ax_info.text(0.0, 1.0, "\n".join(lines), va="top", ha="left", color=FG,
                      fontsize=10.5, family=matplotlib.rcParams["font.family"],
                      transform=ax_info.transAxes)
 
@@ -243,18 +287,33 @@ def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
             fd = dict(fd)
             fd["ally_paths"] = [p if int(viz["assign"][i]) >= 0 else []
                                 for i, p in enumerate(fd["ally_paths"])]
-        renderer.draw_scene(ax, fd, bg_img=bg_img, bg_extent=bg_extent)
+        renderer.draw_scene(ax, fd, bg_img=bg_img, bg_extent=bg_extent, show_help=False)
         if viz is not None:
             _overlay_unet(ax, viz)
         elif hasattr(env, "cell_viz") and not hide_cells:
             _overlay_cells(ax, env.cell_viz())
-        status = "종료(로스백 소진 또는 --max-decisions 도달)" if ui["done"] else ("재생" if ui["running"] else "일시정지")
-        formation = f"  대형={getattr(env, '_formation', None)}" if getattr(env, "_formation", None) else ""
-        ax.text(0.02, 0.99,
-                f"[{status}]  실제 적(로스백) + 가상 아군(시뮬)  t={env.bag_time_real:6.2f}s  "
-                f"결정={len(log)}  적생존={int(env.e_alive[0].sum())}{formation}",
-                transform=ax.transAxes, color="#00E676", fontsize=9,
-                va="top", ha="left", weight="bold")
+        if scale is not None:
+            ax.set_xticks(_xt); ax.set_yticks(_yt)
+            ax.xaxis.set_major_formatter(_fx)
+            ax.yaxis.set_major_formatter(_fy)
+            ax.set_xlabel("x / 동 [m]", color=DIM, fontsize=8, labelpad=1)
+            ax.set_ylabel("y / 북 [m]", color=DIM, fontsize=8, labelpad=1)
+        status = "종료" if ui["done"] else ("재생" if ui["running"] else "일시정지")
+        formation = f"   대형 {env._formation}" if getattr(env, "_formation", None) else ""
+        extra = ""
+        if hud_extra is not None:
+            try:
+                extra = f"   {hud_extra()}"
+            except Exception:
+                extra = ""
+        nets = "/".join(str(int(n)) for n in env.a_nets[0])
+        ax.set_title(
+            f"[{status}] {mode_label}\n"
+            f"경과 {_mmss(env.bag_time_real)} (실시간 {_mmss(_time.monotonic() - t_wall0)})   "
+            f"결정 {len(log)}   적 생존 {int(env.e_alive[0].sum())}   "
+            f"아군 {int(env.a_alive[0].sum())}/{env.P}   그물 {nets}{formation}{extra}",
+            color=OK if ui["running"] and not ui["done"] else FG,
+            fontsize=9.5, pad=6, loc="left", weight="bold")
         if info_provider is not None:
             draw_info_panel()
         return []
@@ -291,6 +350,16 @@ def main() -> None:
     ap.add_argument("--ally-speed-real", type=float, default=0.3,
                     help="가상 아군의 실제 순항속도[m/s] — SimScale 시계 스케일 산출용")
     ap.add_argument("--nets", type=int, default=3, help="배당 그물 장수(--ckpt 가 CNN 점수맵 모델일 때만 적용)")
+    ap.add_argument("--arrive-radius-mult", type=float, default=3.0, metavar="X",
+                    help="WP 도착 판정 반경 배수(기본 3 = 학습값의 3배). 도착 판정(다음 WP 전환·그물 "
+                         "시작/완료)에만 쓰이고 모델 입력·배정에는 영향 없음. 1 = 학습 그대로")
+    ap.add_argument("--arrive-radius", type=float, default=None, metavar="M",
+                    help="WP 도착 판정 반경을 실제 m 로 직접 지정(주면 --arrive-radius-mult 보다 우선). "
+                         "예: 미니 수조 --arrive-radius 0.5")
+    ap.add_argument("--min-net-len", type=float, default=0.0, metavar="M",
+                    help="최소 그물 길이[실제 m]. 정책이 고른 두 WP(이동점→그물 끝점) 간격이 이보다 짧으면 "
+                         "두 점의 중점을 고정한 채 양쪽으로 똑같이 늘린다(그물 도색 한계도 함께 늘림). "
+                         "0=끔(기본). 예: 미니 수조에서 --min-net-len 1.0")
     ap.add_argument("--specialized", default=None, metavar="ROOT_DIR",
                     help="--ckpt 가 셀선택 모델일 때: 대형(집중/양동/파상) 특화 라우팅 루트 디렉터리 "
                          "(예: specialized_cos6k_model — {ROOT}/{concentrated,diversionary,wave}/best.pt)")
@@ -356,11 +425,24 @@ def main() -> None:
             print("[replay] ⚠ --specialized 는 셀선택 모델 전용입니다 — CNN 점수맵 모델에서는 무시합니다.")
         env = ReplayCnnEnv(args.ckpt, bag, nets_per_ship=args.nets,
                             geo=tuple(args.geo) if args.geo else None, **common)
+    if args.min_net_len > 0:
+        if hasattr(env, "set_min_net_len_real"):
+            env.set_min_net_len_real(args.min_net_len)
+            print(f"[replay] 최소 그물 길이 = {args.min_net_len:g} m "
+                  f"(= {env.min_net_len_sim:.0f} sim-m, 모델 기본 한계 {env.cfg.net_max_len / env.scale.S:.3g} m)")
+        else:
+            print(f"[replay] ⚠ --min-net-len 은 CNN 점수맵(U-Net) 정책에서만 지원 -- 무시합니다.")
     print(f"[replay] enu_origin(맵 중앙 대응 실좌표) = {tuple(round(c, 3) for c in env.scale.enu_origin)}")
     print(f"[replay] 그물 재보급 주기 = {env.net_reload_period_real:.3g} 실초")
     if bag.n_tracks > env.M:
         print(f"[replay] ⚠ 로스백 척수({bag.n_tracks}) > 정책 적슬롯(M={env.M}) — 앞 {env.M}개만 사용합니다.")
     v_enemy_real = bag.mean_speed_mps()   # 실측 적 평균속력 — report() 의 ve/va 대조를 실제로 만든다
+    if hasattr(env, "arrive_r"):
+        env.arrive_radius_mult = float(args.arrive_radius_mult)
+        if args.arrive_radius is not None:
+            env.set_arrive_radius_real(args.arrive_radius)
+        print(f"[replay] WP 도착 판정 반경 = {env.arrive_r() / env.scale.S:.3g} m "
+              f"(학습값 × {env.arrive_radius_mult:.3g})")
     print(env.scale.report(v_enemy_real=v_enemy_real))
     print(f"[replay] 실측 적 평균속력 ≈ {v_enemy_real:.4g} m/s (학습 가정 ve/va={env.cfg.enemy_speed_mult:g})")
     print(f"[replay] 결정주기 = {env.scale.period_real:.3g} 실초 (아군 {env.P}척, 적슬롯 {env.M})")

@@ -134,7 +134,7 @@ class _GcsAllyTelemetryMixin:
         # freshly (re)assigned route and spuriously finish/advance a net leg it isn't
         # actually flying (architect review B1).
         arrived = (np.hypot(self.a_pos[..., 0] - route_t[..., 0],
-                            self.a_pos[..., 1] - route_t[..., 1]) <= cfg.arrive_radius
+                            self.a_pos[..., 1] - route_t[..., 1]) <= self.arrive_r()
                    ) & self.a_alive
 
         cur_net = np.take_along_axis(self.net_mask, ptr_c[..., None], axis=2)[..., 0]
@@ -150,11 +150,11 @@ class _GcsAllyTelemetryMixin:
             for p in np.where(start[0])[0]:
                 self.net_sink.set(self.ally_link.vehicle_ids[p], True)
 
-        painting = self.doing_net & (self.paint_dist < cfg.net_max_len) & self.a_alive
+        painting = self.doing_net & (self.paint_dist < self.net_len_cap()) & self.a_alive
         self.paint_dist += np.where(painting, moved[None, :], 0.0)
         self._paint(painting)
 
-        finish = self.doing_net & ((self.paint_dist >= cfg.net_max_len) | arrived)
+        finish = self.doing_net & ((self.paint_dist >= self.net_len_cap()) | arrived)
         if finish.any():
             self.doing_net &= ~finish
             self._rasterize_net(self.net_start, self.net_end, finish)

@@ -14,6 +14,7 @@
 
 --span auto(기본): 첫 웨이브 적의 모선 거리 최대값을 학습 스폰반경(enemy_spawn_radius)에
 맞춘다(span = R·world_size/enemy_spawn_radius). 숫자를 주면 그 실미터를 그대로 쓴다.
+auto 여도 모델·env·창은 아군 수신 직후 미리 띄우고, 적이 보이면 scale 만 확정한 뒤 결정을 시작한다.
 """
 from __future__ import annotations
 
@@ -22,6 +23,9 @@ import concurrent.futures
 import json
 import sys
 import time
+
+# --span auto 에서 적 출현거리 측정 전까지 env 를 만들어 두기 위한 임시 span(m) — 결정·발행엔 안 쓰인다.
+PROVISIONAL_SPAN_M = 2000.0
 
 
 def main() -> None:
@@ -41,6 +45,16 @@ def main() -> None:
     ap.add_argument("--ally-speed-real", type=float, default=18.0,
                     help="아군 실속력 m/s(로스백 실측 ≈18) — 결정주기 실초 환산에 쓰인다")
     ap.add_argument("--nets", type=int, default=3, help="배당 그물 수(시뮬레이터 = 3)")
+    ap.add_argument("--arrive-radius-mult", type=float, default=3.0, metavar="X",
+                    help="WP 도착 판정 반경 배수(기본 3 = 학습값의 3배). 도착 판정(다음 WP 전환·그물 "
+                         "시작/완료)에만 쓰이고 모델 입력·배정에는 영향 없음. 1 = 학습 그대로")
+    ap.add_argument("--arrive-radius", type=float, default=None, metavar="M",
+                    help="WP 도착 판정 반경을 실제 m 로 직접 지정(주면 --arrive-radius-mult 보다 우선). "
+                         "예: 미니 수조 --arrive-radius 0.5")
+    ap.add_argument("--min-net-len", type=float, default=0.0, metavar="M",
+                    help="최소 그물 길이[실제 m]. 정책이 고른 두 WP(이동점→그물 끝점) 간격이 이보다 짧으면 "
+                         "두 점의 중점을 고정한 채 양쪽으로 똑같이 늘린다(그물 도색 한계도 함께 늘림). "
+                         "0=끔(기본). 예: 미니 수조에서 --min-net-len 1.0")
     ap.add_argument("--net-reload-period", type=float, default=1e9,
                     help="그물 재보급 주기(실초). 기본 = 사실상 재보급 없음(시뮬레이터 규칙)")
     ap.add_argument("--publish-hz", type=float, default=2.0)
@@ -65,7 +79,6 @@ def main() -> None:
     from commander.rl_bridge import build_battlefield_defense
     from commander.sim_odom_ros2 import SimOdomLink, SimWaypointSink, SimNetTriggerSink
     from commander.sim_odom_env import SimOdomCnnEnv, auto_span
-    from boatattack_sim.model.cnn_actor import load_cnn_actor
     from run_replay_infer import _make_commander
 
     ally_ids = [v.strip() for v in args.ally_ids.split(",") if v.strip()]
@@ -90,45 +103,78 @@ def main() -> None:
                 origin = ms
         print(f"[sim_bridge] enu_origin(맵 중앙=모선) = ({origin[0]:.2f}, {origin[1]:.2f}) m")
 
-        if str(args.span).lower() == "auto":
-            _, cfg = load_cnn_actor(args.ckpt)
-            print("[sim_bridge] --span auto: 적 출현 대기 중...")
-            r = link.wait_enemy_range(origin, args.wait_timeout)
-            if r <= 0:
-                raise SystemExit("적 Odometry 가 대기 한도 안에 안 보였습니다 — --span 을 직접 지정하세요.")
-            span = auto_span(cfg, r)
-            print(f"[sim_bridge] span auto = {span:.0f} m  (적 최대거리 {r:.0f} m × world_size "
-                  f"{cfg.world_size:g} / enemy_spawn_radius {cfg.enemy_spawn_radius:g})")
-        else:
-            span = float(args.span)
-
+        # 모델·env·commander·창은 아군만 보이면 바로 띄운다. --span auto 면 임시 span 으로 만들어 두고
+        # 적 출현거리 측정(백그라운드)이 끝나는 순간 scale 만 교체한다 — 그 전엔 결정/발행하지 않는다.
+        auto = str(args.span).lower() == "auto"
         sim_id_fn = lambda: link.state.sim_id
         wp_sink = SimWaypointSink(link.publish_waypoints_fn, cruise_kn=args.cruise_kn,
                                   accept_radius_m=args.accept_radius_m, log_path=args.cmd_log)
         net_sink = SimNetTriggerSink(link.publish_net_fn, sim_id_fn=sim_id_fn, log_path=args.cmd_log)
         env = SimOdomCnnEnv(
-            args.ckpt, span, link.ally_view, link.enemy_view,
+            args.ckpt, PROVISIONAL_SPAN_M if auto else float(args.span), link.ally_view, link.enemy_view,
             waypoint_sink=wp_sink, net_sink=net_sink, sim_id_fn=sim_id_fn,
             publish_hz=args.publish_hz, ally_speed_real=args.ally_speed_real,
             nets_per_ship=args.nets, enu_origin=origin,
             net_reload_period_real=args.net_reload_period, quorum_timeout=args.quorum_timeout,
         )
-        S = env.scale.S
-        print(f"[sim_bridge] S = {S:.3g} sim-m/m, 결정주기 = {env.scale.period_real:.3g} s, "
-              f"micro-step = {env.scale.dt_real:.3g} s, land = {int(env.land_map.sum())} 셀(섬 없음)")
-        print(f"[sim_bridge] 실미터 환산: arrive_radius {env.cfg.arrive_radius / S:.0f} m, "
-              f"그물 최대길이 {env.cfg.net_max_len / S:.0f} m, 요격환형 "
-              f"{env.cfg.cell_r_min / S:.0f}~{env.cfg.cell_r_max / S:.0f} m")
-        print(env.scale.report())
+        print(f"[sim_bridge] 모델 로드 완료: {args.ckpt}")
+        env.arrive_radius_mult = float(args.arrive_radius_mult)
+
+        def report_scale() -> None:
+            S = env.scale.S
+            if args.arrive_radius is not None:      # 실미터 지정은 scale 확정 뒤에 환산
+                env.set_arrive_radius_real(args.arrive_radius)
+            print(f"[sim_bridge] S = {S:.3g} sim-m/m, 결정주기 = {env.scale.period_real:.3g} s, "
+                  f"micro-step = {env.scale.dt_real:.3g} s, land = {int(env.land_map.sum())} 셀(섬 없음)")
+            print(f"[sim_bridge] 실미터 환산: arrive_radius {env.arrive_r() / S:.3g} m "
+                  f"(학습값 {env.cfg.arrive_radius / S:.3g} m × {env.arrive_radius_mult:.3g}), "
+                  f"그물 최대길이 {env.cfg.net_max_len / S:.0f} m, 요격환형 "
+                  f"{env.cfg.cell_r_min / S:.0f}~{env.cfg.cell_r_max / S:.0f} m")
+            print(env.scale.report())
+            # 최소 그물 길이는 실미터 → sim-m 환산이라 scale 확정(span auto 측정 완료) 뒤에 건다.
+            if args.min_net_len > 0:
+                env.set_min_net_len_real(args.min_net_len)
+                print(f"[sim_bridge] 최소 그물 길이 = {args.min_net_len:g} m "
+                      f"(= {env.min_net_len_sim:.0f} sim-m, 모델 기본 한계 {env.cfg.net_max_len / S:.3g} m)")
+
+        span_wait: dict = {"future": None}
+        if auto:
+            print("[sim_bridge] --span auto: 적 출현 대기 중... (모델·창은 이미 준비됨)")
+            span_wait["future"] = concurrent.futures.ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="span").submit(
+                link.wait_enemy_range, origin, args.wait_timeout)
+        else:
+            report_scale()
 
         commander = _make_commander(args.llm, args.model)
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="replan")
         pending: dict = {"future": None}
         log: list = []
         state = {"decision_idx": 0, "seen_ready": False}
-        info: dict = {"model": getattr(commander, "model", args.llm), "status": "아군 수신 대기",
+        info: dict = {"model": getattr(commander, "model", args.llm),
+                      "status": "적 출현 대기 (span auto)" if auto else "아군 수신 대기",
                       "cmd": args.command or "(none)", "assign": "(아직 없음)",
                       "rationale": "첫 재배정 대기 중..."}
+
+        def span_resolved() -> bool:
+            """--span auto 측정이 끝났으면 scale 을 확정하고 True. 그 전엔 화면용 위치만 갱신."""
+            fut = span_wait["future"]
+            if fut is None:
+                return True
+            if not fut.done():
+                env._ingest_gcs()              # 표시만 갱신 — 결정·발행 없음
+                return False
+            span_wait["future"] = None
+            r = fut.result()
+            if r <= 0:
+                raise SystemExit("적 Odometry 가 대기 한도 안에 안 보였습니다 — --span 을 직접 지정하세요.")
+            span = auto_span(env.cfg, r)
+            env.set_span(span)
+            print(f"[sim_bridge] span auto = {span:.0f} m  (적 최대거리 {r:.0f} m × world_size "
+                  f"{env.cfg.world_size:g} / enemy_spawn_radius {env.cfg.enemy_spawn_radius:g})")
+            report_scale()
+            info["status"] = "아군 수신 대기"
+            return True
 
         def replan_if_due(force: bool = False) -> None:
             if pending["future"] is not None:
@@ -176,6 +222,9 @@ def main() -> None:
 
         def advance_one_micro() -> bool:
             t0 = time.monotonic()
+            if not span_resolved():
+                time.sleep(0.05)
+                return True
             apply_replan_if_ready()
             before = env._micro_ct
             env.step()
@@ -201,7 +250,11 @@ def main() -> None:
                 from run_replay_infer import _run_viz
                 _run_viz(env, advance_one_micro, max_reached, args.spf, log,
                          info_provider=lambda: info, start_paused=args.pause_start,
-                         hide_unassigned_wps=True)
+                         hide_unassigned_wps=True,
+                         mode_label=("시뮬레이터 아군·적 (ROS2 Odometry) — "
+                                     + ("명령 발행 중" if args.publish else "DRY-RUN(발행 안 함)")),
+                         window_title="MobRobGPT 시뮬레이터 브릿지 — U-Net 추론",
+                         hud_extra=lambda: f"phase {link.state.phase or '-'}   span {span:.0f} m")
             else:
                 while not max_reached():
                     advance_one_micro()

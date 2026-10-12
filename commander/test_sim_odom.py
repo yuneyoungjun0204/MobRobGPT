@@ -174,3 +174,121 @@ class TestSimOdomEnv(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(CKPT.exists(), "u-net_map.pt 없음")
+class TestMinNetLen(unittest.TestCase):
+    """미니 수조 규모(span 43 m)에서 최소 그물 길이 강제 — 중점 고정·양쪽 균등 확장."""
+
+    SPAN = 43.0
+    K = 43.0 / 4400.0          # 녹화본 배치(≈±2 km)를 수조 규모로 축소
+
+    def _env(self):
+        from commander.sim_odom_env import SimOdomCnnEnv
+        st = SimOdomState(stale_timeout=1.0, clock=lambda: 0.0)
+        for sid, (x, y, yaw) in SCENE.items():
+            st.on_odom(sid, x * self.K, y * self.K, yaw)
+        av = SimShipView(st, ALLIES, drop_captured=False)
+        ev = SimShipView(st, ENEMIES, drop_captured=True)
+        return SimOdomCnnEnv(str(CKPT), self.SPAN, av, ev,
+                             waypoint_sink=SimWaypointSink(verbose=False),
+                             net_sink=SimNetTriggerSink(verbose=False),
+                             publish_hz=1e6, enu_origin=(0.0, 0.0))
+
+    def _decide(self, env, min_len_m):
+        from commander.fallback import heuristic_plan
+        from commander.rl_bridge import build_battlefield_defense
+        env.step()                                   # 첫 수신 → ready
+        env.set_plan(heuristic_plan(build_battlefield_defense(env)))
+        env.set_min_net_len_real(min_len_m)
+        env._rl_decide()
+
+    def _legs(self, env):
+        out = {}
+        for p in range(env.P):
+            if env._assign[0, p] >= 0 and env.net_mask[0, p, 1]:
+                a, b = env.route[0, p, 0].copy(), env.route[0, p, 1].copy()
+                out[p] = (a, b)
+        return out
+
+    def test_extends_symmetrically(self):
+        base = self._env()
+        self._decide(base, 0.0)
+        before = self._legs(base)
+        self.assertTrue(before)
+        L_m = 3.0
+        env = self._env()
+        self._decide(env, L_m)
+        after = self._legs(env)
+        L = env.min_net_len_sim
+        for p, (a0, b0) in before.items():
+            a1, b1 = after[p]
+            d0, d1 = np.hypot(*(b0 - a0)), np.hypot(*(b1 - a1))
+            if d0 >= L:
+                np.testing.assert_allclose([a1, b1], [a0, b0])          # 이미 길면 그대로
+                continue
+            self.assertAlmostEqual(d1, L, delta=1e-6)                   # 정확히 하한 길이
+            np.testing.assert_allclose((a1 + b1) / 2, (a0 + b0) / 2, atol=1e-6)   # 중점 고정
+            if d0 > 1e-6:                                               # 방향 유지
+                np.testing.assert_allclose((b1 - a1) / d1, (b0 - a0) / d0, atol=1e-6)
+            np.testing.assert_allclose(env.route[0, p, 2:], np.broadcast_to(b1, env.route[0, p, 2:].shape))
+        self.assertAlmostEqual(env.net_len_cap(), max(env.cfg.net_max_len, L))
+        # 실미터 기준으로도 3 m
+        p = next(iter(after))
+        a1, b1 = (env.scale.sim_to_enu(x) for x in after[p])
+        self.assertAlmostEqual(float(np.hypot(*(b1 - a1))), L_m, delta=1e-6)
+
+    def test_degenerate_points_use_tangent(self):
+        env = self._env()
+        self._decide(env, 0.0)
+        p = next(iter(self._legs(env)))
+        mid = env.route[0, p, 0].copy()
+        env.route[0, p, 1] = mid                                        # 두 점이 겹친 경우
+        env.set_min_net_len_real(2.0)
+        env._enforce_min_net_len()
+        a, b = env.route[0, p, 0], env.route[0, p, 1]
+        np.testing.assert_allclose((a + b) / 2, mid, atol=1e-6)
+        radial = mid - np.asarray(env.center)
+        self.assertAlmostEqual(float(np.dot(b - a, radial)), 0.0, delta=1e-3)   # 접선 방향
+
+    def test_skips_ship_already_netting(self):
+        env = self._env()
+        self._decide(env, 0.0)
+        p = next(iter(self._legs(env)))
+        env.doing_net[0, p] = True
+        before = env.route[0, p].copy()
+        env.set_min_net_len_real(5.0)
+        env._enforce_min_net_len()
+        np.testing.assert_allclose(env.route[0, p], before)
+
+    def test_off_by_default(self):
+        env = self._env()
+        self.assertEqual(env.min_net_len_sim, 0.0)
+        self.assertEqual(env.net_len_cap(), env.cfg.net_max_len)
+
+
+@unittest.skipUnless(CKPT.exists(), "u-net_map.pt 없음")
+class TestArriveRadiusMult(unittest.TestCase):
+    def test_mult_widens_arrival_only(self):
+        env = TestMinNetLen()._env()
+        base = env.arrive_r()
+        self.assertEqual(base, env.cfg.arrive_radius)            # 기본 1배 = 학습값
+        env.arrive_radius_mult = 3.0
+        self.assertAlmostEqual(env.arrive_r(), 3.0 * env.cfg.arrive_radius)
+        self.assertEqual(env.cfg.arrive_radius, base)             # cfg(배정 링 하한 등)는 그대로
+        # 3배 반경 안·1배 반경 밖에 있는 아군 → 도착으로 판정돼 WP 가 전진해야 한다
+        TestMinNetLen()._decide(env, 0.0)
+        p = next(p for p in range(env.P) if env._assign[0, p] >= 0)
+        wp = env.route[0, p, 0].copy()
+        env.ptr[0, p] = 0
+        env.a_pos[0, p] = wp + np.array([2.0 * env.cfg.arrive_radius, 0.0])
+        env._prev_pos = env.a_pos[0].copy()
+        env._advance_and_paint()
+        self.assertGreaterEqual(int(env.ptr[0, p]) + int(env.doing_net[0, p]), 1)
+
+    def test_set_arrive_radius_real(self):
+        env = TestMinNetLen()._env()
+        env.set_arrive_radius_real(0.5)
+        self.assertAlmostEqual(float(env.scale.len_to_real(env.arrive_r())), 0.5, places=9)
+        with self.assertRaises(ValueError):
+            env.set_arrive_radius_real(0.0)

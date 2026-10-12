@@ -95,6 +95,13 @@ class CommandedCnnEnv(CommandedDefenseEnv):
         self._last_off = None                  # 시각화용 최근 서브픽셀 오프셋 [P,K,2]
         self._last_prob = None                 # 시각화용 최근 점수맵 [K,P,H,W]
         self._formation = None                 # UI 라벨 호환(특화 라우팅 미사용)
+        # 최소 그물 길이(sim-m). 0 = 끔. 미니 수조처럼 span 이 작으면 정책이 고른 두 WP 간격이
+        # 실제로 수 cm 밖에 안 될 수 있어, 운용 브릿지가 실미터 하한을 걸 때 쓴다
+        # (`set_min_net_len_real`). cfg.net_max_len 은 행동 마스크·휴리스틱이 쓰므로 건드리지 않는다.
+        self.min_net_len_sim = 0.0
+        # WP 도착 판정 반경 배수(1.0 = 학습 그대로). 실보트·수조는 GPS 오차·선회반경 때문에 WP 를
+        # 정확히 밟기 어려워 운용 브릿지가 넓힌다(`--arrive-radius-mult`, 기본 3).
+        self.arrive_radius_mult = 1.0
 
     # ── 관측: own[4] 를 학습분포 안으로 유지 ──
     def build_cnn_obs(self):
@@ -124,6 +131,7 @@ class CommandedCnnEnv(CommandedDefenseEnv):
             pix = self.heuristic_pix()           # [N,P,K]
             self._last_pix, self._last_off, self._last_prob = pix[0], None, None
             self._apply_cnn_actions(pix)
+            self._enforce_min_net_len()
             self._apply_net_decision()
             self._ev = self.fresh_ev()
             return
@@ -141,8 +149,73 @@ class CommandedCnnEnv(CommandedDefenseEnv):
         self._last_off = off[0] if off is not None else None
         # 정지 규칙(미배정·그물소진 → 제자리)은 _apply_cnn_actions 안에 들어 있다.
         self._apply_cnn_actions(pix, offset=off)
+        self._enforce_min_net_len()              # 그물 구간이 너무 짧으면 중점 기준 양쪽으로 늘림
         self._apply_net_decision()               # LLM 의 deploy_net 반영(net_legs 는 미사용)
         self._ev = self.fresh_ev()
+
+    # ── 최소 그물 길이 ──
+    def set_min_net_len_real(self, length_m: float) -> None:
+        """실미터 최소 그물 길이를 건다(0 이하 = 끔). `self.scale`(SimScale)이 있는 env 전용."""
+        if length_m is None or float(length_m) <= 0:
+            self.min_net_len_sim = 0.0
+            return
+        scale = getattr(self, "scale", None)
+        if scale is None:
+            raise ValueError("최소 그물 길이(실미터)는 SimScale 이 있는 env 에서만 쓸 수 있습니다.")
+        self.min_net_len_sim = float(scale.len_to_sim(float(length_m)))
+
+    def set_arrive_radius_real(self, radius_m: float) -> None:
+        """WP 도착 판정 반경을 실미터로 지정(내부적으로 학습값 대비 배수로 환산). SimScale 필요."""
+        scale = getattr(self, "scale", None)
+        if scale is None:
+            raise ValueError("도착 반경(실미터)은 SimScale 이 있는 env 에서만 쓸 수 있습니다.")
+        if radius_m is None or float(radius_m) <= 0:
+            raise ValueError("--arrive-radius 는 0보다 커야 합니다.")
+        self.arrive_radius_mult = float(scale.len_to_sim(float(radius_m))) / float(self.cfg.arrive_radius)
+
+    def net_len_cap(self) -> float:
+        return max(float(self.cfg.net_max_len), float(self.min_net_len_sim))
+
+    def _enforce_min_net_len(self) -> None:
+        """이번 결정에서 새로 계획된 배의 그물 구간(route[0]→route[1])이 최소 길이보다 짧으면,
+        두 점의 **중점을 고정한 채 양쪽으로 똑같이** 늘린다(한쪽으로 치우치지 않게).
+
+        방향은 정책이 고른 두 점의 방향을 그대로 쓴다. 두 점이 거의 겹쳐 방향을 정할 수 없으면
+        모선→중점 방사 방향에 수직(접선) — 적의 접근로를 가로막는 벽 방향 — 으로 편다.
+        이미 그물을 치고 있는 배(doing_net)·정지 대상(미배정·그물 소진)·그물 구간이 아닌 배는 건드리지 않는다.
+        늘린 끝점이 맵 밖이면 맵 안으로 클리핑한다(그때만 길이가 하한보다 짧아질 수 있다).
+        """
+        L = float(self.min_net_len_sim)
+        if L <= 0 or self.Kw < 2:
+            return
+        W = float(self.cfg.world_size)
+        c = np.asarray(self.center, np.float64)
+        for w in range(self.N):
+            for p in range(self.P):
+                if (not bool(self.a_alive[w, p]) or bool(self.doing_net[w, p])
+                        or int(self._assign[w, p]) < 0 or int(self.a_nets[w, p]) <= 0
+                        or not bool(self.net_mask[w, p, 1]) or int(self.ptr[w, p]) != 0):
+                    continue
+                a = self.route[w, p, 0].astype(np.float64)
+                b = self.route[w, p, 1].astype(np.float64)
+                d = float(np.hypot(*(b - a)))
+                if d >= L:
+                    continue
+                mid = (a + b) / 2.0
+                if d > 1e-6:
+                    u = (b - a) / d
+                else:
+                    r = mid - c
+                    rn = float(np.hypot(*r))
+                    u = np.array([-r[1], r[0]]) / rn if rn > 1e-6 else np.array([1.0, 0.0])
+                a2 = np.clip(mid - u * (L / 2.0), 0.0, W)
+                b2 = np.clip(mid + u * (L / 2.0), 0.0, W)
+                self.route[w, p, 0] = a2
+                self.route[w, p, 1:] = b2          # route[k>1] 은 마지막 점 반복 규약 유지
+        self.route_anchor = self.route.copy()
+        ptr_c = np.clip(self.ptr, 0, self.Kw - 1)
+        self.net_end = np.take_along_axis(self.route, ptr_c[:, :, None, None],
+                                          axis=2)[:, :, 0, :].copy()
 
     # ── UI 오버레이용 ──
     def cnn_viz(self) -> dict:

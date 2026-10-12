@@ -119,6 +119,16 @@ def main() -> None:
     ap.add_argument("--ally-speed-real", type=float, default=0.3,
                     help="아군의 실제 순항속도[m/s] -- SimScale 시계 스케일 산출용")
     ap.add_argument("--nets", type=int, default=3, help="배당 그물 장수")
+    ap.add_argument("--arrive-radius-mult", type=float, default=3.0, metavar="X",
+                    help="WP 도착 판정 반경 배수(기본 3 = 학습값의 3배). 도착 판정(다음 WP 전환·그물 "
+                         "시작/완료)에만 쓰이고 모델 입력·배정에는 영향 없음. 1 = 학습 그대로")
+    ap.add_argument("--arrive-radius", type=float, default=None, metavar="M",
+                    help="WP 도착 판정 반경을 실제 m 로 직접 지정(주면 --arrive-radius-mult 보다 우선). "
+                         "예: 미니 수조 --arrive-radius 0.5")
+    ap.add_argument("--min-net-len", type=float, default=0.0, metavar="M",
+                    help="최소 그물 길이[실제 m]. 정책이 고른 두 WP(이동점→그물 끝점) 간격이 이보다 짧으면 "
+                         "두 점의 중점을 고정한 채 양쪽으로 똑같이 늘린다(그물 도색 한계도 함께 늘림). "
+                         "0=끔(기본). 예: 미니 수조에서 --min-net-len 1.0")
     ap.add_argument("--net-reload-period", type=float, default=None,
                     help="그물 소진 후 재보급 주기[실제 초] (기본: 자동 산출)")
     ap.add_argument("--enemy-mode", default="wave",
@@ -445,15 +455,25 @@ def main() -> None:
             net_reload_period_real=args.net_reload_period,
             quorum_timeout=args.quorum_timeout,
         )
+    if args.min_net_len > 0:
+        if hasattr(env, "set_min_net_len_real"):
+            env.set_min_net_len_real(args.min_net_len)
+            print(f"[gcs_bridge] 최소 그물 길이 = {args.min_net_len:g} m "
+                  f"(= {env.min_net_len_sim:.0f} sim-m, 모델 기본 한계 {env.cfg.net_max_len / env.scale.S:.3g} m)")
+        else:
+            print(f"[gcs_bridge] ⚠ --min-net-len 은 CNN 점수맵(U-Net) 정책에서만 지원 -- 무시합니다.")
     print(f"[gcs_bridge] GCS = {args.gcs_url}  ally_ids = {ally_ids}")
     print(f"[gcs_bridge] enu_origin(맵 중앙 대응 실좌표) = "
           f"{tuple(round(c, 3) for c in env.scale.enu_origin)}")
     print(f"[gcs_bridge] 결정주기 = {env.scale.period_real:.3g} 실초, "
           f"micro-step = {env.scale.dt_real:.3g} 실초")
     print(env.scale.report(v_enemy_real=bag.mean_speed_mps() if bag is not None else None))
-    arrive_radius_real = env.cfg.arrive_radius / env.scale.S
+    env.arrive_radius_mult = float(args.arrive_radius_mult)
+    if args.arrive_radius is not None:
+        env.set_arrive_radius_real(args.arrive_radius)
+    arrive_radius_real = env.arrive_r() / env.scale.S
     net_max_len_real = env.cfg.net_max_len / env.scale.S
-    print(f"[gcs_bridge] arrive_radius = {arrive_radius_real:.3g} m, "
+    print(f"[gcs_bridge] arrive_radius = {arrive_radius_real:.3g} m (학습값 × {env.arrive_radius_mult:.3g}), "
           f"net_max_len = {net_max_len_real:.3g} m (실좌표, 이 --span 기준)")
     if arrive_radius_real < 1.0:
         print(f"[gcs_bridge] ⚠ arrive_radius가 {arrive_radius_real:.3g} m로 실보트 GPS "
@@ -640,7 +660,12 @@ def main() -> None:
         if args.viz:
             _run_viz(env, advance_one_micro, max_reached, args.spf, log,
                      bg_img=bg_img, bg_extent=bg_extent, info_provider=lambda: info,
-                     start_paused=args.pause_start, hide_unassigned_wps=True)
+                     start_paused=args.pause_start, hide_unassigned_wps=True,
+                     mode_label={"gcs": "실제 아군·적 (GCS)",
+                                 "live": "실제 아군(GCS) + 라이브 ROS2 적",
+                                 "bag": "실제 아군(GCS) + 로스백 적"}[args.enemy_source],
+                     window_title="MobRobGPT GCS 브릿지 — U-Net 추론",
+                     hud_extra=lambda: f"span {args.span:g} m")
         else:
             while not max_reached():
                 if not advance_one_micro():

@@ -1,0 +1,7 @@
+# run_sim_bridge.py 추론 전용 (--llm heuristic). ROS2(rclpy 등)는 pip 이 아니라 apt 로 설치한다.
+# torch 는 CPU 버전이면 충분하다 — 설치 방법은 deploy/README_infer.md 참고.
+numpy>=1.24,<2
+scipy>=1.10
+matplotlib>=3.5
+pillow>=9.0
+pydantic>=2.0

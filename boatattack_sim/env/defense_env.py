@@ -543,6 +543,16 @@ class DefenseVecEnv:
         self.net_start[w] = self.a_pos[w]
 
     # ── 1 micro-step ─────────────────────────────────────────────────
+    def arrive_r(self) -> float:
+        """WP 도착 판정 반경(sim-m). 기본은 cfg.arrive_radius — 운용 브릿지가 `arrive_radius_mult`
+        로 도착 판정만 넓힐 때 쓴다(cfg 는 배정 링 하한 등에도 쓰이므로 건드리지 않는다)."""
+        return float(self.cfg.arrive_radius) * float(getattr(self, "arrive_radius_mult", 1.0))
+
+    def net_len_cap(self) -> float:
+        """그물 도색이 끝나는 길이 한계(sim-m). 기본은 cfg.net_max_len — 운용 브릿지가
+        최소 그물 길이를 강제할 때(`CommandedCnnEnv.min_net_len_sim`) 그만큼 늘려 쓴다."""
+        return float(self.cfg.net_max_len)
+
     def _micro(self, ev):
         cfg = self.cfg
         N, P, M, Kw = self.N, self.P, self.M, self.Kw
@@ -589,7 +599,7 @@ class DefenseVecEnv:
                 ev["net_edist_n"] += ok.sum(axis=1)
 
         moving = self.a_alive & (self._assign >= 0)      # 비활성/미배정(예비) 아군은 완전 정지
-        painting = self.doing_net & (self.paint_dist < cfg.net_max_len) & self.a_alive
+        painting = self.doing_net & (self.paint_dist < self.net_len_cap()) & self.a_alive
 
         # ★ 그물 전개중(painting) 이동비용: 감속·선회제한 (per-ship 배열). '쉬기'에 이득 부여.
         dsm = getattr(cfg, "deploy_speed_mult", 1.0)
@@ -602,10 +612,10 @@ class DefenseVecEnv:
             pos_old, self.a_hdg.reshape(-1), steer_target.reshape(-1, 2),
             spd, mturn, cfg.dt,
             turn_gain=cfg.ally_turn_gain, slow_min=cfg.ally_slow_min,
-            arrive_radius=cfg.arrive_radius)
+            arrive_radius=self.arrive_r())
         pos_new = pos_new.reshape(N, P, 2); hdg_new = hdg_new.reshape(N, P)
         arrived = (np.hypot(pos_new[..., 0] - route_t[..., 0],
-                            pos_new[..., 1] - route_t[..., 1]) <= cfg.arrive_radius)
+                            pos_new[..., 1] - route_t[..., 1]) <= self.arrive_r())
         mv = moving
         moved = np.where(mv, np.hypot(pos_new[..., 0] - self.a_pos[..., 0],
                                       pos_new[..., 1] - self.a_pos[..., 1]), 0.0)
@@ -652,7 +662,7 @@ class DefenseVecEnv:
         # 도착/완성 처리: 목표WP 도착 OR 길이한계 → 그물 완성 → 그 구간을 '설치(installed)' 등록
         #   ★ 순차 부설: 도착으론 완성 안 함(다음 셀로 계속) → net_max_len 소진 때만 완성
         seq = getattr(cfg, "cell_sequential", False)
-        finish = self.doing_net & ((self.paint_dist >= cfg.net_max_len) | (arrived & (not seq)))
+        finish = self.doing_net & ((self.paint_dist >= self.net_len_cap()) | (arrived & (not seq)))
         if finish.any():
             self.doing_net &= ~finish
             self._rasterize_net(self.net_start, self.net_end, finish)  # 설치 그물 셀 등록
