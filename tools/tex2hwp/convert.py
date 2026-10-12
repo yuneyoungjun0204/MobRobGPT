@@ -544,6 +544,9 @@ class Writer:
 
 def main(master: str = MASTER) -> None:
     out_name = master
+    if master.endswith("_15p"):     # 15쪽판은 지표 9개 --- 전체판과 라벨이 같은 표의 영문만 바꾼다
+        en.TAB_CAP.update(en.TAB_CAP_15P)
+        en.NOTES.update(en.NOTES_15P)
     work = tempfile.mkdtemp(prefix="tex2hwp_")
     flat = os.path.join(work, "flat.tex")
     open(flat, "w", encoding="utf-8").write(flatten(master))

@@ -235,4 +235,17 @@ CELL = {
     "평균 포획 시각 (step)": "Capture time (step)", "전개 시 적 거리 (m)": "Enemy distance at deploy (m)",
     # tab:effectsize
     "제안": "Proposed",
+    # 15쪽판(물리 단위 없음): tab:scenario 의 속력비 행, ell 단위 거리 지표
+    "속력비 $v_e/v_a$ (적 USV / 방어정)": "Speed ratio $v_e/v_a$ (attacker / defender)",
+    "포획당 이동거리 ($\\ell$)": "Distance per capture ($\\ell$)",
+    "포획 이격거리 ($\\ell$)": "Capture distance ($\\ell$)",
+    "전개 시 적 거리 ($\\ell$)": "Enemy distance at deploy ($\\ell$)",
+}
+
+# ── 15쪽판(USV_swarm_defense_국방발표_15p) 전용 덮어쓰기 ────────────────────────
+#  돌파 수를 지표에서 뺀 판(지표 9개, Bonferroni 99.4 %). 라벨이 전체판과 같아 여기서만 바꾼다.
+TAB_CAP_15P = {"tab:metrics": "Nine evaluation metrics"}
+NOTES_15P = {
+    "tab:effectsize": "$\\uparrow$ higher is better, $\\downarrow$ lower is better. $^{*}$ 95 % CI excludes 0. "
+                      "$^{\\dagger}$ Also excludes 0 under Bonferroni correction for 9 metrics.",
 }

@@ -23,16 +23,17 @@ TITLE_EN = ["LLM-Based Command Architecture and U-Net Score-Map",
 # (이름, 소속 번호). 영문 이름은 원고에 없어 비워 둔다 --- 양식 (4)항에 따라 채워 넣을 것.
 AUTHORS = [("윤 영 준", 1), ("방 현 태", 1), ("전 유 라", 2), ("김 덕 환", 2), ("윤 원 근", 1)]
 AFFIL = ["*1 충남대학교", "*2 한국과학기술원"]
-EMAIL = "([이메일 주소 기입 필요])"
+EMAIL = ("(0204jun@o.cnu.ac.kr, htbang@g.cnu.ac.kr, youraj@kaist.ac.kr, dnb06116@kaist.ac.kr, "
+         "wkyoun@cnu.ac.kr)")
 # 국방발표 판 국문 초록(sections_def/00_abstract.tex)의 영문. 수치는 국문 초록과 같다.
 ABSTRACT_EN = (
     "Swarms of low-cost suicide unmanned surface vehicles (USVs) evade conventional "
     "counters: electronic warfare cannot reach wire-guided targets, and interceptors cost more than their "
     "targets and saturate. We propose a two-layer defence architecture in which a few defenders, slower than "
-    "the attackers, pre-emptively block the mothership's approach corridors with net walls. In the "
+    "the attackers, pre-emptively block the mothership's approach routes with nets. In the "
     "strategic layer a large language model (LLM) commander assigns each defender an enemy cluster; in the "
     "maneuver layer each defender points at a pixel of a score map that a U-Net produces over a rasterized "
-    "battlefield grid to place its net wall. Both layers decide on the same period but differ sharply in "
+    "battlefield grid to place its net. Both layers decide on the same period but differ sharply in "
     "response latency, so only the slow strategic layer is decoupled asynchronously. Pixel pointing confines "
     "the action space to the grid, imposes safety and mission constraints by masking and is "
     "invariant to swarm size, and training extends critic-free group-relative policy "

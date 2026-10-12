@@ -108,8 +108,11 @@ def _conv_tokens(toks: list[str]) -> str:
 def _text(s: str) -> str:
     s = s.replace("\\,", " ").replace("~", " ").replace("\\_", "_").replace("\\%", "%")
     s = re.sub(r"\\[a-zA-Z]+", "", s).replace("{", "").replace("}", "")
+    # \text{if } 처럼 글 앞뒤의 공백은 의미가 있다 --- 한글 수식은 일반 공백을 무시하므로 ~ 로 남긴다
+    pre = "~" if s[:1].isspace() else ""
+    post = "~" if s[-1:].isspace() else ""
     s = s.strip()
-    return f'rm{{"{s}"}}' if s else ""
+    return f'{pre}rm{{"{s}"}}{post}' if s else ""
 
 
 def _env(p: _P, name: str) -> str:
