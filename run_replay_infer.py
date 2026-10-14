@@ -147,7 +147,8 @@ def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
              hide_unassigned_wps: bool = False,
              mode_label: str = "실제 적(로스백) + 가상 아군(시뮬)",
              window_title: str | None = None,
-             hud_extra=None, real_ticks: bool = True) -> None:
+             hud_extra=None, real_ticks: bool = True,
+             on_reset=None, sliders=None) -> None:
     """matplotlib 실시간 창. `run_cell_play.py` 와 동일한 렌더 파이프라인을 재사용한다.
 
     `info_provider`: 인자 없이 호출하면 `{"status":, "cmd":, "assign":, "rationale":}`
@@ -161,6 +162,12 @@ def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
     "시뮬레이터 아군·적 (ROS2 Odometry)"). `window_title`: 창 제목(None 이면 mode_label 로 만든다).
     `hud_extra`: 인자 없이 호출하면 HUD 끝에 붙일 짧은 문자열을 돌려주는 콜백(선택, 예: phase).
     `real_ticks`: env 에 `scale`(SimScale)이 있으면 축 눈금을 모선 기준 실미터로 표시한다.
+    `on_reset`: 주면 **space = 에피소드 초기화**(그물·격침·배정·타이머), p = 재생/일시정지.
+        없으면 기존대로 space = 재생/일시정지.
+    `sliders`: 정보패널 아래 슬라이더 목록. 각 항목 dict(label, vmin, vmax, init, fmt,
+        on_change(value), on_release: bool). on_release=True 면 드래그 중엔 값 표시만 바꾸고
+        마우스를 놓을 때 한 번만 on_change 를 부른다(예: span — 바꾸면 초기화가 따라오므로).
+    `bg_img`/`bg_extent`: bg_extent 는 리스트 또는 매 프레임 부르는 콜백(span 변경 시 재투영용).
 
     HUD 는 이 뷰어가 직접 그린다 — `draw_scene` 의 기본 HUD/도움말은 가상 시뮬 UI 용이라
     (스텝 수 t·포획 수가 이 모드에선 늘지 않고, m/k/n/r 키는 여기서 동작하지 않는다) 끈다.
@@ -216,35 +223,63 @@ def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
         import textwrap
         fig = plt.figure(figsize=(13.5, 9.0))
         ax = fig.add_axes((0.045, 0.045, 0.58, 0.905))
-        ax_info = fig.add_axes((0.65, 0.045, 0.335, 0.905))
+        # 슬라이더가 있으면 정보패널 아래쪽을 슬라이더 영역으로 쓴다(항목당 세로 0.075).
+        _sl_h = 0.075 * len(sliders or []) + (0.03 if sliders else 0.0)
+        ax_info = fig.add_axes((0.65, 0.045 + _sl_h, 0.335, 0.905 - _sl_h))
     fig.patch.set_facecolor(BG)      # HUD(제목)·눈금·정보패널이 밝은 글자라 배경을 어둡게 통일
     try:
         fig.canvas.manager.set_window_title(window_title or f"{mode_label} — {policy_label} 정책")
     except Exception:
         pass
-    fig.text(0.045, 0.012, "space 재생/일시정지   q 종료", color=DIM, fontsize=8.5,
-             ha="left", va="bottom")
-    t_wall0 = _time.monotonic()
+    help_txt = ("space 초기화(그물·격침·배정 리셋)   p 재생/일시정지   q 종료" if on_reset is not None
+                else "space 재생/일시정지   q 종료")
+    fig.text(0.045, 0.012, help_txt, color=DIM, fontsize=8.5, ha="left", va="bottom")
+    clock = {"t_wall0": _time.monotonic(), "resets": 0}
 
-    scale = getattr(env, "scale", None) if real_ticks else None
-    if scale is not None:
-        _half = float(env.cfg.world_size) / 2.0
-        _S = float(scale.S)
-        _ox, _oy = (float(c) for c in scale.enu_origin)
-        # 모선(맵 중앙) 기준 실미터 — enu_origin 이 (0,0)이 아닌 경우도 실좌표 그대로 보이게.
-        _fx = FuncFormatter(lambda v, _p: f"{(v - _half) / _S + _ox:.0f}")
-        _fy = FuncFormatter(lambda v, _p: f"{(v - _half) / _S + _oy:.0f}")
+    # ── 슬라이더 (정보패널 아래) ──
+    from matplotlib.widgets import Slider
+    _sliders = []
+    if sliders and info_provider is not None:
+        y = 0.045 + 0.075 * (len(sliders) - 1) + 0.012
+        for spec in sliders:
+            fig.text(0.655, y + 0.032, spec["label"], color=FG, fontsize=9, ha="left", va="bottom")
+            sax = fig.add_axes((0.655, y, 0.27, 0.026), facecolor="#1b2a3a")
+            sl = Slider(sax, "", spec["vmin"], spec["vmax"], valinit=spec["init"],
+                        valfmt=spec.get("fmt", "%.2f"), color="#26C6DA")
+            sl.valtext.set_color(FG)
+            sl.valtext.set_fontsize(9)
+            _sliders.append((sl, spec))
+            if not spec.get("on_release"):
+                sl.on_changed(spec["on_change"])
+            y -= 0.075
+        _last_applied = {id(sl): sl.val for sl, _ in _sliders}
 
-        def _nice_ticks(o: float) -> list[float]:
-            """실미터 기준 1-2-5 단위 깔끔한 눈금(약 6~10개) → sim 좌표 위치."""
-            span_r = float(env.cfg.world_size) / _S
+        def _on_release(_ev):
+            for sl, spec in _sliders:
+                if spec.get("on_release") and sl.val != _last_applied[id(sl)]:
+                    _last_applied[id(sl)] = sl.val
+                    spec["on_change"](sl.val)
+        fig.canvas.mpl_connect("button_release_event", _on_release)
+
+    use_real_ticks = bool(real_ticks) and getattr(env, "scale", None) is not None
+    _half = float(env.cfg.world_size) / 2.0
+
+    def _real_axes():
+        """현재 scale(슬라이더로 span 이 바뀔 수 있다) 기준 실미터 눈금/포매터."""
+        sc = env.scale
+        S_ = float(sc.S)
+        ox, oy = (float(c) for c in sc.enu_origin)
+
+        def ticks(o):
+            span_r = float(env.cfg.world_size) / S_
             raw = span_r / 8.0
             mag = 10.0 ** np.floor(np.log10(raw))
             step = next(m * mag for m in (1, 2, 5, 10) if m * mag >= raw)
             lo, hi = o - span_r / 2.0, o + span_r / 2.0
-            reals = np.arange(np.ceil(lo / step) * step, hi + 1e-9, step)
-            return [(r - o) * _S + _half for r in reals]
-        _xt, _yt = _nice_ticks(_ox), _nice_ticks(_oy)
+            return [(r - o) * S_ + _half for r in np.arange(np.ceil(lo / step) * step, hi + 1e-9, step)]
+        fx = FuncFormatter(lambda v, _p: f"{(v - _half) / S_ + ox:.0f}")
+        fy = FuncFormatter(lambda v, _p: f"{(v - _half) / S_ + oy:.0f}")
+        return ticks(ox), ticks(oy), fx, fy
 
     def _mmss(sec: float) -> str:
         m, s_ = divmod(max(0.0, float(sec)), 60.0)
@@ -287,12 +322,14 @@ def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
             fd = dict(fd)
             fd["ally_paths"] = [p if int(viz["assign"][i]) >= 0 else []
                                 for i, p in enumerate(fd["ally_paths"])]
-        renderer.draw_scene(ax, fd, bg_img=bg_img, bg_extent=bg_extent, show_help=False)
+        _ext = bg_extent() if callable(bg_extent) else bg_extent
+        renderer.draw_scene(ax, fd, bg_img=bg_img, bg_extent=_ext, show_help=False)
         if viz is not None:
             _overlay_unet(ax, viz)
         elif hasattr(env, "cell_viz") and not hide_cells:
             _overlay_cells(ax, env.cell_viz())
-        if scale is not None:
+        if use_real_ticks:
+            _xt, _yt, _fx, _fy = _real_axes()
             ax.set_xticks(_xt); ax.set_yticks(_yt)
             ax.xaxis.set_major_formatter(_fx)
             ax.yaxis.set_major_formatter(_fy)
@@ -308,8 +345,8 @@ def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
                 extra = ""
         nets = "/".join(str(int(n)) for n in env.a_nets[0])
         ax.set_title(
-            f"[{status}] {mode_label}\n"
-            f"경과 {_mmss(env.bag_time_real)} (실시간 {_mmss(_time.monotonic() - t_wall0)})   "
+            f"[{status}] {mode_label}" + (f"   (초기화 {clock['resets']}회)" if clock["resets"] else "") + "\n"
+            f"경과 {_mmss(env.bag_time_real)} (실시간 {_mmss(_time.monotonic() - clock['t_wall0'])})   "
             f"결정 {len(log)}   적 생존 {int(env.e_alive[0].sum())}   "
             f"아군 {int(env.a_alive[0].sum())}/{env.P}   그물 {nets}{formation}{extra}",
             color=OK if ui["running"] and not ui["done"] else FG,
@@ -318,9 +355,20 @@ def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
             draw_info_panel()
         return []
 
+    def do_reset():
+        on_reset()
+        ui["done"] = False
+        clock["t_wall0"] = _time.monotonic()
+        clock["resets"] += 1
+
     def on_key(ev):
         k = (ev.key or "").lower()
         if k == " ":
+            if on_reset is not None:
+                do_reset()
+            else:
+                ui["running"] = not ui["running"]
+        elif k == "p" and on_reset is not None:
             ui["running"] = not ui["running"]
         elif k == "q":
             plt.close(fig)
@@ -328,9 +376,9 @@ def _run_viz(env, advance_one_micro, max_reached, spf: int, log: list,
 
     anim = FuncAnimation(fig, update, interval=40, blit=False, cache_frame_data=False)
     start_hint = "일시정지 상태로 시작 -- space 를 눌러야 추론이 시작됩니다" if start_paused else "재생 상태로 시작"
-    print(f"뷰어 실행: space=재생/일시정지  q=종료  ({start_hint})")
+    print(f"뷰어 실행: {help_txt}  ({start_hint})")
     plt.show()
-    _ = anim
+    _ = (anim, _sliders)          # 위젯 참조 유지(GC 방지)
 
 
 def main() -> None:
@@ -377,6 +425,10 @@ def main() -> None:
     ap.add_argument("--max-decisions", type=int, default=None, help="처리할 결정 횟수 상한(기본: 로스백 끝까지)")
     ap.add_argument("--geo", type=float, nargs=2, default=None, metavar=("LAT", "LON"),
                     help="육지 마스크용 실 앵커 위경도(선택, 미지정시 체크포인트 기본값)")
+    ap.add_argument("--land-source", default="none",
+                    choices=["none", "auto", "vector", "tile", "satellite"],
+                    help="지형(섬) 데이터. none(기본) = 섬 없음(수조·실험 해역) -- land 채널은 유지하되 "
+                         "전부 0. auto 등 = 예전처럼 체크포인트(또는 --geo) 해역의 섬을 불러온다")
     ap.add_argument("--enu-origin", type=float, nargs=2, default=None, metavar=("X", "Y"),
                     help="맵 중앙(모선)에 대응할 실좌표[m](선택, 미지정시 로스백 적선 전체 중심)")
     ap.add_argument("--out", default=None, help="결정별 명령 로그를 저장할 JSON 경로(선택)")
@@ -424,7 +476,8 @@ def main() -> None:
         if args.specialized:
             print("[replay] ⚠ --specialized 는 셀선택 모델 전용입니다 — CNN 점수맵 모델에서는 무시합니다.")
         env = ReplayCnnEnv(args.ckpt, bag, nets_per_ship=args.nets,
-                            geo=tuple(args.geo) if args.geo else None, **common)
+                            geo=tuple(args.geo) if args.geo else None,
+                            land_source=args.land_source, **common)
     if args.min_net_len > 0:
         if hasattr(env, "set_min_net_len_real"):
             env.set_min_net_len_real(args.min_net_len)

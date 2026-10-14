@@ -88,6 +88,12 @@ def _make_commander(backend: str, model: str | None):
     return make_commander(backend, model)
 
 
+# --viz 슬라이더 (최소, 최대, 기본값) — 기본값은 미니 수조 실험 기준
+MIN_NET_SLIDER = (3.0, 16.0, 9.5)     # --min-net-len [m]
+ARRIVE_SLIDER = (1.0, 8.0, 4.2)       # --arrive-radius-mult [배]
+SPAN_SLIDER = (30.0, 110.0, 70.0)     # --span [m]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="실제 적선(로스백/라이브 ROS2/GCS) + GCS 실텔레메트리 아군으로 CNN 점수맵 정책을 운용",
@@ -142,6 +148,10 @@ def main() -> None:
                     help="지휘관을 다시 부르는 결정 간격")
     ap.add_argument("--max-decisions", type=int, default=None, help="처리할 결정 횟수 상한")
     ap.add_argument("--geo", type=float, nargs=2, default=None, metavar=("LAT", "LON"))
+    ap.add_argument("--land-source", default="none",
+                    choices=["none", "auto", "vector", "tile", "satellite"],
+                    help="지형(섬) 데이터. none(기본) = 섬 없음(수조·실험 해역) -- land 채널은 유지하되 "
+                         "전부 0. auto 등 = 예전처럼 체크포인트(또는 --geo) 해역의 섬을 불러온다")
     ap.add_argument("--enu-origin", type=float, nargs=2, default=None, metavar=("X", "Y"),
                     help="맵 중앙(=모선)에 대응하는 실좌표(datum 기준 동/북 m). 미지정시 GCS가 "
                          "지금 보고하는 --ally-ids 의 실위치 평균을 자동으로 쓴다 -- gcs.datum "
@@ -442,6 +452,7 @@ def main() -> None:
             enu_origin=enu_origin,
             net_reload_period_real=args.net_reload_period,
             quorum_timeout=args.quorum_timeout,
+            land_source=args.land_source,
         )
     else:
         from commander.gcs_cnn_env import GcsBagCnnEnv
@@ -454,6 +465,7 @@ def main() -> None:
             enu_origin=enu_origin,
             net_reload_period_real=args.net_reload_period,
             quorum_timeout=args.quorum_timeout,
+            land_source=args.land_source,
         )
     if args.min_net_len > 0:
         if hasattr(env, "set_min_net_len_real"):
@@ -462,6 +474,8 @@ def main() -> None:
                   f"(= {env.min_net_len_sim:.0f} sim-m, 모델 기본 한계 {env.cfg.net_max_len / env.scale.S:.3g} m)")
         else:
             print(f"[gcs_bridge] ⚠ --min-net-len 은 CNN 점수맵(U-Net) 정책에서만 지원 -- 무시합니다.")
+    print(f"[gcs_bridge] 지형(섬) = {args.land_source}: 육지 {int(env.land_map.sum())}셀 / {env.land_map.size}"
+          + ("  (섬 없음)" if not env.land_map.any() else "  ⚠ 체크포인트/--geo 해역의 섬이 맵에 깔림"))
     print(f"[gcs_bridge] GCS = {args.gcs_url}  ally_ids = {ally_ids}")
     print(f"[gcs_bridge] enu_origin(맵 중앙 대응 실좌표) = "
           f"{tuple(round(c, 3) for c in env.scale.enu_origin)}")
@@ -488,7 +502,7 @@ def main() -> None:
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="llm-replan")
     pending: dict = {"future": None}
     log: list = []
-    state = {"decision_idx": 0, "last_wait_print": 0.0, "seen_ready": False,
+    state = {"decision_idx": 0, "last_wait_print": 0.0, "seen_ready": False, "episode": 0,
               "last_assign": [None] * len(ally_ids)}
     # --viz 정보패널용(run_commander_ui.py와 같은 키 구조) -- --viz 없이 돌 때도 그냥 dict
     # 갱신일 뿐이라 추가 비용이 없다(그리기는 _run_viz의 info_provider 콜백이 호출될 때만).
@@ -530,7 +544,8 @@ def main() -> None:
 
     def log_decision() -> None:
         assign = env._assign[0].tolist()
-        rec = {"decision": state["decision_idx"], "t_bag_sec": round(env.bag_time_real, 3),
+        rec = {"episode": state["episode"],
+               "decision": state["decision_idx"], "t_bag_sec": round(env.bag_time_real, 3),
                "assign": assign, "enemies_alive": int(env.e_alive[0].sum())}
         log.append(rec)
         # 배정 여부가 실제로 바뀐 배만 내보낸다(net_deploy와 같은 "바뀔 때만 발행" 원칙) --
@@ -639,7 +654,9 @@ def main() -> None:
             from commander.satellite import fetch_satellite_bg
             print(f"[gcs_bridge] 위성 배경 로딩 중... (앵커 {lat0:.6f},{lon0:.6f}, "
                   f"--span {args.span:g} m)")
-            res = fetch_satellite_bg(lat0, lon0, args.span)   # world_size 인자 = 실제 미터(--span)
+            # span 슬라이더로 맵 폭이 바뀔 수 있어 최대폭(SPAN_SLIDER[1])으로 한 번 받아둔다.
+            fetch_span = max(float(args.span), SPAN_SLIDER[1])
+            res = fetch_satellite_bg(lat0, lon0, fetch_span)   # world_size 인자 = 실제 미터
             if res:
                 img, ext_real = res   # ext_real: [xmin,xmax,ymin,ymax], 0~args.span 실미터 프레임
                 # fetch_satellite_bg는 "world_size(여기선 --span 실미터) = 렌더 프레임 전체 폭"을
@@ -648,13 +665,81 @@ def main() -> None:
                 # --span 은 SimScale.S 로 별도 변환되므로, 실미터 프레임(중심=--span/2)을
                 # SimScale과 같은 배율로 sim 프레임(중심=cfg.world_size/2)에 맞춰 재투영해야
                 # renderer.draw_scene(bg_extent=...)가 아군/적 궤적과 같은 좌표계에 놓인다.
-                half_real = args.span / 2.0
+                half_real = fetch_span / 2.0
                 half_sim = env.cfg.world_size / 2.0
-                bg_extent = [(v - half_real) * env.scale.S + half_sim for v in ext_real]
+                # 콜백: span 슬라이더로 env.scale 이 바뀌면 다음 프레임부터 새 배율로 재투영된다.
+                bg_extent = (lambda: [(v - half_real) * env.scale.S + half_sim for v in ext_real])
                 bg_img = img
                 print("[gcs_bridge] 위성 배경 로드 완료")
             else:
                 print("[gcs_bridge] ⚠ 위성 배경 로드 실패(오프라인 등) -- 기본 배경 사용")
+
+    # ── space 초기화 + 슬라이더(--viz) ─────────────────────────────────
+    def restart() -> None:
+        """프로세스를 끄지 않고 새 에피소드: 그물·격침·배정·경로·타이머 리셋 + GCS 쪽 신호 초기화."""
+        pending["future"] = None                  # 진행 중 재배정 결과는 버린다(옛 에피소드 기준)
+        env.restart_episode()
+        state["episode"] += 1
+        state["decision_idx"] = 0
+        state["seen_ready"] = False               # 텔레메트리 재수신 직후 재배정을 강제한다
+        state["last_assign"] = [None] * len(ally_ids)
+        for vid in ally_ids:
+            net_sink.set(vid, False)              # 그물 전개 중이던 배 → 대기
+            assign_sink.set(vid, assigned=False, cluster_id=None)
+        info["status"] = f"초기화됨 (에피소드 {state['episode']}) -- 텔레메트리 재수신 대기"
+        info["assign"] = "(아직 없음)"
+        info["rationale"] = "첫 재배정 대기 중..."
+        print(f"[gcs_bridge] ⟲ 에피소드 {state['episode']} 시작 (space 초기화): span {args.span:g} m, "
+              f"최소 그물 {args.min_net_len:g} m, 도착반경 ×{env.arrive_radius_mult:.3g}")
+
+    can_restart = hasattr(env, "restart_episode")
+    sliders = None
+    if args.viz:
+        def _in(v, lo_hi, fallback):
+            return float(v) if v is not None and lo_hi[0] <= float(v) <= lo_hi[1] else float(fallback)
+        init_min = _in(args.min_net_len, MIN_NET_SLIDER[:2], MIN_NET_SLIDER[2])
+        init_arr = _in(env.arrive_radius_mult, ARRIVE_SLIDER[:2], ARRIVE_SLIDER[2])
+        init_span = _in(args.span, SPAN_SLIDER[:2], SPAN_SLIDER[2])
+        # 슬라이더 초기값을 실제 동작값으로 맞춘다(인자가 범위 밖이면 슬라이더 기본값이 적용된다).
+        if init_span != float(args.span) and hasattr(env, "rescale"):
+            env.rescale(init_span)
+            args.span = init_span
+        if init_min != float(args.min_net_len):
+            env.set_min_net_len_real(init_min)
+            args.min_net_len = init_min
+        env.arrive_radius_mult = init_arr
+        print(f"[gcs_bridge] 슬라이더 초기값: 최소 그물 {init_min:g} m, 도착반경 ×{init_arr:g}, "
+              f"span {args.span:g} m")
+
+        def on_min_net(v):
+            args.min_net_len = float(v)
+            env.set_min_net_len_real(float(v))     # 다음 결정부터 적용
+
+        def on_arrive(v):
+            env.arrive_radius_mult = float(v)      # 즉시 적용
+
+        def on_span(v):
+            if float(v) == float(args.span):
+                return
+            args.span = float(v)
+            env.rescale(float(v))                  # 배율이 바뀌면 sim 좌표 상태가 무효 → 초기화
+            restart()
+
+        sliders = [
+            {"label": f"최소 그물 길이 [m]  ({MIN_NET_SLIDER[0]:g}~{MIN_NET_SLIDER[1]:g}, 다음 결정부터)",
+             "vmin": MIN_NET_SLIDER[0], "vmax": MIN_NET_SLIDER[1], "init": init_min,
+             "fmt": "%.1f m", "on_change": on_min_net},
+            {"label": f"WP 도착반경 배수  ({ARRIVE_SLIDER[0]:g}~{ARRIVE_SLIDER[1]:g}, 즉시)",
+             "vmin": ARRIVE_SLIDER[0], "vmax": ARRIVE_SLIDER[1], "init": init_arr,
+             "fmt": "×%.1f", "on_change": on_arrive},
+        ]
+        if hasattr(env, "rescale") and can_restart:
+            sliders.append(
+                {"label": f"span [m]  ({SPAN_SLIDER[0]:g}~{SPAN_SLIDER[1]:g}, 놓으면 적용 + 자동 초기화)",
+                 "vmin": SPAN_SLIDER[0], "vmax": SPAN_SLIDER[1], "init": float(args.span),
+                 "fmt": "%.0f m", "on_change": on_span, "on_release": True})
+        if not can_restart:
+            print("[gcs_bridge] ⚠ space 초기화·span 슬라이더는 --enemy-source gcs 에서만 지원합니다.")
 
     try:
         if args.viz:
@@ -665,7 +750,9 @@ def main() -> None:
                                  "live": "실제 아군(GCS) + 라이브 ROS2 적",
                                  "bag": "실제 아군(GCS) + 로스백 적"}[args.enemy_source],
                      window_title="MobRobGPT GCS 브릿지 — U-Net 추론",
-                     hud_extra=lambda: f"span {args.span:g} m")
+                     hud_extra=lambda: (f"span {args.span:g} m   최소그물 {args.min_net_len:g} m   "
+                                        f"도착반경 {env.arrive_r() / env.scale.S:.2g} m"),
+                     on_reset=restart if can_restart else None, sliders=sliders)
         else:
             while not max_reached():
                 if not advance_one_micro():

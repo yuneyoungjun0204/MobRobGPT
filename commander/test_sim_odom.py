@@ -292,3 +292,51 @@ class TestArriveRadiusMult(unittest.TestCase):
         self.assertAlmostEqual(float(env.scale.len_to_real(env.arrive_r())), 0.5, places=9)
         with self.assertRaises(ValueError):
             env.set_arrive_radius_real(0.0)
+
+
+@unittest.skipUnless(CKPT.exists(), "u-net_map.pt 없음")
+class TestRestartAndRescale(unittest.TestCase):
+    """space 초기화(restart_episode)·span 슬라이더(rescale) — 프로세스 재시작 없이 새 에피소드."""
+
+    def _run_some(self, env, steps=60):
+        from commander.fallback import heuristic_plan
+        from commander.rl_bridge import build_battlefield_defense
+        for i in range(steps):
+            env.step()
+            if i == 1:
+                env.set_plan(heuristic_plan(build_battlefield_defense(env)))
+
+    def test_restart_clears_episode_state(self):
+        env = TestMinNetLen()._env()
+        self._run_some(env)
+        # 그물·격침·소진 상태를 인위로 만들어 둔다
+        env.painted[0][:5, :5] = 1
+        env.net_installed[0][:5, :5] = True
+        env.doing_net[0, 0] = True
+        env.a_nets[0, 1] = 0
+        env.stats["captures"] = 4
+        self.assertTrue(env.ready)
+        env.restart_episode()
+        self.assertFalse(env.painted[0].any())
+        self.assertFalse(env.net_installed[0].any())
+        self.assertFalse(env.doing_net[0].any())
+        self.assertTrue((env.a_nets[0] == env.cfg.nets_per_ship).all())
+        self.assertEqual(env.stats["captures"], 0)
+        self.assertIsNone(env._plan)
+        self.assertFalse(env.ready)                 # 텔레메트리 재수신(쿼럼)부터 다시
+        self.assertEqual(env._micro_ct, 0)
+        self.assertEqual(env.bag_time_real, 0.0)
+        env.step()                                  # 다음 tick 에 다시 붙는다
+        self.assertTrue(env.ready)
+
+    def test_rescale_updates_scale_and_min_net(self):
+        env = TestMinNetLen()._env()
+        env.set_min_net_len_real(9.5)
+        s0, l0 = env.scale.S, env.min_net_len_sim
+        env.arrive_radius_mult = 4.2
+        env.rescale(70.0)
+        self.assertAlmostEqual(env.scale.S, env.cfg.world_size / 70.0)
+        self.assertAlmostEqual(float(env.scale.len_to_real(env.min_net_len_sim)), 9.5)   # 실미터 유지
+        self.assertNotAlmostEqual(env.min_net_len_sim, l0)
+        self.assertEqual(env.arrive_radius_mult, 4.2)       # 배수 의미는 유지
+        self.assertNotAlmostEqual(env.scale.S, s0)

@@ -158,10 +158,12 @@ class CommandedCnnEnv(CommandedDefenseEnv):
         """실미터 최소 그물 길이를 건다(0 이하 = 끔). `self.scale`(SimScale)이 있는 env 전용."""
         if length_m is None or float(length_m) <= 0:
             self.min_net_len_sim = 0.0
+            self.min_net_len_real = 0.0
             return
         scale = getattr(self, "scale", None)
         if scale is None:
             raise ValueError("최소 그물 길이(실미터)는 SimScale 이 있는 env 에서만 쓸 수 있습니다.")
+        self.min_net_len_real = float(length_m)            # 재스케일(span 변경) 시 재환산용
         self.min_net_len_sim = float(scale.len_to_sim(float(length_m)))
 
     def set_arrive_radius_real(self, radius_m: float) -> None:

@@ -259,12 +259,13 @@ class GcsBagCnnEnv(_GcsAllyTelemetryMixin, ReplayCnnEnv):
         enu_origin: tuple[float, float] | None = None,
         net_reload_period_real: float | None = None,
         quorum_timeout: float = 5.0,
+        land_source: str | None = None,
     ):
         super().__init__(
             ckpt, bag, span_real, ally_speed_real=ally_speed_real,
             enemy_mode=enemy_mode, device=device, nets_per_ship=nets_per_ship,
             geo=geo, enu_origin=enu_origin,
-            net_reload_period_real=net_reload_period_real)
+            net_reload_period_real=net_reload_period_real, land_source=land_source)
         if ally_link.n_allies != self.P:
             raise ValueError(
                 f"ally_link has {ally_link.n_allies} vehicle_ids but the checkpoint "
@@ -407,6 +408,7 @@ class GcsLiveCnnEnv(_GcsAllyTelemetryMixin, CommandedCnnEnv):
         origin = (0.0, 0.0) if enu_origin is None else enu_origin
         self.scale = SimScale(self.cfg, span_real=float(span_real),
                               v_ally_real=float(ally_speed_real), enu_origin=origin)
+        self._net_reload_auto = net_reload_period_real is None
         if net_reload_period_real is None:
             net_reload_period_real = max(1, self.cfg.nets_per_ship) * self.scale.period_real * 6.0
         self.net_reload_period_real = float(net_reload_period_real)
@@ -531,6 +533,36 @@ class GcsLiveCnnEnv(_GcsAllyTelemetryMixin, CommandedCnnEnv):
         # reset(seed=0) 을 부르므로(위 __init__ 참고), 그 첫 호출에서는 이 속성이 아직 없다.
         if hasattr(self, "net_reload_period_real"):
             self._next_reload_real = self._t_real + self.net_reload_period_real
+
+    # ── 운용 중 재시작 / 스케일 교체 (프로세스를 끄지 않고 새 에피소드) ──────
+    def restart_episode(self) -> None:
+        """그동안의 그물·격침·배정·경로·타이머를 모두 지우고 새 에피소드로 시작한다.
+
+        아군·적 위치/생존은 다음 step() 의 텔레메트리로 다시 채워진다(그 전까진 결정·발행 안 함
+        — 쿼럼 대기부터 다시). 정책 은닉상태·배정 계획(_plan)도 비운다: 호출부가 첫 tick 에
+        재배정을 다시 요청해야 한다(run_gcs_bridge.py 의 seen_ready 경로).
+        """
+        self.reset(seed=0)
+        self.a_nets[0] = self.cfg.nets_per_ship
+        self._plan = None
+        self._plan_command = None
+        self._last_pix = self._last_off = self._last_prob = None
+        self.stats = {k: 0 for k in self._SK + ("survived",)}
+        self._sprev = {k: 0.0 for k in self._SK}
+        self.running = True
+        self._quorum_deadline = time.monotonic() + self.quorum_timeout
+        self._quorum_timeout_announced = False
+
+    def rescale(self, span_real: float) -> None:
+        """실미터 span 교체. sim 좌표에 쌓인 상태(그물·경로)는 옛 배율 기준이라 호출부는
+        반드시 `restart_episode()` 를 뒤이어 불러야 한다. 최소 그물 길이(실미터)는 새 배율로
+        다시 환산하고, 도착반경은 '학습값 대비 배수'라 그대로 둔다(실미터 반경은 배율 따라 변함)."""
+        self.scale = SimScale(self.cfg, span_real=float(span_real),
+                              v_ally_real=self.scale.v_ally_real, enu_origin=self.scale.enu_origin)
+        if self._net_reload_auto:
+            self.net_reload_period_real = max(1, self.cfg.nets_per_ship) * self.scale.period_real * 6.0
+        if getattr(self, "min_net_len_real", 0.0) > 0:
+            self.set_min_net_len_real(self.min_net_len_real)
 
     @property
     def bag_time_real(self) -> float:

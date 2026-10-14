@@ -36,9 +36,10 @@ class ReplayCnnEnv(CommandedCnnEnv):
         geo: tuple[float, float] | None = None,
         enu_origin: tuple[float, float] | None = None,
         net_reload_period_real: float | None = None,
+        land_source: str | None = None,
     ):
         super().__init__(ckpt, enemy_mode=enemy_mode, device=device, geo=geo,
-                          nets_per_ship=nets_per_ship)
+                          nets_per_ship=nets_per_ship, land_source=land_source)
         self.reset(seed=0)                  # 배열 할당 + 육지 캐시 로드. 이후 적 물리는 안 돌린다
         self.bag = bag
         # 모선 위치가 별도로 없으므로, 관측된 적 전체의 중심을 기본 원점(=맵 중앙)으로 삼는다
